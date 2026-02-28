@@ -1,19 +1,30 @@
+import os
+import uuid as uuid_mod
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File as FastAPIFile, status
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
-from ..models.user import User
+from ..models.user import User, Entitlement
 from ..models.story import Story
 from ..models.story_revision import StoryRevision
+from ..models.organization import Organization
+from ..models.org_config import OrgConfig
 from ..schemas.story import ParagraphSchema
-from ..deps import get_current_user, require_reviewer, get_current_org_id
+from ..schemas.org_admin import (
+    CreateUserRequest, UpdateUserRequest, UpdateUserRoleRequest,
+    UpdateUserEntitlementsRequest, UserManagementResponse,
+    UpdateOrgRequest, OrgResponse,
+    UpdateOrgConfigRequest, OrgConfigResponse,
+)
+from ..deps import get_current_user, require_reviewer, get_current_org_id, require_org_admin
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+config_router = APIRouter(prefix="/config", tags=["config"])
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas specific to admin endpoints
@@ -520,3 +531,230 @@ def admin_reporter_stories(
     ]
 
     return AdminStoryListResponse(stories=items, total=total)
+
+
+# ===========================================================================
+# Org-admin endpoints (Tasks 4-7)
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# POST /admin/users  (org_admin only)
+# ---------------------------------------------------------------------------
+@router.post("/users", response_model=UserManagementResponse, status_code=status.HTTP_201_CREATED)
+def create_user(
+    body: CreateUserRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_org_admin),
+    org_id: str = Depends(get_current_org_id),
+):
+    existing = db.query(User).filter(User.phone == body.phone).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Phone number already registered")
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    user = User(
+        name=body.name, phone=body.phone, email=body.email, area_name=body.area_name,
+        user_type=body.user_type, organization=org.name if org else "", organization_id=org_id,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return UserManagementResponse(
+        id=user.id, name=user.name, phone=user.phone, email=user.email,
+        user_type=user.user_type, area_name=user.area_name, is_active=user.is_active,
+        entitlements=[e.page_key for e in user.entitlements],
+    )
+
+
+# ---------------------------------------------------------------------------
+# PUT /admin/users/{user_id}  (org_admin only)
+# ---------------------------------------------------------------------------
+@router.put("/users/{user_id}", response_model=UserManagementResponse)
+def update_user(
+    user_id: str, body: UpdateUserRequest,
+    db: Session = Depends(get_db), admin: User = Depends(require_org_admin),
+    org_id: str = Depends(get_current_org_id),
+):
+    user = db.query(User).filter(User.id == user_id, User.organization_id == org_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if body.name is not None: user.name = body.name
+    if body.email is not None: user.email = body.email
+    if body.area_name is not None: user.area_name = body.area_name
+    if body.is_active is not None: user.is_active = body.is_active
+    db.commit()
+    db.refresh(user)
+    return UserManagementResponse(
+        id=user.id, name=user.name, phone=user.phone, email=user.email,
+        user_type=user.user_type, area_name=user.area_name, is_active=user.is_active,
+        entitlements=[e.page_key for e in user.entitlements],
+    )
+
+
+# ---------------------------------------------------------------------------
+# PUT /admin/users/{user_id}/role  (org_admin only)
+# ---------------------------------------------------------------------------
+@router.put("/users/{user_id}/role", response_model=UserManagementResponse)
+def update_user_role(
+    user_id: str, body: UpdateUserRoleRequest,
+    db: Session = Depends(get_db), admin: User = Depends(require_org_admin),
+    org_id: str = Depends(get_current_org_id),
+):
+    user = db.query(User).filter(User.id == user_id, User.organization_id == org_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user.user_type = body.user_type
+    db.commit()
+    db.refresh(user)
+    return UserManagementResponse(
+        id=user.id, name=user.name, phone=user.phone, email=user.email,
+        user_type=user.user_type, area_name=user.area_name, is_active=user.is_active,
+        entitlements=[e.page_key for e in user.entitlements],
+    )
+
+
+# ---------------------------------------------------------------------------
+# PUT /admin/users/{user_id}/entitlements  (org_admin only)
+# ---------------------------------------------------------------------------
+@router.put("/users/{user_id}/entitlements", response_model=UserManagementResponse)
+def update_user_entitlements(
+    user_id: str, body: UpdateUserEntitlementsRequest,
+    db: Session = Depends(get_db), admin: User = Depends(require_org_admin),
+    org_id: str = Depends(get_current_org_id),
+):
+    user = db.query(User).filter(User.id == user_id, User.organization_id == org_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    db.query(Entitlement).filter(Entitlement.user_id == user_id).delete()
+    for key in body.page_keys:
+        db.add(Entitlement(user_id=user_id, page_key=key))
+    db.commit()
+    db.refresh(user)
+    return UserManagementResponse(
+        id=user.id, name=user.name, phone=user.phone, email=user.email,
+        user_type=user.user_type, area_name=user.area_name, is_active=user.is_active,
+        entitlements=[e.page_key for e in user.entitlements],
+    )
+
+
+# ---------------------------------------------------------------------------
+# PUT /admin/org  (org_admin only)
+# ---------------------------------------------------------------------------
+@router.put("/org", response_model=OrgResponse)
+def update_org(
+    body: UpdateOrgRequest,
+    db: Session = Depends(get_db), admin: User = Depends(require_org_admin),
+    org_id: str = Depends(get_current_org_id),
+):
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    if body.name is not None: org.name = body.name
+    if body.theme_color is not None: org.theme_color = body.theme_color
+    db.commit()
+    db.refresh(org)
+    return org
+
+
+# ---------------------------------------------------------------------------
+# PUT /admin/org/logo  (org_admin only)
+# ---------------------------------------------------------------------------
+LOGO_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads", "org-logos")
+os.makedirs(LOGO_DIR, exist_ok=True)
+
+
+@router.put("/org/logo", response_model=OrgResponse)
+async def update_org_logo(
+    file: UploadFile = FastAPIFile(...),
+    db: Session = Depends(get_db), admin: User = Depends(require_org_admin),
+    org_id: str = Depends(get_current_org_id),
+):
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".svg"):
+        raise HTTPException(status_code=400, detail=f"File type {ext} not allowed for logos")
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Logo file too large (max 5 MB)")
+    filename = f"{org.slug}{ext}"
+    filepath = os.path.join(LOGO_DIR, filename)
+    with open(filepath, "wb") as f:
+        f.write(contents)
+    org.logo_url = f"/uploads/org-logos/{filename}"
+    db.commit()
+    db.refresh(org)
+    return org
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/config  (org_admin only)
+# ---------------------------------------------------------------------------
+@router.get("/config", response_model=OrgConfigResponse)
+def get_org_config(
+    db: Session = Depends(get_db), admin: User = Depends(require_org_admin),
+    org_id: str = Depends(get_current_org_id),
+):
+    config = db.query(OrgConfig).filter(OrgConfig.organization_id == org_id).first()
+    if not config:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Config not found")
+    return config
+
+
+# ---------------------------------------------------------------------------
+# PUT /admin/config  (org_admin only)
+# ---------------------------------------------------------------------------
+@router.put("/config", response_model=OrgConfigResponse)
+def update_org_config(
+    body: UpdateOrgConfigRequest,
+    db: Session = Depends(get_db), admin: User = Depends(require_org_admin),
+    org_id: str = Depends(get_current_org_id),
+):
+    config = db.query(OrgConfig).filter(OrgConfig.organization_id == org_id).first()
+    if not config:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Config not found")
+    if body.categories is not None:
+        config.categories = [c.model_dump() for c in body.categories]
+    if body.publication_types is not None:
+        config.publication_types = [p.model_dump() for p in body.publication_types]
+    if body.page_suggestions is not None:
+        config.page_suggestions = [p.model_dump() for p in body.page_suggestions]
+    if body.priority_levels is not None:
+        config.priority_levels = [p.model_dump() for p in body.priority_levels]
+    if body.default_language is not None:
+        config.default_language = body.default_language
+    db.commit()
+    db.refresh(config)
+    return config
+
+
+# ---------------------------------------------------------------------------
+# GET /config/me  (any authenticated user)
+# ---------------------------------------------------------------------------
+@config_router.get("/me", response_model=OrgConfigResponse)
+def get_my_org_config(
+    db: Session = Depends(get_db), user: User = Depends(get_current_user),
+    org_id: str = Depends(get_current_org_id),
+):
+    config = db.query(OrgConfig).filter(OrgConfig.organization_id == org_id).first()
+    if not config:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Config not found")
+    return config
+
+
+# ---------------------------------------------------------------------------
+# DELETE /admin/stories/{story_id}  (org_admin only)
+# ---------------------------------------------------------------------------
+@router.delete("/stories/{story_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_delete_story(
+    story_id: str,
+    db: Session = Depends(get_db), admin: User = Depends(require_org_admin),
+    org_id: str = Depends(get_current_org_id),
+):
+    story = db.query(Story).filter(Story.id == story_id, Story.organization_id == org_id).first()
+    if not story:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
+    if story.revision:
+        db.delete(story.revision)
+    db.delete(story)
+    db.commit()

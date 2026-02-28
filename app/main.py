@@ -52,6 +52,7 @@ if settings.STORAGE_BACKEND == "local":
     app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
 
 app.include_router(admin.router)
+app.include_router(admin.config_router)
 app.include_router(editions.router)
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(stories.router, prefix="/stories", tags=["stories"])
