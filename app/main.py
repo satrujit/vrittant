@@ -8,6 +8,7 @@ from .config import settings
 from .database import Base, engine
 from .models.story_revision import StoryRevision  # noqa: F401 — ensure table is created
 from .models.page_template import PageTemplate  # noqa: F401
+from .models.org_config import OrgConfig  # noqa: F401
 from .routers import admin, auth, editions, files, layout_ai, sarvam, stories, templates
 
 Base.metadata.create_all(bind=engine)
