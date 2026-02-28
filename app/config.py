@@ -5,13 +5,16 @@ class Settings(BaseSettings):
     # Database — defaults to SQLite for local dev, set to PostgreSQL in production
     DATABASE_URL: str = "sqlite:///./newsflow.db"
 
+    # Environment — "dev" or "prod"
+    ENV: str = "dev"
+
     # Auth
-    SECRET_KEY: str = "newsflow-dev-secret-key-change-in-production"
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_DAYS: int = 90
+    ACCESS_TOKEN_EXPIRE_DAYS: int = 7
 
     # CORS — comma-separated origins, "*" for dev
-    CORS_ORIGINS: str = "*"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:5175"
 
     # Firebase
     FIREBASE_PROJECT_ID: str = "vrittant-f5ef2"
@@ -25,9 +28,6 @@ class Settings(BaseSettings):
     # File storage — "local" or "gcs"
     STORAGE_BACKEND: str = "local"
     GCS_BUCKET: str = ""
-
-    # Legacy — kept for backward compat, not used with Firebase auth
-    HARDCODED_OTP: str = "123456"
 
     @property
     def cors_origin_list(self) -> list[str]:

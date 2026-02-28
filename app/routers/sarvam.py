@@ -14,7 +14,7 @@ try:
 except ImportError:
     from websockets import connect as ws_connect
 from jose import JWTError, jwt
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..deps import get_current_user
@@ -136,10 +136,10 @@ async def websocket_stt_proxy(
 # ---------------------------------------------------------------------------
 
 class ChatRequest(BaseModel):
-    messages: list[dict]
+    messages: list[dict] = Field(..., max_length=20)
     model: str = "sarvam-m"
     temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
+    max_tokens: Optional[int] = Field(None, le=4096)
 
 
 @router.post("/api/llm/chat")
@@ -151,7 +151,7 @@ async def llm_chat(
     never needs the API key."""
 
     payload = {
-        "model": body.model,
+        "model": "sarvam-m",
         "messages": body.messages,
     }
     if body.temperature is not None:

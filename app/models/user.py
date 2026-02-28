@@ -17,6 +17,7 @@ class User(Base):
     user_type = Column(String, nullable=False, default="reporter")  # reporter | reviewer | admin
     area_name = Column(String, nullable=False, default="")
     organization = Column(String, nullable=False, default="")
+    organization_id = Column(String, ForeignKey("organizations.id"), nullable=True, index=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
@@ -25,6 +26,7 @@ class User(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
+    org = relationship("Organization")
     stories = relationship("Story", back_populates="reporter")
     entitlements = relationship("Entitlement", back_populates="user", cascade="all, delete-orphan")
 

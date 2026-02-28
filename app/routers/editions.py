@@ -5,7 +5,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
+from ..deps import require_reviewer, get_current_org_id
 from ..models.edition import Edition, EditionPage, EditionPageStory
+from ..models.user import User
 from ..schemas.edition import (
     EditionCreate,
     EditionDetailResponse,
@@ -74,12 +76,13 @@ def _page_to_response(page: EditionPage) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.post("", response_model=EditionResponse, status_code=status.HTTP_201_CREATED)
-def create_edition(body: EditionCreate, db: Session = Depends(get_db)):
+def create_edition(body: EditionCreate, db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
     title = body.title if body.title else _generate_title(body.publication_date, body.paper_type)
     edition = Edition(
         publication_date=body.publication_date,
         paper_type=body.paper_type,
         title=title,
+        organization_id=org_id,
     )
     db.add(edition)
     db.commit()
@@ -94,15 +97,18 @@ def create_edition(body: EditionCreate, db: Session = Depends(get_db)):
 @router.get("", response_model=EditionListResponse)
 def list_editions(
     db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ):
     # Total count (without joins)
-    total = db.query(func.count(Edition.id)).scalar()
+    total = db.query(func.count(Edition.id)).filter(Edition.organization_id == org_id).scalar()
 
     # Fetch editions with eager-loaded pages and story assignments
     editions = (
         db.query(Edition)
+        .filter(Edition.organization_id == org_id)
         .options(
             joinedload(Edition.pages).joinedload(EditionPage.story_assignments)
         )
@@ -131,13 +137,13 @@ def list_editions(
 # ---------------------------------------------------------------------------
 
 @router.get("/{edition_id}", response_model=EditionDetailResponse)
-def get_edition(edition_id: str, db: Session = Depends(get_db)):
+def get_edition(edition_id: str, db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
     edition = (
         db.query(Edition)
         .options(
             joinedload(Edition.pages).joinedload(EditionPage.story_assignments)
         )
-        .filter(Edition.id == edition_id)
+        .filter(Edition.id == edition_id, Edition.organization_id == org_id)
         .first()
     )
     if not edition:
@@ -160,13 +166,15 @@ def update_edition(
     edition_id: str,
     body: EditionUpdate,
     db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
 ):
     edition = (
         db.query(Edition)
         .options(
             joinedload(Edition.pages).joinedload(EditionPage.story_assignments)
         )
-        .filter(Edition.id == edition_id)
+        .filter(Edition.id == edition_id, Edition.organization_id == org_id)
         .first()
     )
     if not edition:
@@ -213,8 +221,8 @@ def update_edition(
 # ---------------------------------------------------------------------------
 
 @router.delete("/{edition_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_edition(edition_id: str, db: Session = Depends(get_db)):
-    edition = db.query(Edition).filter(Edition.id == edition_id).first()
+def delete_edition(edition_id: str, db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
+    edition = db.query(Edition).filter(Edition.id == edition_id, Edition.organization_id == org_id).first()
     if not edition:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Edition not found"
@@ -236,8 +244,10 @@ def add_page(
     edition_id: str,
     body: EditionPageCreate,
     db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
 ):
-    edition = db.query(Edition).filter(Edition.id == edition_id).first()
+    edition = db.query(Edition).filter(Edition.id == edition_id, Edition.organization_id == org_id).first()
     if not edition:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Edition not found"
@@ -279,7 +289,14 @@ def update_page(
     page_id: str,
     body: EditionPageUpdate,
     db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
 ):
+    # Verify the edition belongs to this organization
+    edition = db.query(Edition).filter(Edition.id == edition_id, Edition.organization_id == org_id).first()
+    if not edition:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Edition not found")
+
     page = (
         db.query(EditionPage)
         .options(joinedload(EditionPage.story_assignments))
@@ -312,7 +329,12 @@ def update_page(
     "/{edition_id}/pages/{page_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def delete_page(edition_id: str, page_id: str, db: Session = Depends(get_db)):
+def delete_page(edition_id: str, page_id: str, db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
+    # Verify the edition belongs to this organization
+    edition = db.query(Edition).filter(Edition.id == edition_id, Edition.organization_id == org_id).first()
+    if not edition:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Edition not found")
+
     page = (
         db.query(EditionPage)
         .filter(
@@ -342,7 +364,14 @@ def assign_stories(
     page_id: str,
     body: StoryAssignmentUpdate,
     db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
 ):
+    # Verify the edition belongs to this organization
+    edition = db.query(Edition).filter(Edition.id == edition_id, Edition.organization_id == org_id).first()
+    if not edition:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Edition not found")
+
     page = (
         db.query(EditionPage)
         .options(joinedload(EditionPage.story_assignments))

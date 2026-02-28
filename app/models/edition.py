@@ -11,6 +11,7 @@ class Edition(Base):
     __tablename__ = "editions"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id = Column(String, ForeignKey("organizations.id"), nullable=False, index=True)
     publication_date = Column(Date, nullable=False)
     paper_type = Column(String, default="daily")  # daily | weekend | evening | special
     title = Column(String, nullable=False, default="")

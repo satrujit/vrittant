@@ -11,6 +11,17 @@ from ..schemas.auth import FirebaseLoginRequest, OTPRequest, OTPVerify, Token, U
 router = APIRouter()
 
 
+@router.post("/check-phone")
+def check_phone(body: OTPRequest, db: Session = Depends(get_db)):
+    """Check if a phone number is registered before sending OTP."""
+    user = db.query(User).filter(User.phone == body.phone).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
+    return {"registered": True}
+
+
 @router.post("/request-otp")
 def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.phone == body.phone).first()
@@ -21,13 +32,12 @@ def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
 
 @router.post("/verify-otp", response_model=Token)
 def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
-    if body.otp != settings.HARDCODED_OTP:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid OTP")
-
+    if settings.ENV == "prod":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    # Dev-only: accept any OTP in development mode
     user = db.query(User).filter(User.phone == body.phone).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
-
     token = create_access_token(user.id, user.user_type)
     return Token(access_token=token)
 
@@ -67,10 +77,15 @@ def firebase_login(body: FirebaseLoginRequest, db: Session = Depends(get_db)):
             detail="Account is deactivated",
         )
 
+    # Eagerly load org and entitlements for the token response
+    db.refresh(user, ["org", "entitlements"])
+
     token = create_access_token(user.id, user.user_type)
     return Token(access_token=token)
 
 
 @router.get("/me", response_model=UserResponse)
-def get_me(user: User = Depends(get_current_user)):
+def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Eagerly load org and entitlements so the response includes org info
+    db.refresh(user, ["org", "entitlements"])
     return user

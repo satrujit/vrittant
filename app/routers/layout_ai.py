@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, get_current_org_id
 from ..models.story import Story
 from ..models.user import User
 from ..services.idml_generator import generate_idml
@@ -235,11 +235,12 @@ async def auto_layout(
     body: AutoLayoutRequest = AutoLayoutRequest(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    org_id: str = Depends(get_current_org_id),
 ):
     """Generate an AI-powered newspaper layout for a story."""
 
     # 1. Fetch story
-    story = db.query(Story).filter(Story.id == story_id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.organization_id == org_id).first()
     if not story:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -369,9 +370,10 @@ async def export_idml(
     req: ExportIdmlRequest,
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
+    org_id: str = Depends(get_current_org_id),
 ):
     """Export a story layout as an InDesign IDML package."""
-    story = db.query(Story).filter(Story.id == story_id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.organization_id == org_id).first()
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
 

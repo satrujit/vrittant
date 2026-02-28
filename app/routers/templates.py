@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, require_reviewer, get_current_org_id
 from ..models.page_template import PageTemplate
 from ..models.user import User
 
@@ -47,7 +47,8 @@ class TemplateResponse(BaseModel):
 def create_template(
     body: TemplateCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
 ):
     tpl = PageTemplate(
         name=body.name,
@@ -56,6 +57,7 @@ def create_template(
         height_mm=body.height_mm,
         zones=body.zones,
         created_by=current_user.id,
+        organization_id=org_id,
     )
     db.add(tpl)
     db.commit()
@@ -64,13 +66,13 @@ def create_template(
 
 
 @router.get("", response_model=list[TemplateResponse])
-def list_templates(db: Session = Depends(get_db)):
-    return db.query(PageTemplate).order_by(PageTemplate.updated_at.desc()).all()
+def list_templates(db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
+    return db.query(PageTemplate).filter(PageTemplate.organization_id == org_id).order_by(PageTemplate.updated_at.desc()).all()
 
 
 @router.get("/{template_id}", response_model=TemplateResponse)
-def get_template(template_id: str, db: Session = Depends(get_db)):
-    tpl = db.query(PageTemplate).filter(PageTemplate.id == template_id).first()
+def get_template(template_id: str, db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
+    tpl = db.query(PageTemplate).filter(PageTemplate.id == template_id, PageTemplate.organization_id == org_id).first()
     if not tpl:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
     return tpl
@@ -81,8 +83,10 @@ def update_template(
     template_id: str,
     body: TemplateUpdate,
     db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
 ):
-    tpl = db.query(PageTemplate).filter(PageTemplate.id == template_id).first()
+    tpl = db.query(PageTemplate).filter(PageTemplate.id == template_id, PageTemplate.organization_id == org_id).first()
     if not tpl:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
 
@@ -104,8 +108,8 @@ def update_template(
 
 
 @router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_template(template_id: str, db: Session = Depends(get_db)):
-    tpl = db.query(PageTemplate).filter(PageTemplate.id == template_id).first()
+def delete_template(template_id: str, db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
+    tpl = db.query(PageTemplate).filter(PageTemplate.id == template_id, PageTemplate.organization_id == org_id).first()
     if not tpl:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
     db.delete(tpl)

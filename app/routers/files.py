@@ -8,11 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, get_current_org_id
 from ..models.user import User
 from ..models.story import Story
 
 router = APIRouter()
+
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.mp3', '.wav', '.pdf'}
 
 # ── Upload directory ──────────────────────────────────────────────────────────
 
@@ -43,11 +46,15 @@ async def upload_file(
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No filename")
 
-    ext = os.path.splitext(file.filename)[1]
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"File type {ext} not allowed")
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
+
     unique_name = f"{uuid.uuid4().hex}{ext}"
     file_path = os.path.join(UPLOAD_DIR, unique_name)
-
-    contents = await file.read()
     file_size = len(contents)
 
     with open(file_path, "wb") as f:
@@ -70,10 +77,11 @@ async def upload_file(
 @router.get("")
 def list_files(
     user: User = Depends(get_current_user),
+    org_id: str = Depends(get_current_org_id),
     db: Session = Depends(get_db),
 ):
     """Return all media files across all stories for this reporter."""
-    stories = db.query(Story).filter(Story.reporter_id == user.id).all()
+    stories = db.query(Story).filter(Story.reporter_id == user.id, Story.organization_id == org_id).all()
 
     files = []
     for story in stories:

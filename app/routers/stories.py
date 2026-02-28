@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, get_current_org_id
 from ..models.user import User
 from ..models.story import Story
 from ..schemas.story import StoryCreate, StoryResponse, StoryUpdate
@@ -15,10 +15,12 @@ router = APIRouter()
 def create_story(
     body: StoryCreate,
     user: User = Depends(get_current_user),
+    org_id: str = Depends(get_current_org_id),
     db: Session = Depends(get_db),
 ):
     story = Story(
         reporter_id=user.id,
+        organization_id=org_id,
         headline=body.headline,
         category=body.category,
         location=body.location,
@@ -33,6 +35,7 @@ def create_story(
 def list_stories(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    org_id: str = Depends(get_current_org_id),
     status_filter: str | None = Query(None, alias="status", description="Filter by status: draft, submitted, approved, published, rejected"),
     category: str | None = Query(None, description="Filter by category"),
     search: str | None = Query(None, description="Search in headline text"),
@@ -41,7 +44,7 @@ def list_stories(
     offset: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(50, ge=1, le=100, description="Pagination limit"),
 ):
-    query = db.query(Story).filter(Story.reporter_id == user.id)
+    query = db.query(Story).filter(Story.reporter_id == user.id, Story.organization_id == org_id)
 
     if status_filter:
         query = query.filter(Story.status == status_filter)
@@ -75,9 +78,10 @@ def list_stories(
 def get_story(
     story_id: str,
     user: User = Depends(get_current_user),
+    org_id: str = Depends(get_current_org_id),
     db: Session = Depends(get_db),
 ):
-    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id, Story.organization_id == org_id).first()
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
     return story
@@ -87,9 +91,10 @@ def update_story(
     story_id: str,
     body: StoryUpdate,
     user: User = Depends(get_current_user),
+    org_id: str = Depends(get_current_org_id),
     db: Session = Depends(get_db),
 ):
-    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id, Story.organization_id == org_id).first()
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
 
@@ -111,9 +116,10 @@ def update_story(
 def submit_story(
     story_id: str,
     user: User = Depends(get_current_user),
+    org_id: str = Depends(get_current_org_id),
     db: Session = Depends(get_db),
 ):
-    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id, Story.organization_id == org_id).first()
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
     if story.status != "draft":
@@ -130,9 +136,10 @@ def submit_story(
 def delete_story(
     story_id: str,
     user: User = Depends(get_current_user),
+    org_id: str = Depends(get_current_org_id),
     db: Session = Depends(get_db),
 ):
-    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id, Story.organization_id == org_id).first()
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
     if story.status != "draft":

@@ -11,6 +11,7 @@ class Story(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     reporter_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    organization_id = Column(String, ForeignKey("organizations.id"), nullable=False, index=True)
     headline = Column(String, default="")
     category = Column(String, nullable=True)
     location = Column(String, nullable=True)

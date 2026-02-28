@@ -11,7 +11,7 @@ from ..models.user import User
 from ..models.story import Story
 from ..models.story_revision import StoryRevision
 from ..schemas.story import ParagraphSchema
-from ..deps import get_current_user
+from ..deps import get_current_user, require_reviewer, get_current_org_id
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -144,6 +144,7 @@ class AdminReporterListResponse(BaseModel):
 def _build_story_query(
     db: Session,
     *,
+    org_id: str,
     reporter_id: Optional[str] = None,
     status_filter: Optional[str] = None,
     exclude_status: Optional[str] = None,
@@ -154,7 +155,7 @@ def _build_story_query(
     date_to: Optional[str] = None,
     recent: bool = False,
 ):
-    query = db.query(Story).options(joinedload(Story.reporter))
+    query = db.query(Story).options(joinedload(Story.reporter)).filter(Story.organization_id == org_id)
 
     if reporter_id:
         query = query.filter(Story.reporter_id == reporter_id)
@@ -194,8 +195,8 @@ def _build_story_query(
 # ---------------------------------------------------------------------------
 
 @router.get("/stats", response_model=StatsResponse)
-def admin_stats(db: Session = Depends(get_db)):
-    pending_review = db.query(Story).filter(Story.status == "submitted").count()
+def admin_stats(db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
+    pending_review = db.query(Story).filter(Story.organization_id == org_id, Story.status == "submitted").count()
 
     today_start = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
@@ -203,15 +204,16 @@ def admin_stats(db: Session = Depends(get_db)):
     reviewed_today = (
         db.query(Story)
         .filter(
+            Story.organization_id == org_id,
             Story.status.in_(["approved", "rejected", "published"]),
             Story.updated_at >= today_start,
         )
         .count()
     )
 
-    total_published = db.query(Story).filter(Story.status == "published").count()
-    total_stories = db.query(Story).count()
-    total_reporters = db.query(User).filter(User.user_type == "reporter").count()
+    total_published = db.query(Story).filter(Story.organization_id == org_id, Story.status == "published").count()
+    total_stories = db.query(Story).filter(Story.organization_id == org_id).count()
+    total_reporters = db.query(User).filter(User.user_type == "reporter", User.organization_id == org_id).count()
 
     return StatsResponse(
         pending_review=pending_review,
@@ -230,6 +232,8 @@ def admin_stats(db: Session = Depends(get_db)):
 @router.get("/stories", response_model=AdminStoryListResponse)
 def admin_list_stories(
     db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
     status_filter: Optional[str] = Query(None, alias="status"),
     exclude_status: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
@@ -244,6 +248,7 @@ def admin_list_stories(
 ):
     query = _build_story_query(
         db,
+        org_id=org_id,
         reporter_id=reporter_id,
         status_filter=status_filter,
         exclude_status=exclude_status,
@@ -290,11 +295,11 @@ def admin_list_stories(
 # ---------------------------------------------------------------------------
 
 @router.get("/stories/{story_id}", response_model=AdminStoryWithRevisionResponse)
-def admin_get_story(story_id: str, db: Session = Depends(get_db)):
+def admin_get_story(story_id: str, db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
     story = (
         db.query(Story)
         .options(joinedload(Story.reporter), joinedload(Story.revision))
-        .filter(Story.id == story_id)
+        .filter(Story.id == story_id, Story.organization_id == org_id)
         .first()
     )
     if not story:
@@ -313,6 +318,8 @@ def admin_update_story_status(
     story_id: str,
     body: StatusUpdate,
     db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
 ):
     allowed = {"approved", "rejected", "published", "in_progress"}
     if body.status not in allowed:
@@ -324,7 +331,7 @@ def admin_update_story_status(
     story = (
         db.query(Story)
         .options(joinedload(Story.reporter))
-        .filter(Story.id == story_id)
+        .filter(Story.id == story_id, Story.organization_id == org_id)
         .first()
     )
     if not story:
@@ -348,12 +355,13 @@ def admin_update_story(
     story_id: str,
     body: AdminStoryUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
 ):
     story = (
         db.query(Story)
         .options(joinedload(Story.reporter), joinedload(Story.revision))
-        .filter(Story.id == story_id)
+        .filter(Story.id == story_id, Story.organization_id == org_id)
         .first()
     )
     if not story:
@@ -402,8 +410,8 @@ def admin_update_story(
 # ---------------------------------------------------------------------------
 
 @router.get("/reporters", response_model=AdminReporterListResponse)
-def admin_list_reporters(db: Session = Depends(get_db)):
-    reporters = db.query(User).filter(User.user_type == "reporter").all()
+def admin_list_reporters(db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
+    reporters = db.query(User).filter(User.user_type == "reporter", User.organization_id == org_id).all()
 
     result = []
     for r in reporters:
@@ -454,6 +462,8 @@ def admin_list_reporters(db: Session = Depends(get_db)):
 def admin_reporter_stories(
     reporter_id: str,
     db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
     status_filter: Optional[str] = Query(None, alias="status"),
     category: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
@@ -463,8 +473,8 @@ def admin_reporter_stories(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
 ):
-    # Verify reporter exists
-    reporter = db.query(User).filter(User.id == reporter_id).first()
+    # Verify reporter exists and belongs to the same organization
+    reporter = db.query(User).filter(User.id == reporter_id, User.organization_id == org_id).first()
     if not reporter:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Reporter not found"
@@ -472,6 +482,7 @@ def admin_reporter_stories(
 
     query = _build_story_query(
         db,
+        org_id=org_id,
         reporter_id=reporter_id,
         status_filter=status_filter,
         category=category,

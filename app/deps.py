@@ -34,6 +34,21 @@ def get_current_user(
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
+    return user
+
+
+def get_current_org_id(user: User = Depends(get_current_user)) -> str:
+    if not user.organization_id:
+        raise HTTPException(status_code=403, detail="User is not assigned to any organization")
+    return user.organization_id
+
+
+def require_reviewer(user: User = Depends(get_current_user)) -> User:
+    """Require authenticated user with reviewer or admin role."""
+    if user.user_type not in ("reviewer", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer access required")
     return user
 
 

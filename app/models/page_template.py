@@ -16,6 +16,7 @@ class PageTemplate(Base):
     width_mm = Column(Float, nullable=False)
     height_mm = Column(Float, nullable=False)
     zones = Column(JSON, nullable=False, default=list)
+    organization_id = Column(String, ForeignKey("organizations.id"), nullable=False, index=True)
     created_by = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
