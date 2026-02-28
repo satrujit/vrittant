@@ -115,7 +115,7 @@ def seed_data():
             prag_reviewer1 = User(
                 name="Editor Reviewer",
                 phone="+918984336534",
-                user_type="reviewer",
+                user_type="org_admin",
                 organization="Pragativadi",
                 organization_id="org-pragativadi",
             )
@@ -155,7 +155,7 @@ def seed_data():
             sambad_reviewer = User(
                 name="Sambad Editor",
                 phone="+919000000103",
-                user_type="reviewer",
+                user_type="org_admin",
                 organization="Sambad",
                 organization_id="org-sambad",
             )
@@ -185,7 +185,7 @@ def seed_data():
             praja_reviewer = User(
                 name="Prajaspoorthi Editor",
                 phone="+919000000203",
-                user_type="reviewer",
+                user_type="org_admin",
                 organization="Prajaspoorthi",
                 organization_id="org-prajaspoorthi",
             )
@@ -195,6 +195,24 @@ def seed_data():
             for key in page_keys:
                 db.add(Entitlement(user_id=praja_reviewer.id, page_key=key))
 
+            db.commit()
+
+        # ── Seed OrgConfig for each org ──
+        from .models.org_config import (
+            OrgConfig, DEFAULT_CATEGORIES, DEFAULT_PUBLICATION_TYPES,
+            DEFAULT_PAGE_SUGGESTIONS, DEFAULT_PRIORITY_LEVELS,
+        )
+        if db.query(OrgConfig).count() == 0:
+            all_orgs = db.query(Organization).all()
+            for org in all_orgs:
+                db.add(OrgConfig(
+                    organization_id=org.id,
+                    categories=DEFAULT_CATEGORIES,
+                    publication_types=DEFAULT_PUBLICATION_TYPES,
+                    page_suggestions=DEFAULT_PAGE_SUGGESTIONS,
+                    priority_levels=DEFAULT_PRIORITY_LEVELS,
+                    default_language="odia",
+                ))
             db.commit()
     finally:
         db.close()

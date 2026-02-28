@@ -14,7 +14,7 @@ class User(Base):
     name = Column(String, nullable=False)
     phone = Column(String, unique=True, nullable=False, index=True)
     email = Column(String, nullable=True)
-    user_type = Column(String, nullable=False, default="reporter")  # reporter | reviewer | admin
+    user_type = Column(String, nullable=False, default="reporter")  # reporter | reviewer | org_admin
     area_name = Column(String, nullable=False, default="")
     organization = Column(String, nullable=False, default="")
     organization_id = Column(String, ForeignKey("organizations.id"), nullable=True, index=True)

@@ -46,9 +46,16 @@ def get_current_org_id(user: User = Depends(get_current_user)) -> str:
 
 
 def require_reviewer(user: User = Depends(get_current_user)) -> User:
-    """Require authenticated user with reviewer or admin role."""
-    if user.user_type not in ("reviewer", "admin"):
+    """Require authenticated user with reviewer or org_admin role."""
+    if user.user_type not in ("reviewer", "org_admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewer access required")
+    return user
+
+
+def require_org_admin(user: User = Depends(get_current_user)) -> User:
+    """Require authenticated user with org_admin role."""
+    if user.user_type != "org_admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Org admin access required")
     return user
 
 

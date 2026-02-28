@@ -54,6 +54,7 @@ def reviewer(db):
         phone="+911111111111",
         user_type="reviewer",
         organization="Test Org",
+        organization_id="org-test",
     )
     db.add(user)
     db.commit()
@@ -70,6 +71,7 @@ def reporter(db):
         user_type="reporter",
         area_name="Test Area",
         organization="Test Org",
+        organization_id="org-test",
     )
     db.add(user)
     db.commit()
@@ -86,6 +88,7 @@ def sample_story(db, reporter):
         category="politics",
         paragraphs=[{"id": "p1", "text": "Original paragraph one."}, {"id": "p2", "text": "Original paragraph two."}],
         status="submitted",
+        organization_id="org-test",
     )
     db.add(story)
     db.commit()
@@ -96,4 +99,27 @@ def sample_story(db, reporter):
 def auth_header(reviewer):
     """JWT Authorization header for the reviewer."""
     token = jwt.encode({"sub": reviewer.id}, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def org_admin(db):
+    """Create and return an org_admin user."""
+    user = User(
+        id="org-admin-1",
+        name="Test Org Admin",
+        phone="+913333333333",
+        user_type="org_admin",
+        organization="Test Org",
+        organization_id="org-test",
+    )
+    db.add(user)
+    db.commit()
+    return user
+
+
+@pytest.fixture()
+def org_admin_header(org_admin):
+    """JWT Authorization header for the org_admin."""
+    token = jwt.encode({"sub": org_admin.id}, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return {"Authorization": f"Bearer {token}"}
