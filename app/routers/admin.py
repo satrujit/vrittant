@@ -46,6 +46,7 @@ class AdminStoryResponse(BaseModel):
     headline: str
     category: Optional[str]
     location: Optional[str]
+    priority: Optional[str] = "normal"
     paragraphs: list[dict]
     status: str
     submitted_at: Optional[datetime]
@@ -62,6 +63,7 @@ class AdminStoryListItem(BaseModel):
     headline: str
     category: Optional[str]
     location: Optional[str]
+    priority: Optional[str] = "normal"
     paragraphs: list[dict]
     status: str
     submitted_at: Optional[datetime]
@@ -96,6 +98,7 @@ class AdminStoryWithRevisionResponse(BaseModel):
     headline: str
     category: Optional[str]
     location: Optional[str]
+    priority: Optional[str] = "normal"
     paragraphs: list[dict]
     status: str
     submitted_at: Optional[datetime]
@@ -124,6 +127,7 @@ class StatusUpdate(BaseModel):
 class AdminStoryUpdate(BaseModel):
     headline: Optional[str] = None
     category: Optional[str] = None
+    priority: Optional[str] = None
     paragraphs: Optional[list[ParagraphSchema]] = None
     layout_config: Optional[dict] = None
 
@@ -165,6 +169,7 @@ def _build_story_query(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     recent: bool = False,
+    exclude_drafts: bool = True,
 ):
     query = db.query(Story).options(joinedload(Story.reporter)).filter(Story.organization_id == org_id)
 
@@ -174,6 +179,9 @@ def _build_story_query(
         query = query.filter(Story.status == status_filter)
     if exclude_status:
         query = query.filter(Story.status != exclude_status)
+    # Auto-exclude drafts from admin views unless explicitly requesting them
+    if exclude_drafts and not status_filter and not exclude_status:
+        query = query.filter(Story.status != "draft")
     if category:
         query = query.filter(Story.category == category)
     if search:
@@ -223,7 +231,7 @@ def admin_stats(db: Session = Depends(get_db), user: User = Depends(require_revi
     )
 
     total_published = db.query(Story).filter(Story.organization_id == org_id, Story.status == "published").count()
-    total_stories = db.query(Story).filter(Story.organization_id == org_id).count()
+    total_stories = db.query(Story).filter(Story.organization_id == org_id, Story.status != "draft").count()
     total_reporters = db.query(User).filter(User.user_type == "reporter", User.organization_id == org_id).count()
 
     return StatsResponse(
@@ -409,6 +417,8 @@ def admin_update_story(
     # Update category on the story if provided (category is story-level, not content)
     if body.category is not None:
         story.category = body.category
+    if body.priority is not None:
+        story.priority = body.priority
 
     story.updated_at = datetime.now(timezone.utc)
     db.commit()

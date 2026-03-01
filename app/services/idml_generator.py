@@ -1,12 +1,18 @@
 """IDML generator: builds a valid InDesign IDML package (.idml) as a ZIP file.
 
-Uses only Python stdlib: zipfile, xml.etree, io, re.
+Supports embedded images, bullet paragraph styles, and subheader zones.
+Uses only Python stdlib + httpx for image downloading.
 """
 
 import io
+import logging
 import re
 import zipfile
 import xml.etree.ElementTree as ET
+
+import httpx
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -19,6 +25,7 @@ _DOM_VERSION = "7.5"
 ZONE_STYLE_MAP = {
     "masthead": "Masthead",
     "headline": "Headline",
+    "subheader": "Subheader",
     "body": "BodyText",
     "pullquote": "Pullquote",
     "highlight": "Highlight",
@@ -65,6 +72,34 @@ def _xml_to_string(root: ET.Element) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Image downloading
+# ---------------------------------------------------------------------------
+
+async def _download_image(url: str) -> bytes | None:
+    """Download image bytes from a URL."""
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp.content
+    except Exception as exc:
+        logger.warning("Failed to download image %s: %s", url, exc)
+        return None
+
+
+def _guess_image_extension(url: str) -> str:
+    """Guess image extension from URL."""
+    lower = url.lower()
+    if ".png" in lower:
+        return "png"
+    if ".gif" in lower:
+        return "gif"
+    if ".webp" in lower:
+        return "webp"
+    return "jpg"
+
+
+# ---------------------------------------------------------------------------
 # Private XML builders
 # ---------------------------------------------------------------------------
 
@@ -90,7 +125,6 @@ def _designmap_xml(story_ids: list[str], page_w_pt: float, page_h_pt: float) -> 
         "StoryList": " ".join(f"u_{sid}" for sid in story_ids),
     })
 
-    # Document preferences
     dp = ET.SubElement(root, "DocumentPreference", {
         "PageWidth": f"{page_w_pt:.4f}",
         "PageHeight": f"{page_h_pt:.4f}",
@@ -102,7 +136,6 @@ def _designmap_xml(story_ids: list[str], page_w_pt: float, page_h_pt: float) -> 
         "DocumentBleedOutsideOrRightOffset": "0",
     })
 
-    # Language (required for text composition)
     ET.SubElement(root, "Language", {
         "Self": "Language/$ID/English",
         "Name": "$ID/English",
@@ -111,7 +144,6 @@ def _designmap_xml(story_ids: list[str], page_w_pt: float, page_h_pt: float) -> 
         "ICULocaleName": "en",
     })
 
-    # Package references
     ET.SubElement(root, "idPkg:Graphic", src="Resources/Graphic.xml")
     ET.SubElement(root, "idPkg:Fonts", src="Resources/Fonts.xml")
     ET.SubElement(root, "idPkg:Styles", src="Resources/Styles.xml")
@@ -130,7 +162,6 @@ def _preferences_xml(page_w_pt: float, page_h_pt: float) -> str:
         "DOMVersion": _DOM_VERSION,
     })
 
-    # Text default
     ET.SubElement(root, "TextDefault", {
         "Self": "u_text_default",
         "AppliedParagraphStyle": "ParagraphStyle/$ID/NormalParagraphStyle",
@@ -157,19 +188,21 @@ def _styles_xml() -> str:
     # --- Root Paragraph Style Group ---
     rpsg = ET.SubElement(root, "RootParagraphStyleGroup", Self="u_root_para_styles")
 
-    # Default [No paragraph style]
     ET.SubElement(rpsg, "ParagraphStyle", {
         "Self": "ParagraphStyle/$ID/NormalParagraphStyle",
         "Name": "$ID/NormalParagraphStyle",
     })
 
     style_defs = {
-        "Masthead":  {"FontStyle": "Bold", "PointSize": "36", "Justification": "CenterAlign"},
-        "Headline":  {"FontStyle": "Bold", "PointSize": "28", "Justification": "LeftAlign"},
-        "BodyText":  {"FontStyle": "Regular", "PointSize": "10", "Justification": "LeftJustified"},
-        "Pullquote": {"FontStyle": "Italic", "PointSize": "14", "Justification": "CenterAlign"},
-        "Highlight": {"FontStyle": "Bold", "PointSize": "12", "Justification": "LeftAlign"},
-        "Sidebar":   {"FontStyle": "Regular", "PointSize": "9", "Justification": "LeftAlign"},
+        "Masthead":   {"FontStyle": "Bold", "PointSize": "36", "Justification": "CenterAlign"},
+        "Headline":   {"FontStyle": "Bold", "PointSize": "28", "Justification": "LeftAlign"},
+        "Subheader":  {"FontStyle": "Regular", "PointSize": "16", "Justification": "LeftAlign"},
+        "BodyText":   {"FontStyle": "Regular", "PointSize": "10", "Justification": "LeftJustified"},
+        "BulletText": {"FontStyle": "Regular", "PointSize": "10", "Justification": "LeftAlign",
+                       "LeftIndent": "14", "FirstLineIndent": "-14"},
+        "Pullquote":  {"FontStyle": "Italic", "PointSize": "14", "Justification": "CenterAlign"},
+        "Highlight":  {"FontStyle": "Bold", "PointSize": "12", "Justification": "LeftAlign"},
+        "Sidebar":    {"FontStyle": "Regular", "PointSize": "9", "Justification": "LeftAlign"},
     }
 
     for name, attrs in style_defs.items():
@@ -205,7 +238,6 @@ def _graphic_xml(swatches: dict[str, str]) -> str:
         "DOMVersion": _DOM_VERSION,
     })
 
-    # Default swatches that InDesign expects
     default_colors = {
         "Black": (0.0, 0.0, 0.0, 100.0),
         "Paper": (0.0, 0.0, 0.0, 0.0),
@@ -221,14 +253,12 @@ def _graphic_xml(swatches: dict[str, str]) -> str:
             "ColorValue": f"{c:.2f} {m:.2f} {y:.2f} {k:.2f}",
         })
 
-    # Default swatch group
     ET.SubElement(root, "Swatch", {
         "Self": "Swatch/None",
         "Name": "None",
         "ColorValue": "0 0 0 0",
     })
 
-    # Custom swatches from zones
     for name, hex_val in swatches.items():
         c, m, y, k = hex_to_cmyk(hex_val)
         ET.SubElement(root, "Color", {
@@ -247,6 +277,7 @@ def _spread_xml(
     page_h_pt: float,
     zones: list[dict],
     story_map: dict[str, str],
+    image_links: dict[str, str],
 ) -> str:
     root = ET.Element("idPkg:Spread", {
         "xmlns:idPkg": _IDPKG_NS,
@@ -263,7 +294,6 @@ def _spread_xml(
         "PageTransitionType": "None",
     })
 
-    # Flattener preference (required by InDesign)
     ET.SubElement(spread, "FlattenerPreference", {
         "Self": "u_spread_1_flattener",
         "LineArtAndTextResolution": "300",
@@ -273,7 +303,6 @@ def _spread_xml(
         "ConvertAllTextToOutlines": "false",
     })
 
-    # Page element with proper attributes
     page = ET.SubElement(spread, "Page", {
         "Self": "u_page_1",
         "AppliedMaster": "n",
@@ -284,7 +313,6 @@ def _spread_xml(
         "TabOrder": "",
     })
 
-    # Margin preference on page
     ET.SubElement(page, "MarginPreference", {
         "ColumnCount": "1",
         "ColumnGutter": "12",
@@ -305,7 +333,30 @@ def _spread_xml(
         cols = zone.get("columns", 1)
         gap_pt = zone.get("column_gap_mm", 4) * MM_TO_PT
 
-        if zone_type in _NON_TEXT_ZONE_TYPES:
+        if zone_type == "image" and zone_id in image_links:
+            # Image zone with embedded image
+            rect_el = ET.SubElement(spread, "Rectangle", {
+                "Self": f"u_rect_{zone_id}",
+                "ItemTransform": f"1 0 0 1 {x_pt:.4f} {y_pt:.4f}",
+                "ContentType": "GraphicType",
+                "StrokeWeight": "0",
+            })
+            _add_path_geometry(rect_el, w_pt, h_pt)
+
+            # Image element with link
+            link_filename = image_links[zone_id]
+            img_el = ET.SubElement(rect_el, "Image", {
+                "Self": f"u_img_{zone_id}",
+                "ItemTransform": f"1 0 0 1 0 0",
+            })
+            ET.SubElement(img_el, "Link", {
+                "Self": f"u_link_{zone_id}",
+                "LinkResourceURI": f"Links/{link_filename}",
+                "StoredState": "Normal",
+                "LinkClassID": "35906",
+            })
+
+        elif zone_type in _NON_TEXT_ZONE_TYPES:
             rect_el = ET.SubElement(spread, "Rectangle", {
                 "Self": f"u_rect_{zone_id}",
                 "ItemTransform": f"1 0 0 1 {x_pt:.4f} {y_pt:.4f}",
@@ -332,10 +383,16 @@ def _spread_xml(
             if bg_color and bg_color != "#FFFFFF":
                 tf_el.set("FillColor", f"Color/{zone_id}_bg")
 
-            ET.SubElement(tf_el, "TextFramePreference", {
+            tf_prefs = {
                 "TextColumnCount": str(max(1, cols)),
                 "TextColumnGutter": f"{gap_pt:.4f}",
-            })
+            }
+            # Add inset spacing for better text fitting
+            if zone_type in ("pullquote", "highlight", "sidebar"):
+                inset_pt = 6 * MM_TO_PT
+                tf_prefs["InsetSpacing"] = f"{inset_pt:.4f} {inset_pt:.4f} {inset_pt:.4f} {inset_pt:.4f}"
+
+            ET.SubElement(tf_el, "TextFramePreference", tf_prefs)
 
             _add_path_geometry(tf_el, w_pt, h_pt)
 
@@ -363,7 +420,7 @@ def _add_path_geometry(parent_el: ET.Element, w_pt: float, h_pt: float) -> None:
         })
 
 
-def _story_xml(story_id: str, style_name: str, content: str, font_size: float) -> str:
+def _story_xml(story_id: str, style_name: str, content: str, font_size: float, paragraphs_meta: list[dict] | None = None) -> str:
     root = ET.Element("idPkg:Story", {
         "xmlns:idPkg": _IDPKG_NS,
         "DOMVersion": _DOM_VERSION,
@@ -381,8 +438,17 @@ def _story_xml(story_id: str, style_name: str, content: str, font_size: float) -
     para_texts = content.split("\n") if content else [""]
 
     for i, para_text in enumerate(para_texts):
+        # Determine if this paragraph is a bullet
+        is_bullet = False
+        if paragraphs_meta and i < len(paragraphs_meta):
+            is_bullet = paragraphs_meta[i].get("is_bullet", False)
+        elif para_text.startswith("•  ") or para_text.startswith("• "):
+            is_bullet = True
+
+        para_style = "ParagraphStyle/BulletText" if is_bullet else f"ParagraphStyle/{style_name}"
+
         ps = ET.SubElement(story_el, "ParagraphStyleRange", {
-            "AppliedParagraphStyle": f"ParagraphStyle/{style_name}",
+            "AppliedParagraphStyle": para_style,
         })
         cs = ET.SubElement(ps, "CharacterStyleRange", {
             "AppliedCharacterStyle": "CharacterStyle/$ID/[No character style]",
@@ -391,7 +457,6 @@ def _story_xml(story_id: str, style_name: str, content: str, font_size: float) -
         content_el = ET.SubElement(cs, "Content")
         content_el.text = para_text
 
-        # Add paragraph break between paragraphs (not after the last one)
         if i < len(para_texts) - 1:
             br_el = ET.SubElement(cs, "Br")
 
@@ -402,34 +467,50 @@ def _story_xml(story_id: str, style_name: str, content: str, font_size: float) -
 # Content extraction helpers
 # ---------------------------------------------------------------------------
 
-def _get_zone_content(zone: dict, story: dict) -> str:
-    """Determine text content for a zone based on its type."""
+def _get_zone_content(zone: dict, story: dict) -> tuple[str, list[dict]]:
+    """Determine text content for a zone based on its type.
+
+    Returns (text, paragraphs_meta) where paragraphs_meta contains
+    per-paragraph metadata like {is_bullet: True}.
+    """
     zone_type = zone.get("type", "")
+    paragraphs_meta = []
 
     if zone_type == "masthead":
-        return zone.get("label", "")
+        return zone.get("label", ""), []
     elif zone_type == "headline":
-        return story.get("headline", "")
+        return story.get("headline", ""), []
+    elif zone_type == "subheader":
+        return zone.get("text", ""), []
     elif zone_type == "body":
         paragraphs = story.get("paragraphs", [])
         texts = []
         for p in paragraphs:
             if isinstance(p, dict):
-                texts.append(p.get("text", ""))
+                p_type = p.get("type", "paragraph")
+                p_text = p.get("text", "")
+                if p_type == "image":
+                    continue
+                is_bullet = p_type == "bullet"
+                if is_bullet and not p_text.startswith("•"):
+                    p_text = f"•  {p_text}"
+                texts.append(p_text)
+                paragraphs_meta.append({"is_bullet": is_bullet})
             elif isinstance(p, str):
                 texts.append(p)
-        return "\n".join(texts)
+                paragraphs_meta.append({"is_bullet": False})
+        return "\n".join(texts), paragraphs_meta
     elif zone_type in ("pullquote", "highlight", "sidebar"):
-        return zone.get("text", "")
+        return zone.get("text", ""), []
     else:
-        return ""
+        return "", []
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def generate_idml(layout_config: dict, story: dict) -> bytes:
+async def generate_idml(layout_config: dict, story: dict) -> bytes:
     """Generate a valid IDML package from layout config and story content.
 
     Parameters
@@ -439,7 +520,8 @@ def generate_idml(layout_config: dict, story: dict) -> bytes:
         width_mm, height_mm, columns, column_gap_mm, font_size_pt,
         font_family, bg_color, text_color, border_color, text}, ...]}
     story : dict
-        {headline, paragraphs: [{text}], category, reporter: {name}, location}
+        {headline, paragraphs: [{text, type, image_url}], category,
+         reporter: {name}, location}
 
     Returns
     -------
@@ -453,37 +535,60 @@ def generate_idml(layout_config: dict, story: dict) -> bytes:
     page_w_pt = width_mm * MM_TO_PT
     page_h_pt = height_mm * MM_TO_PT
 
+    # --- Collect image URLs from story paragraphs ---
+    paragraphs = story.get("paragraphs", [])
+    image_urls = []
+    for p in paragraphs:
+        if isinstance(p, dict) and (p.get("type") == "image" or p.get("image_url")):
+            url = p.get("image_url", "")
+            if url:
+                image_urls.append(url)
+
+    # --- Download images for image zones ---
+    image_links: dict[str, str] = {}  # zone_id -> filename
+    image_data: dict[str, bytes] = {}  # filename -> bytes
+    image_idx = 0
+
+    for zone in zones:
+        if zone.get("type") == "image" and image_idx < len(image_urls):
+            url = image_urls[image_idx]
+            ext = _guess_image_extension(url)
+            filename = f"image_{image_idx + 1}.{ext}"
+            img_bytes = await _download_image(url)
+            if img_bytes:
+                image_links[zone["id"]] = filename
+                image_data[filename] = img_bytes
+            image_idx += 1
+
     # --- Build story_map and collect swatches ---
-    story_map: dict[str, str] = {}   # zone_id -> story_id
-    swatches: dict[str, str] = {}    # swatch_name -> hex_color
-    stories: dict[str, dict] = {}    # story_id -> {style_name, content, font_size}
+    story_map: dict[str, str] = {}
+    swatches: dict[str, str] = {}
+    stories: dict[str, dict] = {}
 
     for zone in zones:
         zone_id = zone.get("id", "")
         zone_type = zone.get("type", "")
 
-        # Collect swatches for all zones
         for color_field, suffix in [("bg_color", "bg"), ("text_color", "text"), ("border_color", "border")]:
             hex_val = zone.get(color_field, "")
             if hex_val and hex_val not in ("#FFFFFF", "#000000"):
                 swatches[f"{zone_id}_{suffix}"] = hex_val
 
-        # Skip non-text zones (no story needed)
         if zone_type in _NON_TEXT_ZONE_TYPES:
             continue
 
-        # Story mapping
         story_id = f"story_{zone_id}"
         story_map[zone_id] = story_id
 
         style_name = ZONE_STYLE_MAP.get(zone_type, "BodyText")
-        content = _get_zone_content(zone, story)
+        content, paragraphs_meta = _get_zone_content(zone, story)
         font_size = zone.get("font_size_pt", 10)
 
         stories[story_id] = {
             "style_name": style_name,
             "content": content,
             "font_size": font_size,
+            "paragraphs_meta": paragraphs_meta,
         }
 
     # --- Assemble ZIP ---
@@ -503,31 +608,29 @@ def generate_idml(layout_config: dict, story: dict) -> bytes:
         story_ids = list(stories.keys())
         zf.writestr("designmap.xml", _designmap_xml(story_ids, page_w_pt, page_h_pt), compress_type=zipfile.ZIP_DEFLATED)
 
-        # 4. Resources/Preferences.xml
+        # 4. Resources
         zf.writestr("Resources/Preferences.xml", _preferences_xml(page_w_pt, page_h_pt), compress_type=zipfile.ZIP_DEFLATED)
-
-        # 5. Resources/Fonts.xml
         zf.writestr("Resources/Fonts.xml", _fonts_xml(), compress_type=zipfile.ZIP_DEFLATED)
-
-        # 6. Resources/Styles.xml
         zf.writestr("Resources/Styles.xml", _styles_xml(), compress_type=zipfile.ZIP_DEFLATED)
-
-        # 7. Resources/Graphic.xml
         zf.writestr("Resources/Graphic.xml", _graphic_xml(swatches), compress_type=zipfile.ZIP_DEFLATED)
 
-        # 8. Spreads/Spread_1.xml
+        # 5. Spreads
         zf.writestr(
             "Spreads/Spread_1.xml",
-            _spread_xml(page_w_pt, page_h_pt, zones, story_map),
+            _spread_xml(page_w_pt, page_h_pt, zones, story_map, image_links),
             compress_type=zipfile.ZIP_DEFLATED,
         )
 
-        # 9. Stories
+        # 6. Stories
         for sid, sdata in stories.items():
             zf.writestr(
                 f"Stories/Story_{sid}.xml",
-                _story_xml(sid, sdata["style_name"], sdata["content"], sdata["font_size"]),
+                _story_xml(sid, sdata["style_name"], sdata["content"], sdata["font_size"], sdata.get("paragraphs_meta")),
                 compress_type=zipfile.ZIP_DEFLATED,
             )
+
+        # 7. Embedded images
+        for filename, img_bytes in image_data.items():
+            zf.writestr(f"Links/{filename}", img_bytes, compress_type=zipfile.ZIP_DEFLATED)
 
     return buf.getvalue()

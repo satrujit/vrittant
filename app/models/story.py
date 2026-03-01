@@ -17,6 +17,7 @@ class Story(Base):
     location = Column(String, nullable=True)
     paragraphs = Column(JSON, default=list)
     status = Column(String, default="draft")  # draft | submitted | approved | published | rejected
+    priority = Column(String, nullable=True, default="normal")  # normal | urgent | breaking
     submitted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
