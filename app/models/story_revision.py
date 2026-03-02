@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from ..database import Base
@@ -19,6 +19,7 @@ class StoryRevision(Base):
     headline = Column(String, nullable=False)
     paragraphs = Column(JSON, nullable=False, default=list)
     layout_config = Column(JSON, nullable=True, default=None)
+    english_translation = Column(Text, nullable=True, default=None)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime,

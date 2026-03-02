@@ -86,6 +86,7 @@ class AdminRevisionInfo(BaseModel):
     headline: str
     paragraphs: list[dict]
     layout_config: Optional[dict] = None
+    english_translation: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -130,6 +131,7 @@ class AdminStoryUpdate(BaseModel):
     priority: Optional[str] = None
     paragraphs: Optional[list[ParagraphSchema]] = None
     layout_config: Optional[dict] = None
+    english_translation: Optional[str] = None
 
 
 class AdminReporterResponse(BaseModel):
@@ -403,6 +405,8 @@ def admin_update_story(
         existing_rev.paragraphs = rev_paragraphs
         if body.layout_config is not None:
             existing_rev.layout_config = body.layout_config
+        if body.english_translation is not None:
+            existing_rev.english_translation = body.english_translation
         existing_rev.updated_at = datetime.now(timezone.utc)
     else:
         new_rev = StoryRevision(
@@ -411,6 +415,7 @@ def admin_update_story(
             headline=rev_headline,
             paragraphs=rev_paragraphs,
             layout_config=body.layout_config,
+            english_translation=body.english_translation,
         )
         db.add(new_rev)
 
