@@ -280,13 +280,23 @@ async def export_idml_endpoint(
     org_id: str = Depends(get_current_org_id),
 ):
     """Export a story as an InDesign IDML package."""
-    story = db.query(Story).filter(Story.id == story_id, Story.organization_id == org_id).first()
+    story = (
+        db.query(Story)
+        .options(joinedload(Story.revision), joinedload(Story.reporter))
+        .filter(Story.id == story_id, Story.organization_id == org_id)
+        .first()
+    )
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
 
+    # Use revision (edited) content if available
+    revision = story.revision
+    headline = (revision.headline if revision and revision.headline else story.headline) or ""
+    paragraphs = (revision.paragraphs if revision and revision.paragraphs else story.paragraphs) or []
+
     story_data = {
-        "headline": story.headline or "",
-        "paragraphs": story.paragraphs or [],
+        "headline": headline,
+        "paragraphs": paragraphs,
         "category": story.category or "",
         "priority": story.priority or "normal",
         "reporter": {"name": story.reporter.name if story.reporter else ""},
