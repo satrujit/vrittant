@@ -36,7 +36,7 @@ jobs:
             --project vrittant-f5ef2 \
             --allow-unauthenticated \
             --add-cloudsql-instances=vrittant-f5ef2:asia-south1:vrittant-db \
-            --set-env-vars="ENV=prod,DATABASE_URL=${{ secrets.DATABASE_URL_PROD }},SECRET_KEY=${{ secrets.SECRET_KEY }},SARVAM_API_KEY=${{ secrets.SARVAM_API_KEY }},FIREBASE_PROJECT_ID=vrittant-f5ef2,STORAGE_BACKEND=gcs,GCS_BUCKET=${{ secrets.GCS_BUCKET }},CORS_ORIGINS=https://vrittant.in${{ ',' }}https://vrittant-f5ef2.web.app,SARVAM_BASE_URL=https://api.sarvam.ai,MSG91_AUTHKEY=${{ secrets.MSG91_AUTHKEY }},MSG91_WIDGET_ID=${{ secrets.MSG91_WIDGET_ID }},MSG91_TOKEN_AUTH=${{ secrets.MSG91_TOKEN_AUTH }}"
+            --set-env-vars="^||^ENV=prod||DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}||SECRET_KEY=${{ secrets.SECRET_KEY }}||SARVAM_API_KEY=${{ secrets.SARVAM_API_KEY }}||FIREBASE_PROJECT_ID=vrittant-f5ef2||STORAGE_BACKEND=gcs||GCS_BUCKET=${{ secrets.GCS_BUCKET }}||CORS_ORIGINS=https://vrittant.in,https://vrittant-f5ef2.web.app||SARVAM_BASE_URL=https://api.sarvam.ai||MSG91_AUTHKEY=${{ secrets.MSG91_AUTHKEY }}||MSG91_WIDGET_ID=${{ secrets.MSG91_WIDGET_ID }}||MSG91_TOKEN_AUTH=${{ secrets.MSG91_TOKEN_AUTH }}"
 
   # ─── Deploy Frontend to Firebase (Production) ───
   deploy-panel:
