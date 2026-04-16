@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   push:
     branches: [main, develop]
+  workflow_call:  # allow reuse from deploy workflows
 
 jobs:
   # ─── Backend Tests ───
