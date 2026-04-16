@@ -35,7 +35,7 @@ jobs:
             --region asia-south1 \
             --project vrittant-f5ef2 \
             --allow-unauthenticated \
-            --set-env-vars="ENV=prod,DATABASE_URL=${{ secrets.DATABASE_URL_PROD }},SECRET_KEY=${{ secrets.SECRET_KEY }},SARVAM_API_KEY=${{ secrets.SARVAM_API_KEY }},FIREBASE_PROJECT_ID=vrittant-f5ef2,STORAGE_BACKEND=gcs,GCS_BUCKET=${{ secrets.GCS_BUCKET }},CORS_ORIGINS=https://vrittant.in${{ ',' }}https://vrittant-f5ef2.web.app,SARVAM_BASE_URL=https://api.sarvam.ai,MSG91_AUTHKEY=${{ secrets.MSG91_AUTHKEY }},MSG91_TEMPLATE_ID=${{ secrets.MSG91_TEMPLATE_ID }},MSG91_WIDGET_ID=${{ secrets.MSG91_WIDGET_ID }},MSG91_TOKEN_AUTH=${{ secrets.MSG91_TOKEN_AUTH }}"
+            --set-env-vars="ENV=prod,DATABASE_URL=${{ secrets.DATABASE_URL_PROD }},SECRET_KEY=${{ secrets.SECRET_KEY }},SARVAM_API_KEY=${{ secrets.SARVAM_API_KEY }},FIREBASE_PROJECT_ID=vrittant-f5ef2,STORAGE_BACKEND=gcs,GCS_BUCKET=${{ secrets.GCS_BUCKET }},CORS_ORIGINS=https://vrittant.in${{ ',' }}https://vrittant-f5ef2.web.app,SARVAM_BASE_URL=https://api.sarvam.ai,MSG91_AUTHKEY=${{ secrets.MSG91_AUTHKEY }}"
 
   # ─── Deploy Frontend to Firebase (Production) ───
   deploy-panel:
@@ -44,6 +44,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - uses: actions/setup-node@v4
         with:
@@ -59,4 +64,4 @@ jobs:
 
       - name: Deploy to Firebase (Production)
         working-directory: reviewer-panel
-        run: npx firebase deploy --only hosting --token "${{ secrets.FIREBASE_TOKEN }}"
+        run: npx firebase deploy --only hosting:production --project vrittant-f5ef2

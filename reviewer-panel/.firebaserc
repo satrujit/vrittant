@@ -5,9 +5,14 @@
   "targets": {
     "vrittant-f5ef2": {
       "hosting": {
-        "production": ["vrittant-f5ef2"],
-        "uat": ["vrittant-uat"]
+        "production": [
+          "vrittant-f5ef2"
+        ],
+        "uat": [
+          "vrittant-uat"
+        ]
       }
     }
-  }
+  },
+  "etags": {}
 }
