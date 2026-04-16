@@ -1,0 +1,13 @@
+{
+  "projects": {
+    "default": "vrittant-f5ef2"
+  },
+  "targets": {
+    "vrittant-f5ef2": {
+      "hosting": {
+        "production": ["vrittant-f5ef2"],
+        "uat": ["vrittant-uat"]
+      }
+    }
+  }
+}

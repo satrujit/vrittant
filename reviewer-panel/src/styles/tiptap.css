@@ -1,0 +1,120 @@
+/* ============================================================
+   TipTap Editor Global Styles
+   These styles target the .tiptap content area rendered by ProseMirror.
+   They CANNOT be Tailwind utilities because TipTap generates its own DOM.
+   ============================================================ */
+
+/* ── Base editor content ── */
+.tiptap {
+  padding: 20px;
+  font-family: 'Plus Jakarta Sans', 'Noto Sans Oriya', 'Noto Sans Odia', 'AkrutiOri06', 'AkrutiOfficeOri', 'AkrutiOri99', 'AkrutiOriIndesign', 'Anu Fonts', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.9375rem;
+  color: hsl(var(--foreground));
+  line-height: 1.7;
+  outline: none;
+  min-height: 200px;
+}
+
+.tiptap p {
+  margin: 0 0 0.75em;
+}
+
+.tiptap h1 {
+  font-family: 'Plus Jakarta Sans', 'Noto Sans Oriya', 'Noto Sans Odia', 'AkrutiOri06', 'AkrutiOfficeOri', 'AkrutiOri99', 'AkrutiOriIndesign', 'Anu Fonts', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+  margin: 0 0 0.5em;
+}
+
+.tiptap h2 {
+  font-family: 'Plus Jakarta Sans', 'Noto Sans Oriya', 'Noto Sans Odia', 'AkrutiOri06', 'AkrutiOfficeOri', 'AkrutiOri99', 'AkrutiOriIndesign', 'Anu Fonts', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  margin: 0 0 0.5em;
+}
+
+.tiptap a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+}
+
+.tiptap ul,
+.tiptap ol {
+  padding-left: 1.5em;
+  margin: 0 0 0.75em;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  height: 0;
+}
+
+/* ── Table styles ── */
+.tiptap table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.75em 0;
+}
+
+.tiptap th,
+.tiptap td {
+  border: 1px solid hsl(var(--border));
+  padding: 8px;
+  text-align: left;
+  min-width: 80px;
+}
+
+.tiptap th {
+  background: hsl(var(--muted));
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+/* ── Editor muted during dictation ── */
+.editor-muted .tiptap {
+  opacity: 0.4;
+  transition: opacity 150ms ease;
+}
+
+/* ── Sparkle shimmer effect on selected text during AI processing ── */
+.sparkle-processing .tiptap .ProseMirror-selectednode,
+.sparkle-processing .tiptap ::selection {
+  background: linear-gradient(90deg,
+    rgba(250, 108, 56, 0.08) 0%,
+    rgba(250, 108, 56, 0.25) 50%,
+    rgba(250, 108, 56, 0.08) 100%
+  );
+  background-size: 200% 100%;
+  animation: tiptap-shimmer 1.5s ease-in-out infinite;
+}
+
+.sparkle-processing .tiptap {
+  position: relative;
+}
+
+.sparkle-processing .tiptap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(250, 108, 56, 0.06) 25%,
+    rgba(250, 108, 56, 0.12) 50%,
+    rgba(250, 108, 56, 0.06) 75%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: tiptap-shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+@keyframes tiptap-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

@@ -1,9 +1,36 @@
-venv/
+# Python
 __pycache__/
-*.pyc
-*.db
-.env
-.DS_Store
-uploads/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
 .pytest_cache/
+*.db
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads & artifacts
+api/uploads/
 *.idml
+
+# Coverage
+htmlcov/
+.coverage
+coverage/
