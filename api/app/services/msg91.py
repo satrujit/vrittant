@@ -27,6 +27,7 @@ async def _widget_request(method: str, url: str, **kwargs) -> dict:
     """Make an authenticated request to MSG91 Widget API."""
     headers = {
         "authkey": settings.MSG91_AUTHKEY,
+        "token": settings.MSG91_TOKEN_AUTH,
         "Content-Type": "application/json",
     }
 
@@ -67,6 +68,7 @@ async def send_otp(phone: str) -> dict:
 
     data = await _widget_request("post", url, json={
         "widgetId": settings.MSG91_WIDGET_ID,
+        "tokenAuth": settings.MSG91_TOKEN_AUTH,
         "identifier": mobile,
     })
 
