@@ -11,6 +11,7 @@ def test_list_stories_has_revision_flag(client, auth_header, sample_story, db):
         headline="Second Story",
         paragraphs=[],
         status="submitted",
+        organization_id="org-test",
     )
     db.add(story2)
     db.commit()

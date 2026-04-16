@@ -19,6 +19,7 @@ def test_page_template_create(db):
             }
         ],
         created_by="reviewer-1",
+        organization_id="org-test",
     )
     db.add(tpl)
     db.commit()
@@ -38,6 +39,7 @@ def test_page_template_defaults(db):
         width_mm=280.0,
         height_mm=430.0,
         zones=[],
+        organization_id="org-test",
     )
     db.add(tpl)
     db.commit()

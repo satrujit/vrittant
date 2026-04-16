@@ -1,133 +1,26 @@
 """Tests for POST /admin/stories/{story_id}/auto-layout."""
 
-import json
 from unittest.mock import AsyncMock, patch
 
 
-VALID_3_ZONE_RESPONSE = json.dumps({
-    "paper_size": "tabloid",
-    "width_mm": 280,
-    "height_mm": 430,
-    "zones": [
-        {
-            "id": "z-masthead",
-            "type": "masthead",
-            "label": "Masthead",
-            "x_mm": 0,
-            "y_mm": 0,
-            "width_mm": 280,
-            "height_mm": 30,
-            "columns": 1,
-            "column_gap_mm": 0,
-            "font_size_pt": 24,
-            "font_family": "serif",
-            "bg_color": "#1E40AF",
-            "text_color": "#FFFFFF",
-            "border_color": "#1E40AF",
-            "text": "NewsFlow Daily",
-        },
-        {
-            "id": "z-headline",
-            "type": "headline",
-            "label": "Main Headline",
-            "x_mm": 10,
-            "y_mm": 40,
-            "width_mm": 260,
-            "height_mm": 40,
-            "columns": 1,
-            "column_gap_mm": 0,
-            "font_size_pt": 28,
-            "font_family": "serif",
-            "bg_color": "#DBEAFE",
-            "text_color": "#1E40AF",
-            "border_color": "#1E40AF",
-            "text": "",
-        },
-        {
-            "id": "z-body",
-            "type": "body",
-            "label": "Body Text",
-            "x_mm": 10,
-            "y_mm": 90,
-            "width_mm": 260,
-            "height_mm": 330,
-            "columns": 2,
-            "column_gap_mm": 4,
-            "font_size_pt": 10,
-            "font_family": "serif",
-            "bg_color": "#FFFFFF",
-            "text_color": "#000000",
-            "border_color": "#CCCCCC",
-            "text": "",
-        },
-    ],
-})
+VALID_HTML_RESPONSE = """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Test</title>
+<style>body { font-family: serif; max-width: 900px; margin: 0 auto; padding: 40px; }
+h1 { font-size: 48px; line-height: 1.1; } p { font-size: 14px; line-height: 1.6; }</style>
+</head><body><h1>Original Headline</h1><p>Original paragraph one.</p></body></html>"""
 
 
-OVERSIZED_ZONE_RESPONSE = json.dumps({
-    "paper_size": "broadsheet",
-    "width_mm": 380,
-    "height_mm": 560,
-    "zones": [
-        {
-            "id": "z-masthead",
-            "type": "masthead",
-            "label": "Masthead",
-            "x_mm": 0,
-            "y_mm": 0,
-            "width_mm": 999,
-            "height_mm": 30,
-            "columns": 1,
-            "column_gap_mm": 0,
-            "font_size_pt": 24,
-            "font_family": "serif",
-            "bg_color": "#1E40AF",
-            "text_color": "#FFFFFF",
-            "border_color": "#1E40AF",
-            "text": "",
-        },
-        {
-            "id": "z-headline",
-            "type": "headline",
-            "label": "Main Headline",
-            "x_mm": 10,
-            "y_mm": 40,
-            "width_mm": 999,
-            "height_mm": 999,
-            "columns": 1,
-            "column_gap_mm": 0,
-            "font_size_pt": 28,
-            "font_family": "serif",
-            "bg_color": "#DBEAFE",
-            "text_color": "#1E40AF",
-            "border_color": "#1E40AF",
-            "text": "",
-        },
-        {
-            "id": "z-body",
-            "type": "body",
-            "label": "Body Text",
-            "x_mm": 500,
-            "y_mm": 600,
-            "width_mm": 200,
-            "height_mm": 200,
-            "columns": 3,
-            "column_gap_mm": 4,
-            "font_size_pt": 10,
-            "font_family": "serif",
-            "bg_color": "#FFFFFF",
-            "text_color": "#000000",
-            "border_color": "#CCCCCC",
-            "text": "",
-        },
-    ],
-})
+MARKDOWN_WRAPPED_HTML = """```html
+<!DOCTYPE html>
+<html><head><title>Test</title></head>
+<body><h1>Wrapped</h1></body></html>
+```"""
 
 
 @patch("app.routers.layout_ai.call_openai", new_callable=AsyncMock)
-def test_auto_layout_returns_zones_and_dimensions(mock_openai, client, auth_header, sample_story):
-    """Valid AI response should return page dimensions and zones."""
-    mock_openai.return_value = VALID_3_ZONE_RESPONSE
+def test_auto_layout_returns_html(mock_openai, client, auth_header, sample_story):
+    """Valid AI response should return HTML content."""
+    mock_openai.return_value = VALID_HTML_RESPONSE
 
     resp = client.post(
         f"/admin/stories/{sample_story.id}/auto-layout",
@@ -137,25 +30,17 @@ def test_auto_layout_returns_zones_and_dimensions(mock_openai, client, auth_head
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["paper_size"] == "tabloid"
-    assert data["width_mm"] == 280
-    assert data["height_mm"] == 430
-    assert "zones" in data
-    zones = data["zones"]
-    assert len(zones) == 3
-
-    zone_types = {z["type"] for z in zones}
-    assert "masthead" in zone_types
-    assert "headline" in zone_types
-    assert "body" in zone_types
+    assert "html" in data
+    assert "<!DOCTYPE html>" in data["html"]
+    assert "<h1>" in data["html"]
 
     mock_openai.assert_awaited_once()
 
 
 @patch("app.routers.layout_ai.call_openai", new_callable=AsyncMock)
-def test_auto_layout_validates_bounds(mock_openai, client, auth_header, sample_story):
-    """Oversized zones should be clamped to the AI-chosen page dimensions."""
-    mock_openai.return_value = OVERSIZED_ZONE_RESPONSE
+def test_auto_layout_strips_markdown_fencing(mock_openai, client, auth_header, sample_story):
+    """Markdown-fenced HTML should have fencing stripped."""
+    mock_openai.return_value = MARKDOWN_WRAPPED_HTML
 
     resp = client.post(
         f"/admin/stories/{sample_story.id}/auto-layout",
@@ -165,17 +50,9 @@ def test_auto_layout_validates_bounds(mock_openai, client, auth_header, sample_s
 
     assert resp.status_code == 200
     data = resp.json()
-    page_w = data["width_mm"]
-    page_h = data["height_mm"]
-    zones = data["zones"]
-
-    for zone in zones:
-        assert zone["x_mm"] >= 0
-        assert zone["y_mm"] >= 0
-        assert zone["x_mm"] + zone["width_mm"] <= page_w
-        assert zone["y_mm"] + zone["height_mm"] <= page_h
-        assert zone["width_mm"] > 0
-        assert zone["height_mm"] > 0
+    assert "html" in data
+    assert "```" not in data["html"]
+    assert "<html>" in data["html"]
 
 
 @patch("app.routers.layout_ai.call_openai", new_callable=AsyncMock)
