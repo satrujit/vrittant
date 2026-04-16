@@ -39,7 +39,7 @@ async def _widget_request(method: str, url: str, **kwargs) -> dict:
     except Exception:
         data = {"raw": resp.text}
 
-    logger.info("MSG91 %s %s status=%s body=%s", method.upper(), url, resp.status_code, data)
+    print(f"MSG91 {method.upper()} {url} status={resp.status_code} body={data}")
     return data
 
 
@@ -91,6 +91,7 @@ async def verify_otp(phone: str, otp: str, req_id: str = "") -> dict:
 
     data = await _widget_request("post", url, json={
         "widgetId": settings.MSG91_WIDGET_ID,
+        "tokenAuth": settings.MSG91_TOKEN_AUTH,
         "identifier": mobile,
         "otp": otp,
         "reqId": req_id,
@@ -109,6 +110,7 @@ async def resend_otp(phone: str, req_id: str = "") -> dict:
 
     data = await _widget_request("post", url, json={
         "widgetId": settings.MSG91_WIDGET_ID,
+        "tokenAuth": settings.MSG91_TOKEN_AUTH,
         "identifier": mobile,
         "reqId": req_id,
     })
