@@ -39,7 +39,10 @@ engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, **pool_
 def _handle_db_error(context):
     if context.connection is not None and not context.is_disconnect:
         logger.warning("DB error (invalidating connection): %s", context.original_exception)
-        context.invalidate_connection_on_exception = True
+        try:
+            context.connection.invalidate()
+        except Exception:
+            pass
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
