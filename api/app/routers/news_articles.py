@@ -313,39 +313,45 @@ async def search_news_articles_by_title(
             logger.warning("search-by-title: translate failed: %s", exc)
 
     # Also add individual significant words from translated text for partial matching
+    stop_words = {'with', 'from', 'that', 'this', 'have', 'been', 'were', 'they', 'their', 'about', 'after', 'into', 'also', 'than', 'over', 'will', 'would', 'could', 'should', 'being', 'does', 'more', 'most', 'some', 'such', 'what', 'when', 'where', 'which', 'while'}
     for term in list(search_terms):
         words = term.split()
         for w in words:
-            if len(w) >= 4 and w.lower() not in ('with', 'from', 'that', 'this', 'have', 'been', 'were', 'they', 'their', 'about', 'after', 'into', 'also', 'than', 'over') and w not in search_terms:
+            if len(w) >= 4 and w.lower() not in stop_words and w not in search_terms:
                 search_terms.append(w)
 
-    logger.info("search-by-title: searching with %d terms: %s", len(search_terms), search_terms[:5])
+    # Cap terms to avoid query explosion
+    search_terms = search_terms[:6]
+    logger.info("search-by-title: searching with %d terms: %s", len(search_terms), search_terms)
 
-    # Search with all terms using word_similarity (better for substring matching), deduplicate by id
-    seen = {}
-    for term in search_terms:
-        rows = db.execute(
-            text("""
-                SELECT id, title, description, url, source, author, image_url,
-                       category, language, country, published_at, fetched_at,
-                       GREATEST(
-                           similarity(title, :q),
-                           word_similarity(:q, title)
-                       ) AS sim
-                FROM news_articles
-                WHERE similarity(title, :q) > :threshold
-                   OR word_similarity(:q, title) > :threshold
-                ORDER BY sim DESC
-                LIMIT :lim
-            """),
-            {"q": term, "threshold": threshold, "lim": limit},
-        ).fetchall()
-        for r in rows:
-            if r.id not in seen or r.sim > seen[r.id].sim:
-                seen[r.id] = r
+    # Build a single query with OR conditions for all terms (1 query instead of N)
+    sim_parts = []
+    where_parts = []
+    params = {"threshold": threshold, "lim": limit}
+    for i, term in enumerate(search_terms):
+        key = f"q{i}"
+        params[key] = term
+        sim_parts.append(f"similarity(title, :{key})")
+        sim_parts.append(f"word_similarity(:{key}, title)")
+        where_parts.append(f"(similarity(title, :{key}) > :threshold OR word_similarity(:{key}, title) > :threshold)")
 
-    # Sort by best similarity and limit
-    results = sorted(seen.values(), key=lambda r: r.sim, reverse=True)[:limit]
+    sim_expr = f"GREATEST({', '.join(sim_parts)})"
+    where_expr = " OR ".join(where_parts)
+
+    rows = db.execute(
+        text(f"""
+            SELECT id, title, description, url, source, author, image_url,
+                   category, language, country, published_at, fetched_at,
+                   {sim_expr} AS sim
+            FROM news_articles
+            WHERE {where_expr}
+            ORDER BY sim DESC
+            LIMIT :lim
+        """),
+        params,
+    ).fetchall()
+
+    results = list(rows)
 
     return [
         NewsArticleResponse(
