@@ -1,12 +1,8 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { checkPhone, msg91Login } from '../services/api';
+import { checkPhone, requestOtp, verifyOtp, resendOtp } from '../services/api';
 import styles from './LoginPage.module.css';
-
-/* ── MSG91 Widget Config ── */
-const MSG91_WIDGET_ID = '3663626f7734303437353732';
-const MSG91_TOKEN_AUTH = '497627T4WoMl0rR69a5ac71P1';
 
 /* ── SVG Components ── */
 
@@ -133,101 +129,16 @@ function maskPhone(phone) {
   return `${prefix} ${'*'.repeat(Math.max(0, phone.length - 6))} **${last2}`;
 }
 
-/* ── MSG91 Widget Helpers ── */
-
-/** Load MSG91 OTP widget script and initialize with exposeMethods */
-function useMsg91Widget() {
-  const msg91ReadyRef = useRef(false);
-  const resolveRef = useRef(null);
-
-  useEffect(() => {
-    // Already loaded
-    if (window.sendOtp) {
-      msg91ReadyRef.current = true;
-      return;
-    }
-
-    // Set up config BEFORE loading the script
-    window.msg91_otp_config = {
-      widgetId: MSG91_WIDGET_ID,
-      tokenAuth: MSG91_TOKEN_AUTH,
-      exposeMethods: true,
-      success: () => {},
-      failure: () => {},
-    };
-
-    const script = document.createElement('script');
-    script.src = 'https://verify.msg91.com/otp-provider.js';
-    script.onload = () => {
-      if (typeof window.initSendOTP === 'function') {
-        window.initSendOTP(window.msg91_otp_config);
-      }
-      // Poll until sendOtp is exposed (widget may take a moment)
-      const poll = setInterval(() => {
-        if (window.sendOtp) {
-          clearInterval(poll);
-          msg91ReadyRef.current = true;
-          if (resolveRef.current) resolveRef.current();
-        }
-      }, 100);
-      // Stop polling after 10s
-      setTimeout(() => clearInterval(poll), 10000);
-    };
-    document.body.appendChild(script);
-  }, []);
-
-  /** Wait for widget to be ready */
-  const waitReady = useCallback(() => {
-    if (msg91ReadyRef.current && window.sendOtp) return Promise.resolve();
-    return new Promise((resolve) => { resolveRef.current = resolve; });
-  }, []);
-
-  return { waitReady };
-}
-
-/** Promisified sendOtp */
-function widgetSendOtp(identifier) {
-  return new Promise((resolve, reject) => {
-    window.sendOtp(
-      identifier,
-      (data) => resolve(data),
-      (error) => reject(error),
-    );
-  });
-}
-
-/** Promisified verifyOtp */
-function widgetVerifyOtp(otp) {
-  return new Promise((resolve, reject) => {
-    window.verifyOtp(
-      otp,
-      (data) => resolve(data),
-      (error) => reject(error),
-    );
-  });
-}
-
-/** Promisified retryOtp */
-function widgetRetryOtp() {
-  return new Promise((resolve, reject) => {
-    window.retryOtp(
-      null,
-      (data) => resolve(data),
-      (error) => reject(error),
-    );
-  });
-}
-
 /* ── Main LoginPage ── */
 
 function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const { waitReady } = useMsg91Widget();
 
   const [step, setStep] = useState('phone'); // 'phone' | 'otp'
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
+  const [reqId, setReqId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -239,10 +150,9 @@ function LoginPage() {
       // Check if phone is registered first
       await checkPhone(phone);
 
-      // Wait for MSG91 widget to be ready, then send OTP
-      await waitReady();
-      const identifier = phone.replace('+', ''); // MSG91 wants 91XXXX without +
-      await widgetSendOtp(identifier);
+      // Send OTP via backend (goes through Cloud Run's whitelisted IP)
+      const data = await requestOtp(phone);
+      setReqId(data.req_id || '');
       setStep('otp');
     } catch (err) {
       console.error('Send OTP error:', err);
@@ -264,12 +174,8 @@ function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      // Verify OTP via MSG91 widget → returns access token
-      const result = await widgetVerifyOtp(otp);
-      const accessToken = result?.message || result?.token || result;
-
-      // Exchange MSG91 access token for our backend JWT
-      const data = await msg91Login(phone, accessToken);
+      // Verify OTP via backend → returns JWT directly
+      const data = await verifyOtp(phone, otp, reqId);
       await login(data.access_token);
       navigate('/');
     } catch (err) {
@@ -290,6 +196,7 @@ function LoginPage() {
   function handleBack() {
     setStep('phone');
     setOtp('');
+    setReqId('');
     setError('');
   }
 
@@ -297,7 +204,8 @@ function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await widgetRetryOtp();
+      const data = await resendOtp(phone, reqId);
+      if (data.req_id) setReqId(data.req_id);
     } catch (err) {
       console.error('Resend error:', err);
       setError('Failed to resend OTP. Please try again.');
