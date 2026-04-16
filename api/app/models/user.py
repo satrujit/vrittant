@@ -26,6 +26,7 @@ class User(Base):
         default=now_ist,
         onupdate=now_ist,
     )
+    deleted_at = Column(DateTime, nullable=True, default=None)
 
     org = relationship("Organization")
     stories = relationship("Story", back_populates="reporter")

@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File as FastAPIFile, status
 from pydantic import BaseModel
-from sqlalchemy import cast, func, or_, String
+from sqlalchemy import case, cast, func, or_, String
 from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
@@ -75,6 +75,7 @@ class AdminStoryListItem(BaseModel):
     updated_at: datetime
     reporter: AdminReporterInfo
     has_revision: bool = False
+    is_deleted: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -163,6 +164,7 @@ class AdminReporterResponse(BaseModel):
     published_count: int
     last_active: Optional[datetime]
     entitlements: list[str] = []
+    is_deleted: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -215,7 +217,7 @@ def _build_story_query(
     exclude_drafts: bool = True,
     available_for_edition: Optional[str] = None,
 ):
-    query = db.query(Story).options(joinedload(Story.reporter)).filter(Story.organization_id == org_id)
+    query = db.query(Story).options(joinedload(Story.reporter)).filter(Story.organization_id == org_id, Story.deleted_at.is_(None))
 
     if reporter_id:
         query = query.filter(Story.reporter_id == reporter_id)
@@ -276,7 +278,7 @@ def _build_story_query(
 
 @router.get("/stats", response_model=StatsResponse)
 def admin_stats(db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
-    pending_review = db.query(Story).filter(Story.organization_id == org_id, Story.status == "submitted").count()
+    pending_review = db.query(Story).filter(Story.organization_id == org_id, Story.status == "submitted", Story.deleted_at.is_(None)).count()
 
     today_start = now_ist().replace(
         hour=0, minute=0, second=0, microsecond=0
@@ -287,12 +289,13 @@ def admin_stats(db: Session = Depends(get_db), user: User = Depends(require_revi
             Story.organization_id == org_id,
             Story.status.in_(["approved", "rejected", "published"]),
             Story.updated_at >= today_start,
+            Story.deleted_at.is_(None),
         )
         .count()
     )
 
-    total_published = db.query(Story).filter(Story.organization_id == org_id, Story.status == "published").count()
-    total_stories = db.query(Story).filter(Story.organization_id == org_id, Story.status != "draft").count()
+    total_published = db.query(Story).filter(Story.organization_id == org_id, Story.status == "published", Story.deleted_at.is_(None)).count()
+    total_stories = db.query(Story).filter(Story.organization_id == org_id, Story.status != "draft", Story.deleted_at.is_(None)).count()
     total_reporters = db.query(User).filter(User.user_type == "reporter", User.organization_id == org_id).count()
 
     return StatsResponse(
@@ -381,6 +384,7 @@ def activity_heatmap(
             Story.status.in_(submitted_statuses),
             Story.submitted_at >= start_date,
             Story.submitted_at.isnot(None),
+            Story.deleted_at.is_(None),
         )
     )
     if reporter_id:
@@ -404,6 +408,7 @@ def activity_heatmap(
                 Story.status.in_(submitted_statuses),
                 Story.submitted_at >= start_date,
                 Story.submitted_at.isnot(None),
+                Story.deleted_at.is_(None),
             )
             .scalar()
         ) or 0
@@ -524,6 +529,8 @@ def leaderboard(
     else:
         period_start = None  # all time
 
+    month_start = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
+
     # ---- active reporters in org ----
     reporters = (
         db.query(User)
@@ -534,56 +541,98 @@ def leaderboard(
     if not reporter_map:
         return LeaderboardResponse(period=period, entries=[])
 
-    # ---- submission & approved counts (period-filtered) ----
-    sub_q = (
+    reporter_ids = list(reporter_map.keys())
+
+    # ---- Q1: period-filtered submissions + approved (conditional aggregation) ----
+    period_q = (
         db.query(
             Story.reporter_id,
             func.count(Story.id).label("submissions"),
+            func.count(case((Story.status.in_(APPROVED_STATUSES), Story.id))).label("approved"),
         )
         .filter(
             Story.organization_id == org_id,
             Story.status.in_(SUBMITTED_STATUSES),
-            Story.reporter_id.in_(list(reporter_map.keys())),
+            Story.reporter_id.in_(reporter_ids),
+            Story.deleted_at.is_(None),
         )
     )
     if period_start is not None:
-        sub_q = sub_q.filter(Story.submitted_at >= period_start)
-    sub_rows = sub_q.group_by(Story.reporter_id).all()
-    sub_map = {row.reporter_id: row.submissions for row in sub_rows}
+        period_q = period_q.filter(Story.submitted_at >= period_start)
+    period_rows = period_q.group_by(Story.reporter_id).all()
+    sub_map = {row.reporter_id: row.submissions for row in period_rows}
+    apr_map = {row.reporter_id: row.approved for row in period_rows}
 
-    apr_q = (
-        db.query(
-            Story.reporter_id,
-            func.count(Story.id).label("approved"),
+    # ---- Q2: all-time approved count (century badge) + monthly counts (top reporter) ----
+    # When period == "all", the period query already gives all-time counts,
+    # so we only need monthly data for top_reporter.
+    # When period == "month", period query already gives monthly counts,
+    # so we only need all-time approved for century badge.
+    # When period == "week", we need both all-time approved AND monthly counts.
+    if period == "all":
+        # Period query already has all-time approved; just need monthly for top_reporter
+        alltime_approved = dict(apr_map)
+        month_rows = (
+            db.query(
+                Story.reporter_id,
+                func.count(Story.id).label("submissions"),
+                func.count(case((Story.status.in_(APPROVED_STATUSES), Story.id))).label("approved"),
+            )
+            .filter(
+                Story.organization_id == org_id,
+                Story.status.in_(SUBMITTED_STATUSES),
+                Story.submitted_at >= month_start,
+                Story.deleted_at.is_(None),
+            )
+            .group_by(Story.reporter_id)
+            .all()
         )
-        .filter(
-            Story.organization_id == org_id,
-            Story.status.in_(APPROVED_STATUSES),
-            Story.reporter_id.in_(list(reporter_map.keys())),
+        month_sub_map = {r.reporter_id: r.submissions for r in month_rows}
+        month_apr_map = {r.reporter_id: r.approved for r in month_rows}
+    elif period == "month":
+        # Period query already has monthly counts; just need all-time approved for century
+        month_sub_map = dict(sub_map)
+        month_apr_map = dict(apr_map)
+        century_rows = (
+            db.query(
+                Story.reporter_id,
+                func.count(Story.id).label("approved"),
+            )
+            .filter(
+                Story.organization_id == org_id,
+                Story.status.in_(APPROVED_STATUSES),
+                Story.reporter_id.in_(reporter_ids),
+                Story.deleted_at.is_(None),
+            )
+            .group_by(Story.reporter_id)
+            .all()
         )
-    )
-    if period_start is not None:
-        apr_q = apr_q.filter(Story.submitted_at >= period_start)
-    apr_rows = apr_q.group_by(Story.reporter_id).all()
-    apr_map = {row.reporter_id: row.approved for row in apr_rows}
+        alltime_approved = {row.reporter_id: row.approved for row in century_rows}
+    else:
+        # period == "week": need all-time approved AND monthly counts in one query
+        alltime_and_month_rows = (
+            db.query(
+                Story.reporter_id,
+                func.count(case((Story.status.in_(APPROVED_STATUSES), Story.id))).label("alltime_approved"),
+                func.count(case((Story.submitted_at >= month_start, Story.id))).label("month_submissions"),
+                func.count(case(
+                    (Story.status.in_(APPROVED_STATUSES) & (Story.submitted_at >= month_start), Story.id),
+                )).label("month_approved"),
+            )
+            .filter(
+                Story.organization_id == org_id,
+                Story.status.in_(SUBMITTED_STATUSES),
+                Story.reporter_id.in_(reporter_ids),
+                Story.deleted_at.is_(None),
+            )
+            .group_by(Story.reporter_id)
+            .all()
+        )
+        alltime_approved = {r.reporter_id: r.alltime_approved for r in alltime_and_month_rows}
+        month_sub_map = {r.reporter_id: r.month_submissions for r in alltime_and_month_rows}
+        month_apr_map = {r.reporter_id: r.month_approved for r in alltime_and_month_rows}
 
-    # ---- all-time approved count (for century badge) ----
-    century_rows = (
-        db.query(
-            Story.reporter_id,
-            func.count(Story.id).label("approved"),
-        )
-        .filter(
-            Story.organization_id == org_id,
-            Story.status.in_(APPROVED_STATUSES),
-            Story.reporter_id.in_(list(reporter_map.keys())),
-        )
-        .group_by(Story.reporter_id)
-        .all()
-    )
-    alltime_approved = {row.reporter_id: row.approved for row in century_rows}
-
-    # ---- streak: distinct submission dates per reporter (all time) ----
+    # ---- Q3: streak — distinct submission dates per reporter (all time) ----
     streak_rows = (
         db.query(
             Story.reporter_id,
@@ -593,7 +642,8 @@ def leaderboard(
             Story.organization_id == org_id,
             Story.status.in_(SUBMITTED_STATUSES),
             Story.submitted_at.isnot(None),
-            Story.reporter_id.in_(list(reporter_map.keys())),
+            Story.reporter_id.in_(reporter_ids),
+            Story.deleted_at.is_(None),
         )
         .distinct()
         .all()
@@ -603,45 +653,15 @@ def leaderboard(
     for row in streak_rows:
         dates_by_reporter.setdefault(row.reporter_id, []).append(row.day)
 
-    # ---- all-time submission existence (for first_story badge) ----
+    # first_story badge: any reporter who has at least one submission
     any_sub_ids = {row.reporter_id for row in streak_rows}
 
-    # ---- current-month top reporter (for top_reporter badge) ----
-    month_start = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
-    month_sub_q = (
-        db.query(
-            Story.reporter_id,
-            func.count(Story.id).label("submissions"),
-        )
-        .filter(
-            Story.organization_id == org_id,
-            Story.status.in_(SUBMITTED_STATUSES),
-            Story.submitted_at >= month_start,
-        )
-        .group_by(Story.reporter_id)
-        .all()
-    )
-    # find the reporter with most points in current month
+    # ---- determine top reporter for current month ----
     best_month_id = None
     best_month_pts = -1.0
-    month_sub_map_tmp = {r.reporter_id: r.submissions for r in month_sub_q}
-    month_apr_q = (
-        db.query(
-            Story.reporter_id,
-            func.count(Story.id).label("approved"),
-        )
-        .filter(
-            Story.organization_id == org_id,
-            Story.status.in_(APPROVED_STATUSES),
-            Story.submitted_at >= month_start,
-        )
-        .group_by(Story.reporter_id)
-        .all()
-    )
-    month_apr_map_tmp = {r.reporter_id: r.approved for r in month_apr_q}
     for rid in reporter_map:
-        s = month_sub_map_tmp.get(rid, 0)
-        a = month_apr_map_tmp.get(rid, 0)
+        s = month_sub_map.get(rid, 0)
+        a = month_apr_map.get(rid, 0)
         pts = s * 1.0 + a * 1.5
         streak = _compute_current_streak(dates_by_reporter.get(rid, []), today)
         pts += (streak // 7) * 5 + (streak // 30) * 20
@@ -711,9 +731,65 @@ def admin_list_stories(
     date_to: Optional[str] = Query(None),
     recent: bool = Query(False),
     available_for_edition: Optional[str] = Query(None),
+    updated_since: Optional[str] = Query(None, description="ISO timestamp — return only stories updated after this time"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
 ):
+    # --- Delta mode: return stories changed or soft-deleted since timestamp ---
+    if updated_since:
+        try:
+            dt = datetime.fromisoformat(updated_since)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid updated_since timestamp")
+
+        delta_query = (
+            db.query(Story)
+            .options(joinedload(Story.reporter), joinedload(Story.revision))
+            .filter(
+                Story.organization_id == org_id,
+                or_(Story.updated_at >= dt, Story.deleted_at >= dt),
+            )
+        )
+        if reporter_id:
+            delta_query = delta_query.filter(Story.reporter_id == reporter_id)
+
+        # total = count of ALL non-deleted stories (so frontend can detect deletions)
+        total = (
+            db.query(Story)
+            .filter(Story.organization_id == org_id, Story.deleted_at.is_(None), Story.status != "draft")
+            .count()
+        )
+
+        stories = (
+            delta_query.order_by(Story.updated_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        items = [
+            AdminStoryListItem(
+                id=s.id,
+                reporter_id=s.reporter_id,
+                headline=s.headline,
+                category=s.category,
+                location=s.location,
+                source=s.source,
+                paragraphs=s.paragraphs,
+                status=s.status,
+                submitted_at=s.submitted_at,
+                created_at=s.created_at,
+                updated_at=s.updated_at,
+                reporter=s.reporter,
+                has_revision=s.revision is not None,
+                is_deleted=s.deleted_at is not None,
+            )
+            for s in stories
+        ]
+
+        return AdminStoryListResponse(stories=items, total=total)
+
+    # --- Normal mode (no updated_since) ---
     query = _build_story_query(
         db,
         org_id=org_id,
@@ -882,6 +958,7 @@ async def semantic_search_stories(
         .filter(
             Story.organization_id == org_id,
             Story.status != "draft",
+            Story.deleted_at.is_(None),
             or_(*conditions),
         )
     )
@@ -944,7 +1021,7 @@ def get_related_stories(
     """Find stories related to a given story using pg_trgm trigram similarity on headline."""
     from sqlalchemy import text
 
-    story = db.query(Story).filter(Story.id == story_id, Story.organization_id == org_id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None)).first()
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
 
@@ -960,6 +1037,7 @@ def get_related_stories(
             LEFT JOIN users u ON s.reporter_id = u.id
             WHERE s.id != :story_id
               AND s.organization_id = :org_id
+              AND s.deleted_at IS NULL
               AND similarity(s.search_text, :headline) > 0.15
             ORDER BY sim DESC
             LIMIT 10
@@ -1000,7 +1078,7 @@ def admin_get_story(story_id: str, db: Session = Depends(get_db), user: User = D
     story = (
         db.query(Story)
         .options(joinedload(Story.reporter), joinedload(Story.revision))
-        .filter(Story.id == story_id, Story.organization_id == org_id)
+        .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
         .first()
     )
     if not story:
@@ -1035,7 +1113,7 @@ def admin_update_story_status(
     story = (
         db.query(Story)
         .options(joinedload(Story.reporter))
-        .filter(Story.id == story_id, Story.organization_id == org_id)
+        .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
         .first()
     )
     if not story:
@@ -1066,7 +1144,7 @@ def admin_update_story(
     story = (
         db.query(Story)
         .options(joinedload(Story.reporter), joinedload(Story.revision))
-        .filter(Story.id == story_id, Story.organization_id == org_id)
+        .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
         .first()
     )
     if not story:
@@ -1131,57 +1209,79 @@ def admin_list_reporters(
     user: User = Depends(require_reviewer),
     org_id: str = Depends(get_current_org_id),
     include_inactive: bool = Query(False, description="Include deactivated/deleted users"),
+    updated_since: Optional[str] = Query(None, description="ISO timestamp — return only reporters updated after this time"),
 ):
-    query = db.query(User).filter(User.organization_id == org_id)
-    if not include_inactive:
-        query = query.filter(User.is_active == True)
-    all_users = query.all()
+    query = db.query(User).options(joinedload(User.entitlements)).filter(User.organization_id == org_id)
 
-    # Resolve org name once (all users share the same org)
-    from ..models.organization import Organization
+    if updated_since:
+        # Delta mode: include soft-deleted users changed since the timestamp
+        try:
+            dt = datetime.fromisoformat(updated_since)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid updated_since timestamp")
+        query = query.filter(or_(User.updated_at >= dt, User.deleted_at >= dt))
+    else:
+        # Normal mode: respect include_inactive flag
+        if not include_inactive:
+            query = query.filter(User.is_active == True)
+
+    all_users = query.all()
+    user_ids = [u.id for u in all_users]
+
+    if not user_ids:
+        return AdminReporterListResponse(reporters=[])
+
+    # Resolve org name once
     org = db.query(Organization).filter(Organization.id == org_id).first()
     org_name = org.name if org else ""
 
-    # Statuses that count as "submitted" (excludes drafts)
+    # Batch: submission counts per reporter (single query)
     submitted_statuses = ("submitted", "approved", "published", "rejected")
+    sub_rows = (
+        db.query(Story.reporter_id, func.count(Story.id).label("cnt"))
+        .filter(Story.reporter_id.in_(user_ids), Story.status.in_(submitted_statuses), Story.deleted_at.is_(None))
+        .group_by(Story.reporter_id)
+        .all()
+    )
+    sub_map = {row.reporter_id: row.cnt for row in sub_rows}
 
-    result = []
-    for r in all_users:
-        submission_count = (
-            db.query(func.count(Story.id))
-            .filter(Story.reporter_id == r.id, Story.status.in_(submitted_statuses))
-            .scalar()
-        )
-        published_count = (
-            db.query(func.count(Story.id))
-            .filter(Story.reporter_id == r.id, Story.status == "published")
-            .scalar()
-        )
-        last_story = (
-            db.query(Story.submitted_at)
-            .filter(Story.reporter_id == r.id, Story.submitted_at.isnot(None))
-            .order_by(Story.submitted_at.desc())
-            .first()
-        )
-        last_active = last_story[0] if last_story else None
+    # Batch: published counts per reporter (single query)
+    pub_rows = (
+        db.query(Story.reporter_id, func.count(Story.id).label("cnt"))
+        .filter(Story.reporter_id.in_(user_ids), Story.status == "published", Story.deleted_at.is_(None))
+        .group_by(Story.reporter_id)
+        .all()
+    )
+    pub_map = {row.reporter_id: row.cnt for row in pub_rows}
 
-        result.append(
-            AdminReporterResponse(
-                id=r.id,
-                name=r.name,
-                phone=r.phone,
-                area_name=r.area_name,
-                organization=org_name,
-                user_type=r.user_type,
-                is_active=r.is_active,
-                created_at=r.created_at,
-                updated_at=r.updated_at,
-                submission_count=submission_count,
-                published_count=published_count,
-                last_active=last_active,
-                entitlements=[e.page_key for e in r.entitlements],
-            )
+    # Batch: last active per reporter (single query)
+    last_rows = (
+        db.query(Story.reporter_id, func.max(Story.submitted_at).label("last"))
+        .filter(Story.reporter_id.in_(user_ids), Story.submitted_at.isnot(None), Story.deleted_at.is_(None))
+        .group_by(Story.reporter_id)
+        .all()
+    )
+    last_map = {row.reporter_id: row.last for row in last_rows}
+
+    result = [
+        AdminReporterResponse(
+            id=r.id,
+            name=r.name,
+            phone=r.phone,
+            area_name=r.area_name,
+            organization=org_name,
+            user_type=r.user_type,
+            is_active=r.is_active,
+            created_at=r.created_at,
+            updated_at=r.updated_at,
+            submission_count=sub_map.get(r.id, 0),
+            published_count=pub_map.get(r.id, 0),
+            last_active=last_map.get(r.id),
+            entitlements=[e.page_key for e in r.entitlements],
+            is_deleted=r.deleted_at is not None,
         )
+        for r in all_users
+    ]
 
     return AdminReporterListResponse(reporters=result)
 
@@ -1497,12 +1597,10 @@ def admin_delete_story(
     db: Session = Depends(get_db), admin: User = Depends(require_org_admin),
     org_id: str = Depends(get_current_org_id),
 ):
-    story = db.query(Story).filter(Story.id == story_id, Story.organization_id == org_id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None)).first()
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
-    if story.revision:
-        db.delete(story.revision)
-    db.delete(story)
+    story.deleted_at = now_ist()
     db.commit()
 
 
@@ -1519,7 +1617,7 @@ async def upload_story_image(
 ):
     from ..services.storage import save_file
 
-    story = db.query(Story).filter(Story.id == story_id, Story.organization_id == org_id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None)).first()
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
 

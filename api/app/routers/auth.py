@@ -28,7 +28,7 @@ router = APIRouter()
 @router.post("/check-phone")
 def check_phone(body: OTPRequest, db: Session = Depends(get_db)):
     """Check if a phone number is registered. Returns widget config on success."""
-    user = db.query(User).filter(User.phone == body.phone).first()
+    user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
     if not user.is_active:
@@ -47,7 +47,7 @@ def check_phone(body: OTPRequest, db: Session = Depends(get_db)):
 @router.post("/request-otp")
 async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     """Send OTP via MSG91 (for mobile clients). Returns reqId for verify/resend."""
-    user = db.query(User).filter(User.phone == body.phone).first()
+    user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
     if not user.is_active:
@@ -65,7 +65,7 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
 @router.post("/verify-otp", response_model=Token)
 async def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
     """Verify OTP via MSG91 and issue JWT (for mobile clients)."""
-    user = db.query(User).filter(User.phone == body.phone).first()
+    user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
     if not user.is_active:
@@ -88,7 +88,7 @@ async def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
 @router.post("/resend-otp")
 async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
     """Resend OTP via MSG91 (for mobile clients)."""
-    user = db.query(User).filter(User.phone == body.phone).first()
+    user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
     if not user.is_active:
@@ -115,7 +115,7 @@ async def msg91_login(body: MSG91LoginRequest, db: Session = Depends(get_db)):
             detail="Invalid or expired MSG91 token",
         )
 
-    user = db.query(User).filter(User.phone == body.phone).first()
+    user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

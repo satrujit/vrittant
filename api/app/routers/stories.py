@@ -47,7 +47,7 @@ def list_stories(
     offset: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(50, ge=1, le=100, description="Pagination limit"),
 ):
-    query = db.query(Story).filter(Story.reporter_id == user.id, Story.organization_id == org_id)
+    query = db.query(Story).filter(Story.reporter_id == user.id, Story.organization_id == org_id, Story.deleted_at.is_(None))
 
     if status_filter:
         query = query.filter(Story.status == status_filter)
@@ -84,7 +84,7 @@ def get_story(
     org_id: str = Depends(get_current_org_id),
     db: Session = Depends(get_db),
 ):
-    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id, Story.organization_id == org_id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id, Story.organization_id == org_id, Story.deleted_at.is_(None)).first()
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
     return story
@@ -97,7 +97,7 @@ def update_story(
     org_id: str = Depends(get_current_org_id),
     db: Session = Depends(get_db),
 ):
-    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id, Story.organization_id == org_id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id, Story.organization_id == org_id, Story.deleted_at.is_(None)).first()
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
 
@@ -123,7 +123,7 @@ def submit_story(
     org_id: str = Depends(get_current_org_id),
     db: Session = Depends(get_db),
 ):
-    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id, Story.organization_id == org_id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id, Story.organization_id == org_id, Story.deleted_at.is_(None)).first()
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
     if story.status != "draft":
@@ -143,7 +143,7 @@ def delete_story(
     org_id: str = Depends(get_current_org_id),
     db: Session = Depends(get_db),
 ):
-    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id, Story.organization_id == org_id).first()
+    story = db.query(Story).filter(Story.id == story_id, Story.reporter_id == user.id, Story.organization_id == org_id, Story.deleted_at.is_(None)).first()
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
     if story.status != "draft":

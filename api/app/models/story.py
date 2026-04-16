@@ -30,6 +30,7 @@ class Story(Base):
     __tablename__ = "stories"
     __table_args__ = (
         Index("ix_stories_org_status_submitted", "organization_id", "status", "submitted_at"),
+        Index("ix_stories_deleted_at", "deleted_at"),
     )
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -45,6 +46,7 @@ class Story(Base):
     submitted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=now_ist)
     updated_at = Column(DateTime, default=now_ist, onupdate=now_ist)
+    deleted_at = Column(DateTime, nullable=True, default=None)
     search_text = Column(Text, default="", server_default="")  # denormalized text for trigram search
 
     reporter = relationship("User", back_populates="stories")
