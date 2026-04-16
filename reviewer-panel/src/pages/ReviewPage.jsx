@@ -57,7 +57,7 @@ import ExternalInputCompat from '../extensions/ExternalInputCompat';
 import { createShreeLipiKeyboard } from '../extensions/ShreeLipiKeyboard';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchStory, updateStoryStatus, updateStory, transformStory, getMediaUrl, llmChat, getSTTWebSocketUrl, fetchEditions, assignStoriesToPage, uploadStoryImage } from '../services/api';
+import { fetchStory, updateStoryStatus, updateStory, transformStory, getMediaUrl, llmChat, getSTTWebSocketUrl, fetchEditions, fetchEdition, addStoryToPage, removeStoryFromPage, uploadStoryImage } from '../services/api';
 import { Avatar, StatusBadge, CategoryChip } from '../components/common';
 import { formatDate, generateICML } from '../utils/helpers';
 import { PageLayoutCanvas, LayoutConfigPanel } from '../components/PageLayoutPreview';
@@ -156,8 +156,9 @@ function ReviewPage() {
   const [editions, setEditions] = useState([]);
   const [selectedEdition, setSelectedEdition] = useState(null);
   const [selectedPage, setSelectedPage] = useState(null);
+  const [editionPages, setEditionPages] = useState([]);
   const [assigningToEdition, setAssigningToEdition] = useState(false);
-  const [editionAssigned, setEditionAssigned] = useState(false);
+  const [editionAssignments, setEditionAssignments] = useState([]); // [{edition_id, edition_title, page_id, page_name}]
 
   // Voice / sparkle state machine
   const [voiceMode, setVoiceMode] = useState('idle');
@@ -325,11 +326,9 @@ function ReviewPage() {
             setSocialPosts(rev.social_posts);
           }
 
-          // Pre-populate edition assignment from API response
-          if (data.edition_info) {
-            setSelectedEdition(data.edition_info.edition_id);
-            setSelectedPage(data.edition_info.page_id);
-            setEditionAssigned(true);
+          // Pre-populate edition assignments from API response
+          if (data.edition_info && data.edition_info.length > 0) {
+            setEditionAssignments(data.edition_info);
           }
 
           setLoading(false);
@@ -828,39 +827,62 @@ function ReviewPage() {
     }
   }, [story, englishEditor]);
 
-  // Fetch editions for assignment
+  // Fetch draft editions for assignment
   useEffect(() => {
-    fetchEditions()
+    fetchEditions({ status: 'draft' })
       .then((data) => setEditions(data?.editions || []))
       .catch(() => {});
   }, []);
 
-  // Handle edition assignment
+  // Fetch pages when edition is selected
+  useEffect(() => {
+    if (!selectedEdition) {
+      setEditionPages([]);
+      setSelectedPage(null);
+      return;
+    }
+    fetchEdition(selectedEdition)
+      .then((data) => setEditionPages(data?.pages || []))
+      .catch(() => setEditionPages([]));
+  }, [selectedEdition]);
+
+  // Handle edition assignment (append story to page)
   const handleAssignToEdition = useCallback(async () => {
-    if (!selectedEdition) return;
+    if (!selectedEdition || !selectedPage) return;
     setAssigningToEdition(true);
     try {
-      // If no page selected, use the first page of the edition
-      let pageId = selectedPage;
-      if (!pageId) {
-        const editionPages = editions.find((e) => e.id === selectedEdition)?.pages || [];
-        if (editionPages.length > 0) {
-          pageId = editionPages[0].id;
-          setSelectedPage(pageId);
-        } else {
-          console.error('Edition has no pages');
-          setAssigningToEdition(false);
-          return;
-        }
-      }
-      await assignStoriesToPage(selectedEdition, pageId, [id]);
-      setEditionAssigned(true);
+      await addStoryToPage(selectedEdition, selectedPage, id);
+      const edition = editions.find((e) => e.id === selectedEdition);
+      const page = editionPages.find((p) => p.id === selectedPage);
+      setEditionAssignments((prev) => [
+        ...prev,
+        {
+          edition_id: selectedEdition,
+          edition_title: edition?.title || '',
+          page_id: selectedPage,
+          page_name: page?.page_name || '',
+        },
+      ]);
+      setSelectedEdition(null);
+      setSelectedPage(null);
     } catch (err) {
       console.error('Failed to assign to edition:', err);
     } finally {
       setAssigningToEdition(false);
     }
-  }, [id, selectedEdition, selectedPage, editions]);
+  }, [id, selectedEdition, selectedPage, editions, editionPages]);
+
+  // Handle removing a story from an edition
+  const handleRemoveFromEdition = useCallback(async (editionId, pageId) => {
+    try {
+      await removeStoryFromPage(editionId, pageId, id);
+      setEditionAssignments((prev) =>
+        prev.filter((a) => !(a.edition_id === editionId && a.page_id === pageId))
+      );
+    } catch (err) {
+      console.error('Failed to remove from edition:', err);
+    }
+  }, [id]);
 
   // Audio playback
   const toggleAudioPlay = useCallback((mediaUrl) => {
@@ -1056,17 +1078,41 @@ function ReviewPage() {
           {/* Edition assignment — moved to top bar */}
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant={editionAssigned ? "outline" : "default"} size="sm" className={editionAssigned ? "h-6 gap-1 px-2 text-xs" : "h-6 gap-1 px-2 text-xs bg-amber-500 text-white hover:bg-amber-600 border-amber-500"}>
+              <Button variant={editionAssignments.length > 0 ? "outline" : "default"} size="sm" className={editionAssignments.length > 0 ? "h-6 gap-1 px-2 text-xs" : "h-6 gap-1 px-2 text-xs bg-amber-500 text-white hover:bg-amber-600 border-amber-500"}>
                 <BookOpen size={12} />
-                {editionAssigned ? <Check size={12} className="text-emerald-500" /> : t('review.assignEditionShort')}
+                {editionAssignments.length > 0 ? (
+                  <><Check size={12} className="text-emerald-500" /> {editionAssignments.length}</>
+                ) : t('review.assignEditionShort')}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-72 p-3">
+            <PopoverContent align="start" className="w-80 p-3">
               <div className="flex flex-col gap-2">
+                {/* Existing assignments */}
+                {editionAssignments.length > 0 && (
+                  <div className="flex flex-col gap-1">
+                    {editionAssignments.map((a, i) => (
+                      <div key={`${a.edition_id}-${a.page_id}-${i}`} className="flex items-center justify-between gap-1 rounded-md bg-muted/50 px-2 py-1">
+                        <span className="truncate text-xs text-foreground">
+                          {a.edition_title} &rarr; {a.page_name}
+                        </span>
+                        <button
+                          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => handleRemoveFromEdition(a.edition_id, a.page_id)}
+                          title="Remove"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                      </div>
+                    ))}
+                    <hr className="border-border" />
+                  </div>
+                )}
+
+                {/* Add new assignment */}
                 <select
                   className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring"
                   value={selectedEdition || ''}
-                  onChange={(e) => { setSelectedEdition(e.target.value || null); setSelectedPage(null); setEditionAssigned(false); }}
+                  onChange={(e) => setSelectedEdition(e.target.value || null)}
                 >
                   <option value="">{t('review.chooseEdition')}</option>
                   {editions.map((ed) => (
@@ -1077,10 +1123,10 @@ function ReviewPage() {
                   <select
                     className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring"
                     value={selectedPage || ''}
-                    onChange={(e) => { setSelectedPage(e.target.value || null); setEditionAssigned(false); }}
+                    onChange={(e) => setSelectedPage(e.target.value || null)}
                   >
                     <option value="">{t('review.choosePage')}</option>
-                    {(editions.find((e) => e.id === selectedEdition)?.pages || []).map((p) => (
+                    {editionPages.map((p) => (
                       <option key={p.id} value={p.id}>{p.page_name}</option>
                     ))}
                   </select>
@@ -1088,11 +1134,11 @@ function ReviewPage() {
                 <Button
                   size="sm"
                   className="w-full"
-                  disabled={!selectedEdition || assigningToEdition}
+                  disabled={!selectedEdition || !selectedPage || assigningToEdition}
                   onClick={handleAssignToEdition}
                 >
-                  {assigningToEdition ? <Loader2 size={12} className="animate-spin" /> : editionAssigned ? <Check size={12} /> : null}
-                  {assigningToEdition ? '...' : editionAssigned ? t('review.assigned') : t('review.assignButton')}
+                  {assigningToEdition ? <Loader2 size={12} className="animate-spin" /> : null}
+                  {assigningToEdition ? '...' : t('review.assignButton')}
                 </Button>
               </div>
             </PopoverContent>

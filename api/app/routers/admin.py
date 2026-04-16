@@ -121,7 +121,7 @@ class AdminStoryWithRevisionResponse(BaseModel):
     updated_at: datetime
     reporter: AdminReporterInfo
     revision: Optional[AdminRevisionInfo] = None
-    edition_info: Optional[EditionAssignmentInfo] = None
+    edition_info: list[EditionAssignmentInfo] = []
 
     model_config = {"from_attributes": True}
 
@@ -177,9 +177,9 @@ class AdminReporterListResponse(BaseModel):
 # Helper: build a filtered story query (reused by multiple endpoints)
 # ---------------------------------------------------------------------------
 
-def _get_edition_info(db: Session, story_id: str) -> Optional[dict]:
-    """Return edition assignment info for a story, or None."""
-    row = (
+def _get_edition_info(db: Session, story_id: str) -> list[dict]:
+    """Return all edition assignments for a story."""
+    rows = (
         db.query(
             Edition.id.label("edition_id"),
             Edition.title.label("edition_title"),
@@ -189,16 +189,17 @@ def _get_edition_info(db: Session, story_id: str) -> Optional[dict]:
         .join(EditionPage, EditionPage.edition_id == Edition.id)
         .join(EditionPageStory, EditionPageStory.edition_page_id == EditionPage.id)
         .filter(EditionPageStory.story_id == story_id)
-        .first()
+        .all()
     )
-    if not row:
-        return None
-    return {
-        "edition_id": row.edition_id,
-        "edition_title": row.edition_title,
-        "page_id": row.page_id,
-        "page_name": row.page_name,
-    }
+    return [
+        {
+            "edition_id": r.edition_id,
+            "edition_title": r.edition_title,
+            "page_id": r.page_id,
+            "page_name": r.page_name,
+        }
+        for r in rows
+    ]
 
 
 def _build_story_query(

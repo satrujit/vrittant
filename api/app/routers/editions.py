@@ -109,16 +109,21 @@ def list_editions(
     db: Session = Depends(get_db),
     user: User = Depends(require_reviewer),
     org_id: str = Depends(get_current_org_id),
+    status_filter: str | None = Query(None, alias="status"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ):
+    base_filters = [Edition.organization_id == org_id]
+    if status_filter:
+        base_filters.append(Edition.status == status_filter)
+
     # Total count (without joins)
-    total = db.query(func.count(Edition.id)).filter(Edition.organization_id == org_id).scalar()
+    total = db.query(func.count(Edition.id)).filter(*base_filters).scalar()
 
     # Fetch editions with eager-loaded pages and story assignments
     editions = (
         db.query(Edition)
-        .filter(Edition.organization_id == org_id)
+        .filter(*base_filters)
         .options(
             joinedload(Edition.pages).joinedload(EditionPage.story_assignments)
         )
@@ -396,24 +401,6 @@ def assign_stories(
             status_code=status.HTTP_404_NOT_FOUND, detail="Page not found"
         )
 
-    # Check for stories already assigned to OTHER editions
-    if body.story_ids:
-        conflicts = (
-            db.query(EditionPageStory.story_id)
-            .join(EditionPage, EditionPage.id == EditionPageStory.edition_page_id)
-            .filter(
-                EditionPageStory.story_id.in_(body.story_ids),
-                EditionPage.edition_id != edition_id,
-            )
-            .all()
-        )
-        if conflicts:
-            conflict_ids = [c.story_id for c in conflicts]
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Stories already assigned to another edition: {conflict_ids}",
-            )
-
     # Delete existing assignments
     db.query(EditionPageStory).filter(
         EditionPageStory.edition_page_id == page_id
@@ -438,6 +425,89 @@ def assign_stories(
         .first()
     )
     return _page_to_response(page)
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/editions/{edition_id}/pages/{page_id}/stories/{story_id}
+# Append a single story to a page (used from ReviewPage)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{edition_id}/pages/{page_id}/stories/{story_id}",
+    status_code=status.HTTP_201_CREATED,
+)
+def add_story_to_page(
+    edition_id: str,
+    page_id: str,
+    story_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
+):
+    edition = db.query(Edition).filter(Edition.id == edition_id, Edition.organization_id == org_id).first()
+    if not edition:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Edition not found")
+
+    page = db.query(EditionPage).filter(EditionPage.id == page_id, EditionPage.edition_id == edition_id).first()
+    if not page:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page not found")
+
+    # Check if already assigned to this page
+    existing = db.query(EditionPageStory).filter(
+        EditionPageStory.edition_page_id == page_id,
+        EditionPageStory.story_id == story_id,
+    ).first()
+    if existing:
+        return {"detail": "Already assigned"}
+
+    max_order = (
+        db.query(func.max(EditionPageStory.sort_order))
+        .filter(EditionPageStory.edition_page_id == page_id)
+        .scalar()
+    ) or -1
+
+    assignment = EditionPageStory(
+        edition_page_id=page_id,
+        story_id=story_id,
+        sort_order=max_order + 1,
+    )
+    db.add(assignment)
+    db.commit()
+    return {"detail": "Assigned"}
+
+
+# ---------------------------------------------------------------------------
+# DELETE /admin/editions/{edition_id}/pages/{page_id}/stories/{story_id}
+# Remove a single story from a page
+# ---------------------------------------------------------------------------
+
+@router.delete(
+    "/{edition_id}/pages/{page_id}/stories/{story_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remove_story_from_page(
+    edition_id: str,
+    page_id: str,
+    story_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
+):
+    edition = db.query(Edition).filter(Edition.id == edition_id, Edition.organization_id == org_id).first()
+    if not edition:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Edition not found")
+
+    page = db.query(EditionPage).filter(EditionPage.id == page_id, EditionPage.edition_id == edition_id).first()
+    if not page:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page not found")
+
+    deleted = db.query(EditionPageStory).filter(
+        EditionPageStory.edition_page_id == page_id,
+        EditionPageStory.story_id == story_id,
+    ).delete()
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+    db.commit()
 
 
 # ---------------------------------------------------------------------------

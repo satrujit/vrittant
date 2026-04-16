@@ -543,6 +543,18 @@ export async function assignStoriesToPage(editionId, pageId, storyIds) {
   });
 }
 
+export async function addStoryToPage(editionId, pageId, storyId) {
+  return apiFetch(`/admin/editions/${editionId}/pages/${pageId}/stories/${storyId}`, {
+    method: 'POST',
+  });
+}
+
+export async function removeStoryFromPage(editionId, pageId, storyId) {
+  return apiFetch(`/admin/editions/${editionId}/pages/${pageId}/stories/${storyId}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function exportEditionZip(editionId) {
   const token = getAuthToken();
   const resp = await fetch(`${API_BASE}/admin/editions/${editionId}/export-zip`, {
