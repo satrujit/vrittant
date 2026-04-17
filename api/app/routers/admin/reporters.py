@@ -91,6 +91,7 @@ def admin_list_reporters(
             id=r.id,
             name=r.name,
             phone=r.phone,
+            email=r.email,
             area_name=r.area_name,
             organization=org_name,
             user_type=r.user_type,

@@ -147,6 +147,7 @@ class AdminReporterResponse(BaseModel):
     id: str
     name: str
     phone: str
+    email: Optional[str] = None
     area_name: str
     organization: str
     user_type: str = "reporter"
