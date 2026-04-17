@@ -130,8 +130,10 @@ def admin_reporter_stories(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
 ):
-    # Verify reporter exists and belongs to the same organization
-    get_owned_or_404(db, User, reporter_id, org_id)
+    # Verify reporter exists and belongs to the same organization.
+    # entity_label preserves the pre-helper "Reporter not found" 404 string;
+    # without it the helper would surface "User not found" to clients.
+    get_owned_or_404(db, User, reporter_id, org_id, entity_label="Reporter")
 
     query = _build_story_query(
         db,

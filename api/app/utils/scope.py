@@ -19,7 +19,13 @@ from sqlalchemy.orm import Session
 T = TypeVar("T")
 
 
-def get_owned_or_404(db: Session, model: Type[T], obj_id: str, org_id: str) -> T:
+def get_owned_or_404(
+    db: Session,
+    model: Type[T],
+    obj_id: str,
+    org_id: str,
+    entity_label: str | None = None,
+) -> T:
     """Fetch a single row of ``model`` scoped to the caller's organization.
 
     Filters by both ``model.id == obj_id`` AND ``model.organization_id == org_id``
@@ -33,6 +39,12 @@ def get_owned_or_404(db: Session, model: Type[T], obj_id: str, org_id: str) -> T
     distinguishing "doesn't exist" from "exists but not yours" would let a
     caller probe whether arbitrary ids belong to other orgs. Same response
     shape for both cases means existence cannot be leaked.
+
+    The 404 detail defaults to ``f"{model.__name__} not found"``. Callers may
+    pass ``entity_label`` to override that string when the model class name
+    doesn't match the user-facing concept (e.g. ``User`` is also a "Reporter"
+    or "Reviewer" depending on context). This preserves the original 404
+    wording from pre-helper inline lookups.
 
     Raises ``TypeError`` if ``model`` is not org-scoped (missing ``id`` or
     ``organization_id``). The unbounded ``TypeVar`` would otherwise let such
@@ -50,5 +62,6 @@ def get_owned_or_404(db: Session, model: Type[T], obj_id: str, org_id: str) -> T
         .first()
     )
     if obj is None:
-        raise HTTPException(status_code=404, detail=f"{model.__name__} not found")
+        label = entity_label or model.__name__
+        raise HTTPException(status_code=404, detail=f"{label} not found")
     return obj

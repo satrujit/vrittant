@@ -7,10 +7,11 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 config_router = APIRouter(prefix="/config", tags=["config"])
 
 # Import sub-modules so their @router.<verb> decorators register endpoints
-# on the shared router objects above.  Order doesn't matter functionally;
-# kept alphabetical for readability.
-# Import order matters for path-prefix collisions.  `stories_search` must
-# register `/stories/semantic-search` and `/stories/{story_id}/related`
-# *before* `stories` registers the catch-all `/stories/{story_id}`, otherwise
-# FastAPI would route `semantic-search` as a story_id.
+# on the shared router objects above.
+#
+# stories_search must register `/stories/semantic-search` and
+# `/stories/{story_id}/related` BEFORE stories registers the catch-all
+# `/stories/{story_id}` — FastAPI matches in registration order.
+# Re-ordering this import will silently break two endpoints; the regression
+# is pinned by tests/test_admin_route_order.py.
 from . import dashboard, leaderboard, stories_search, stories, reporters, users, org, config  # noqa: E402,F401

@@ -68,6 +68,29 @@ def test_raises_404_when_org_mismatch(db):
     assert exc_info.value.status_code == 404
 
 
+def test_404_detail_uses_model_name_by_default(db):
+    # Without entity_label, 404 detail falls back to the model class name.
+    # This guards the default branch of the entity_label kwarg.
+    with pytest.raises(HTTPException) as exc_info:
+        get_owned_or_404(db, User, "user-missing", "org-test")
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "User not found"
+
+
+def test_404_detail_uses_entity_label_when_provided(db):
+    # When the model class name doesn't match the user-facing concept (e.g.
+    # User can be a reporter or a reviewer), callers can pass entity_label
+    # to preserve the original 404 string. Regression for the helper
+    # substitution that silently changed "Reporter not found" to
+    # "User not found" in /admin/reporters/{id}/stories.
+    with pytest.raises(HTTPException) as exc_info:
+        get_owned_or_404(db, User, "user-missing", "org-test", entity_label="Reporter")
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Reporter not found"
+
+
 def test_raises_typeerror_for_non_org_scoped_model(db):
     # Organization itself has 'id' but NO 'organization_id' — it IS the org.
     # If a Phase 2 caller mistakenly passes such a model, we want a loud,
