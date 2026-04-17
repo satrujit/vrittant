@@ -227,21 +227,24 @@ async def generate_idml(story: dict) -> bytes:
     frames = layout["frames"]
     image_urls = layout["image_urls"]
 
-    # Download images
-    image_data: dict[str, bytes] = {}
-    image_links: dict[str, str] = {}
+    # Download images and attach the bytes to their image frame so they
+    # can be EMBEDDED inside the IDML (InDesign won't read external files
+    # from inside the .idml zip — they must be embedded or exist on disk).
+    image_bytes_by_frame: dict[str, bytes] = {}
+    image_link_name_by_frame: dict[str, str] = {}
     for i, url in enumerate(image_urls):
         ext = _guess_ext(url)
         fname = f"image_{i + 1}.{ext}"
         data = await _download_image(url)
-        if data:
-            image_data[fname] = data
-            # Find the image frame and assign the link
-            for j, f in enumerate(frames):
-                if f[8] and f[9] is None:  # is_image and no link yet
-                    frames[j] = (*f[:9], fname)
-                    break
-            image_links[fname] = url
+        if not data:
+            continue
+        # Find the next image frame missing bytes and assign.
+        for j, f in enumerate(frames):
+            fid_j = f[0]
+            if f[8] and fid_j not in image_bytes_by_frame:
+                image_bytes_by_frame[fid_j] = data
+                image_link_name_by_frame[fid_j] = fname
+                break
 
     # Build story IDs list
     story_ids = list(stories.keys())
@@ -256,7 +259,12 @@ async def generate_idml(story: dict) -> bytes:
     for fid, sid, px, py, fw, fh, cols, vjust, is_image, link_name in frames:
         cx, cy, hw, hh = _frame_coords(px, py, fw, fh)
         if is_image:
-            frames_xml_parts.append(_image_frame_xml(fid, cx, cy, hw, hh, link_name))
+            img_bytes = image_bytes_by_frame.get(fid)
+            link = image_link_name_by_frame.get(fid, link_name)
+            frames_xml_parts.append(
+                _image_frame_xml(fid, cx, cy, hw, hh,
+                                 image_bytes=img_bytes, link_name=link)
+            )
         else:
             frames_xml_parts.append(_text_frame_xml(fid, sid, cx, cy, hw, hh, cols, vjust))
 
@@ -297,8 +305,9 @@ async def generate_idml(story: dict) -> bytes:
         for sid, xml in story_xmls.items():
             zf.writestr(f"Stories/Story_{sid}.xml", xml, zipfile.ZIP_DEFLATED)
 
-        # Linked images
-        for fname, data in image_data.items():
-            zf.writestr(f"Links/{fname}", data, zipfile.ZIP_DEFLATED)
+        # NOTE: images are embedded inline via base64 <Contents> in the
+        # spread XML (see images._image_frame_xml). InDesign cannot resolve
+        # links pointing to files inside the IDML zip itself, so we no
+        # longer write a Links/ directory.
 
     return buf.getvalue()
