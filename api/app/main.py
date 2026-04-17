@@ -20,10 +20,6 @@ try:
 except Exception:
     pass  # tables already exist (race between workers)
 
-# Initialize Firebase Admin SDK for ID token verification
-from .firebase_admin_setup import init_firebase
-init_firebase()
-
 docs_kwargs = {}
 if settings.ENV == "prod":
     docs_kwargs = {"docs_url": None, "redoc_url": None, "openapi_url": None}
