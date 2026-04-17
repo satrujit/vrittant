@@ -40,6 +40,7 @@ export {
   updateStoryStatus,
   updateStory,
   deleteStory,
+  adminDeleteStory,
   createBlankStory,
   uploadStoryImage,
   fetchRelatedStories,

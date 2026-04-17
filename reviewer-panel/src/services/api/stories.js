@@ -63,6 +63,12 @@ export async function deleteStory(id) {
   return apiDelete(`/admin/stories/${id}`);
 }
 
+export async function adminDeleteStory(storyId) {
+  const result = await apiDelete(`/admin/stories/${storyId}`);
+  invalidateCache('/admin/stories');
+  return result;
+}
+
 export async function createBlankStory() {
   return apiPost('/admin/stories/create-blank');
 }

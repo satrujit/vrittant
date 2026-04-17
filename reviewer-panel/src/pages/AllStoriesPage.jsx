@@ -6,10 +6,18 @@ import {
   ChevronRight,
   MapPin,
   Loader2,
+  MoreHorizontal,
+  Trash2,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchStories, fetchReporters, transformStory, semanticSearchStories } from '../services/api';
+import { fetchStories, fetchReporters, transformStory, semanticSearchStories, adminDeleteStory } from '../services/api';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Avatar, StatusBadge, CategoryChip, SearchBar } from '../components/common';
 import { formatDate, formatTimeAgo } from '../utils/helpers';
 import { cn } from '@/lib/utils';
@@ -60,7 +68,8 @@ function getActionForStatus(status) {
 
 export default function AllStoriesPage() {
   const { t } = useI18n();
-  const { config } = useAuth();
+  const { config, user } = useAuth();
+  const isOrgAdmin = user?.user_type === 'org_admin';
   const categoryList = (config?.categories || []).filter(c => c.is_active).map(c => c.key);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -197,6 +206,17 @@ export default function AllStoriesPage() {
 
   // Derive unique locations from reporters
   const uniqueLocations = [...new Set(reporters.map((r) => r.area_name).filter(Boolean))];
+
+  const handleDeleteStory = async (storyId) => {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(t('stories.delete.confirm'))) return;
+    try {
+      await adminDeleteStory(storyId);
+      await loadStories();
+    } catch (err) {
+      console.error('Failed to delete story:', err);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4 max-w-7xl mx-auto py-6 px-8 max-sm:px-4">
@@ -358,6 +378,9 @@ export default function AllStoriesPage() {
                 <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
                   {t('table.action')}
                 </TableHead>
+                {isOrgAdmin && (
+                  <TableHead className="px-4 py-2 w-[50px]" aria-label="Row actions" />
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -453,6 +476,28 @@ export default function AllStoriesPage() {
                         </Button>
                       )}
                     </TableCell>
+
+                    {/* Row actions — org_admin only */}
+                    {isOrgAdmin && (
+                      <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteStory(story.id)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              {t('stories.delete.action')}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })}

@@ -199,6 +199,13 @@
     "allCategories": "All Categories",
     "allLocations": "All Locations"
   },
+  "stories": {
+    "delete": {
+      "action": "Delete",
+      "confirm": "Are you sure you want to delete this story?",
+      "success": "Story deleted"
+    }
+  },
   "allStories": {
     "title": "All Stories",
     "subtitle": "Browse and search all historical submissions.",
