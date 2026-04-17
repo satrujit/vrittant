@@ -40,8 +40,18 @@ async function request(method, path, body) {
   }
 
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new ApiError(res.status, `${res.status} ${res.statusText}`, text);
+    let body;
+    try {
+      body = await res.json();
+    } catch {
+      body = await res.text().catch(() => '');
+    }
+    const fallback = `${res.status} ${res.statusText}`;
+    const message =
+      body && typeof body === 'object'
+        ? body.detail || body.message || fallback
+        : fallback;
+    throw new ApiError(res.status, message, body);
   }
 
   if (res.status === 204) return null;

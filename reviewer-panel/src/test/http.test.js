@@ -83,4 +83,37 @@ describe('http wrapper', () => {
       name: 'ApiError', status: 0, message: /Network error/,
     });
   });
+
+  it('lifts FastAPI {detail: ...} into ApiError.message and keeps body parsed', async () => {
+    const payload = { detail: 'phone already exists' };
+    fetch.mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: 'Unprocessable Entity',
+      headers: { get: (k) => (k.toLowerCase() === 'content-type' ? 'application/json' : null) },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+    await expect(apiPost('/x', {})).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 422,
+      message: 'phone already exists',
+      body: payload,
+    });
+  });
+
+  it('falls back to "${status} ${statusText}" when response body is empty / non-JSON', async () => {
+    fetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      json: async () => { throw new SyntaxError('Unexpected end of JSON input'); },
+      text: async () => '',
+    });
+    await expect(apiGet('/foo')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 500,
+      message: '500 Internal Server Error',
+    });
+  });
 });
