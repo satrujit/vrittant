@@ -401,6 +401,22 @@ def assign_stories(
             status_code=status.HTTP_404_NOT_FOUND, detail="Page not found"
         )
 
+    # Security: every story_id MUST belong to this org. Without this check
+    # any reviewer can attach foreign-org stories to their own edition page.
+    if body.story_ids:
+        owned_ids = {
+            row[0]
+            for row in db.query(Story.id)
+            .filter(Story.id.in_(body.story_ids), Story.organization_id == org_id)
+            .all()
+        }
+        unauthorized = [sid for sid in body.story_ids if sid not in owned_ids]
+        if unauthorized:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="One or more stories not found",
+            )
+
     # Delete existing assignments
     db.query(EditionPageStory).filter(
         EditionPageStory.edition_page_id == page_id
@@ -451,6 +467,13 @@ def add_story_to_page(
     page = db.query(EditionPage).filter(EditionPage.id == page_id, EditionPage.edition_id == edition_id).first()
     if not page:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page not found")
+
+    # Security: the story must belong to this org.
+    story_owned = db.query(Story.id).filter(
+        Story.id == story_id, Story.organization_id == org_id
+    ).first()
+    if not story_owned:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
 
     # Check if already assigned to this page
     existing = db.query(EditionPageStory).filter(
@@ -555,11 +578,13 @@ async def export_edition_zip(
             detail="No stories assigned to this edition",
         )
 
-    # Bulk-load stories with revisions and reporters
+    # Bulk-load stories with revisions and reporters.
+    # Defense-in-depth: scope to org_id even though the assign endpoints now
+    # enforce this on write — protects against any pre-existing cross-org rows.
     stories = (
         db.query(Story)
         .options(joinedload(Story.revision), joinedload(Story.reporter))
-        .filter(Story.id.in_(all_story_ids))
+        .filter(Story.id.in_(all_story_ids), Story.organization_id == org_id)
         .all()
     )
     story_map = {s.id: s for s in stories}

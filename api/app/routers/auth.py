@@ -53,10 +53,13 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
 
+    import logging as _logging
+    _log = _logging.getLogger("auth.msg91")
     try:
         data = await msg91_send(body.phone)
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Failed to send OTP: {exc}")
+        _log.warning("MSG91 send_otp failed: %s", exc)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to send OTP")
 
     req_id = data.get("reqId") or data.get("request_id") or ""
     return {"message": "OTP sent", "phone": body.phone, "req_id": req_id}
@@ -76,10 +79,13 @@ async def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
         token = create_access_token(user.id, user.user_type)
         return Token(access_token=token)
 
+    import logging as _logging
+    _log = _logging.getLogger("auth.msg91")
     try:
         await msg91_verify(body.phone, body.otp, req_id=body.req_id)
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"OTP verification failed: {exc}")
+        _log.warning("MSG91 verify_otp failed: %s", exc)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP verification failed")
 
     token = create_access_token(user.id, user.user_type)
     return Token(access_token=token)
@@ -94,22 +100,68 @@ async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
 
+    import logging as _logging
+    _log = _logging.getLogger("auth.msg91")
     try:
         await msg91_resend(body.phone, req_id=body.req_id)
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Failed to resend OTP: {exc}")
+        _log.warning("MSG91 resend_otp failed: %s", exc)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to resend OTP")
 
     return {"message": "OTP resent", "phone": body.phone}
 
 
 # ── Widget token login (web) ──
 
+def _extract_verified_mobile(msg91_response: dict) -> str | None:
+    """Pull the verified mobile out of MSG91's verifyAccessToken response.
+
+    MSG91 returns the verified mobile in different shapes depending on
+    integration. Known shapes:
+      {"type":"success","message":"919999999999"}
+      {"type":"success","data":{"mobile":"919999999999"}}
+      {"type":"success","data":{"message":"919999999999"}}
+    """
+    if not isinstance(msg91_response, dict):
+        return None
+    data = msg91_response.get("data")
+    if isinstance(data, dict):
+        for key in ("mobile", "message"):
+            v = data.get(key)
+            if isinstance(v, str) and v.strip().isdigit():
+                return v.strip()
+    msg = msg91_response.get("message")
+    if isinstance(msg, str) and msg.strip().isdigit() and len(msg.strip()) >= 10:
+        return msg.strip()
+    return None
+
+
 @router.post("/msg91-login", response_model=Token)
 async def msg91_login(body: MSG91LoginRequest, db: Session = Depends(get_db)):
-    """Verify MSG91 OTP Widget access token and issue JWT (for web clients)."""
+    """Verify MSG91 OTP Widget access token and issue JWT (for web clients).
+
+    Security: the verified mobile from MSG91 must match body.phone, otherwise
+    an attacker who completed OTP for their own phone could submit any other
+    phone in body.phone to take over that account.
+    """
+    import logging as _logging
+    _log = _logging.getLogger("auth.msg91")
     try:
-        await verify_access_token(body.access_token)
+        msg91_response = await verify_access_token(body.access_token)
     except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired MSG91 token",
+        )
+
+    # Bind the verified mobile to body.phone — fail closed if it's missing.
+    verified_mobile = _extract_verified_mobile(msg91_response)
+    requested_mobile = body.phone.lstrip("+").strip()
+    if not verified_mobile or verified_mobile != requested_mobile:
+        _log.warning(
+            "MSG91 phone-binding mismatch (verified=%s vs requested=%s)",
+            verified_mobile, requested_mobile,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired MSG91 token",

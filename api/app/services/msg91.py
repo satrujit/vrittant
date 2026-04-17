@@ -39,7 +39,11 @@ async def _widget_request(method: str, url: str, **kwargs) -> dict:
     except Exception:
         data = {"raw": resp.text}
 
-    print(f"MSG91 {method.upper()} {url} status={resp.status_code} body={data}")
+    # SECURITY: never log the response body — it may contain the verified mobile,
+    # the submitted OTP (echoed back on verify failures), or echoed credentials.
+    # Status code + endpoint name only.
+    endpoint = url.rsplit("/", 1)[-1]
+    logger.info("MSG91 %s %s status=%d", method.upper(), endpoint, resp.status_code)
     return data
 
 
