@@ -1,23 +1,14 @@
 /**
- * Auth domain: token storage + auth endpoints.
- * The token getters/setters live here because apiFetch (in _internal.js)
- * needs to read and clear the token, but they are also part of the public
- * api surface re-exported from index.js.
+ * Auth domain: auth endpoints. Token storage helpers
+ * (getAuthToken/setAuthToken/clearAuthToken) live in _internal.js
+ * because apiFetch needs them at call time; they are re-exported here
+ * so the public api surface (index.js) stays unchanged.
  */
 
 import { apiFetch } from './_internal.js';
 
-// ── Token management ──
-
-export function getAuthToken() {
-  return localStorage.getItem('vr_token');
-}
-export function setAuthToken(token) {
-  localStorage.setItem('vr_token', token);
-}
-export function clearAuthToken() {
-  localStorage.removeItem('vr_token');
-}
+// ── Token management (re-exported from _internal to break the auth↔_internal cycle) ──
+export { getAuthToken, setAuthToken, clearAuthToken } from './_internal.js';
 
 // ── Auth API ──
 

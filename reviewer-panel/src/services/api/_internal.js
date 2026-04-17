@@ -10,9 +10,22 @@
  * shrinks considerably.
  */
 
-import { getAuthToken, clearAuthToken } from './auth.js';
-
 export const API_BASE = import.meta.env.VITE_API_BASE;
+
+// ── Token management ──
+// Lives here (not in auth.js) so apiFetch can use it without importing
+// from auth.js — that import would form a load-order cycle. auth.js
+// re-exports these three so the public api surface is unchanged.
+
+export function getAuthToken() {
+  return localStorage.getItem('vr_token');
+}
+export function setAuthToken(token) {
+  localStorage.setItem('vr_token', token);
+}
+export function clearAuthToken() {
+  localStorage.removeItem('vr_token');
+}
 
 /**
  * Generic fetch wrapper with error handling.
