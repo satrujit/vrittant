@@ -160,8 +160,7 @@ export default function SocialTab({ story, initialPosts, onPostsChange }) {
         [
           { role: 'system', content: PLATFORM_PROMPTS[platform] },
           { role: 'user', content: articleContent },
-        ],
-        { max_tokens: 2048 }
+        ]
       );
       const generated = res.choices[0].message.content.trim();
       if (platform === 'twitter') {

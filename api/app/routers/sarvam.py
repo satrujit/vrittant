@@ -190,11 +190,28 @@ async def websocket_stt_proxy(
 # Task 3 – REST LLM chat proxy
 # ---------------------------------------------------------------------------
 
+# Odia Unicode range: U+0B00–U+0B7F
+def _is_predominantly_odia(text: str, threshold: float = 0.4) -> bool:
+    """Return True if at least `threshold` fraction of letters are Odia script.
+
+    Counts any char in the Odia Unicode block (including vowel signs and
+    nukta) as Odia, and counts those plus ASCII alphabetic chars as letters.
+    """
+    if not text:
+        return False
+    odia = sum(1 for c in text if "\u0B00" <= c <= "\u0B7F")
+    other_letters = sum(1 for c in text if c.isalpha() and not ("\u0B00" <= c <= "\u0B7F"))
+    total = odia + other_letters
+    if total == 0:
+        return False
+    return (odia / total) >= threshold
+
+
 class ChatRequest(BaseModel):
     messages: list[dict] = Field(..., max_length=20)
     model: str = "sarvam-30b"
     temperature: Optional[float] = None
-    max_tokens: Optional[int] = Field(None, le=8192)
+    max_tokens: Optional[int] = Field(None, le=16384)
 
 
 @router.post("/api/llm/chat")

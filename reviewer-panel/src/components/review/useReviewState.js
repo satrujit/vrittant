@@ -418,7 +418,7 @@ export function useReviewState({ id, t }) {
         llmChat([
           { role: 'system', content: 'You are an Odia language editor. Modify the following text based on the user instruction. Return ONLY the modified text, nothing else. Keep the same language as the input. IMPORTANT: Preserve the original paragraph structure — keep the same number of paragraphs and line breaks. Do not merge paragraphs into a single block. Only refine the text within each paragraph.' },
           { role: 'user', content: `Instruction: ${instruction}\n\nText to modify:\n${selectedText}` },
-        ], { max_tokens: 2048 })
+        ])
           .then((response) => {
             const modifiedText = response.choices[0].message.content;
             const htmlContent = modifiedText
@@ -464,7 +464,7 @@ export function useReviewState({ id, t }) {
           llmChat([
             { role: 'system', content: 'You are an Odia language editor. Modify the following text based on the user instruction. Return ONLY the modified text, nothing else. Keep the same language as the input. IMPORTANT: Preserve the original paragraph structure — keep the same number of paragraphs and line breaks. Do not merge paragraphs into a single block. Only refine the text within each paragraph.' },
             { role: 'user', content: `Instruction: ${collectedText}\n\nText to modify:\n${selectedText}` },
-          ], { max_tokens: 2048 })
+          ])
             .then((response) => {
               const modifiedText = response.choices[0].message.content;
               const htmlContent = modifiedText
@@ -504,14 +504,13 @@ export function useReviewState({ id, t }) {
     const selectedText = editor.state.doc.textBetween(from, to);
     setConvertingSelection(true);
     try {
-      const res = await llmChat(
-        [
+      const translated = (await llmChat({
+        messages: [
           { role: 'system', content: 'Translate the following text to Odia. Return ONLY the translated text, nothing else. Do not add any explanation or prefix.' },
           { role: 'user', content: selectedText },
         ],
-        { max_tokens: 2048 }
-      );
-      const translated = res.choices[0].message.content.trim();
+        expectOdia: true,
+      })).trim();
       editor.chain().focus().setTextSelection({ from, to }).deleteSelection().insertContent(translated).run();
     } catch (err) {
       console.error('Convert to local failed:', err);
@@ -540,8 +539,7 @@ export function useReviewState({ id, t }) {
           [
             { role: 'system', content: 'You are an Odia language editor. Modify the following text based on the user instruction. Return ONLY the modified text, nothing else. Keep the same language as the input. IMPORTANT: Preserve the original paragraph structure — keep the same number of paragraphs and line breaks. Do not merge paragraphs into a single block. Only refine the text within each paragraph.' },
             { role: 'user', content: `Instruction: ${instruction}\n\nText to modify:\n${selectedText}` },
-          ],
-          { max_tokens: 2048 }
+          ]
         );
         const modifiedText = res.choices[0].message.content;
         const htmlContent = modifiedText
@@ -564,8 +562,7 @@ export function useReviewState({ id, t }) {
           [
             { role: 'system', content: 'You are an Odia language writer. Based on the user instruction, generate the requested content. Return ONLY the content text, nothing else. Write in Odia unless the instruction specifies otherwise.' },
             { role: 'user', content: instruction },
-          ],
-          { max_tokens: 2048 }
+          ]
         );
         const generatedText = res.choices[0].message.content.trim();
         const htmlContent = generatedText
@@ -696,8 +693,7 @@ export function useReviewState({ id, t }) {
         [
           { role: 'system', content: 'Translate the following Odia newspaper article to English. Maintain journalistic tone. Return only the translated text.' },
           { role: 'user', content: `Headline: ${story.headline}\n\n${odiaText}` },
-        ],
-        { max_tokens: 2048 }
+        ]
       );
       const translatedText = res.choices[0].message.content;
       setEnglishTranslation(translatedText);
