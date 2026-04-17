@@ -13,7 +13,7 @@ from .models.org_config import OrgConfig  # noqa: F401
 from .models.news_article import NewsArticle  # noqa: F401
 from .models.layout_template import LayoutTemplate  # noqa: F401
 from .models.voice_enrollment import VoiceEnrollment  # noqa: F401
-from .routers import admin, auth, editions, files, layout_ai, layout_templates, news_articles, sarvam, speaker, stories, templates, widgets
+from .routers import ROUTERS
 
 try:
     Base.metadata.create_all(bind=engine)
@@ -70,19 +70,13 @@ if settings.STORAGE_BACKEND == "local":
     os.makedirs(_uploads_dir, exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
 
-app.include_router(admin.router)
-app.include_router(admin.config_router)
-app.include_router(editions.router)
-app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(stories.router, prefix="/stories", tags=["stories"])
-app.include_router(files.router, prefix="/files", tags=["files"])
-app.include_router(sarvam.router, tags=["sarvam"])
-app.include_router(templates.router)
-app.include_router(layout_templates.router)
-app.include_router(layout_ai.router)
-app.include_router(news_articles.router)
-app.include_router(speaker.router, tags=["speaker"])
-app.include_router(widgets.router)
+for router, prefix, tags in ROUTERS:
+    kwargs = {}
+    if prefix:
+        kwargs["prefix"] = prefix
+    if tags:
+        kwargs["tags"] = tags
+    app.include_router(router, **kwargs)
 
 @app.get("/health")
 def health():
