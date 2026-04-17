@@ -1,0 +1,118 @@
+/**
+ * Pure UI helpers — colour/initials/media-URL derivation and
+ * story/reporter shape transforms. No network calls live here.
+ */
+
+import { API_BASE, AVATAR_COLORS } from './_internal.js';
+
+export function getAvatarColor(name) {
+  if (!name) return AVATAR_COLORS[0];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+/**
+ * Helper: extract initials from a name string.
+ */
+export function getInitialsFromName(name) {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/**
+ * Helper: build the full media URL from a relative path.
+ */
+export function getMediaUrl(mediaPath) {
+  if (!mediaPath) return null;
+  if (mediaPath.startsWith('http')) return mediaPath;
+  return `${API_BASE}${mediaPath}`;
+}
+
+/**
+ * Helper: transform an API story object to the shape the UI components expect.
+ * - Builds bodyText from paragraphs[].text
+ * - Builds reporter.initials and reporter.color from reporter.name
+ * - Maps submitted_at to submittedAt (camelCase)
+ * - Builds mediaFiles from paragraphs with media_path
+ */
+export function transformStory(story) {
+  if (!story) return null;
+
+  // Parse paragraphs — may be a JSON string or already an array
+  let paragraphs = story.paragraphs || [];
+  if (typeof paragraphs === 'string') {
+    try {
+      paragraphs = JSON.parse(paragraphs);
+    } catch {
+      paragraphs = [];
+    }
+  }
+
+  // Build bodyText from paragraph texts
+  const bodyText = paragraphs
+    .map((p) => p.text || '')
+    .filter(Boolean)
+    .join('\n\n');
+
+  // Build reporter info with initials and color
+  const reporter = story.reporter || {};
+  const reporterName = reporter.name || '';
+  const reporterWithUI = {
+    ...reporter,
+    initials: getInitialsFromName(reporterName),
+    color: getAvatarColor(reporterName),
+  };
+
+  // Build media files from paragraphs that have media_path
+  const mediaFiles = paragraphs
+    .filter((p) => p.media_path || p.photo_path)
+    .map((p) => ({
+      type: p.media_type || 'photo',
+      url: getMediaUrl(p.media_path || p.photo_path),
+      name: p.media_name || 'media',
+    }));
+
+  return {
+    ...story,
+    paragraphs,
+    bodyText,
+    reporter: reporterWithUI,
+    reporterId: reporter.id || story.reporter_id,
+    submittedAt: story.submitted_at || story.submittedAt,
+    createdAt: story.created_at || story.createdAt,
+    updatedAt: story.updated_at || story.updatedAt,
+    location: story.location || reporter.area_name || '',
+    mediaFiles,
+    // Fallback fields the UI expects
+    priority: story.priority || 'normal',
+    wordCount: bodyText ? bodyText.trim().split(/\s+/).length : 0,
+    aiAccuracy: story.ai_accuracy || story.aiAccuracy || '0',
+    // Revision data (editor's version)
+    revision: story.revision || null,
+    hasRevision: story.has_revision ?? story.revision != null,
+  };
+}
+
+/**
+ * Helper: transform an API reporter object to the shape the UI components expect.
+ */
+export function transformReporter(reporter) {
+  if (!reporter) return null;
+  const name = reporter.name || '';
+  return {
+    ...reporter,
+    initials: getInitialsFromName(name),
+    color: getAvatarColor(name),
+    areaName: reporter.area_name || reporter.areaName || '',
+    organization: reporter.organization || '',
+    isActive: reporter.is_active ?? reporter.isActive ?? true,
+    submissionCount: reporter.submission_count ?? reporter.submissionCount ?? 0,
+    publishedCount: reporter.published_count ?? reporter.publishedCount ?? 0,
+    lastActive: reporter.last_active || reporter.lastActive || null,
+  };
+}
