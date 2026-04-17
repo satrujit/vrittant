@@ -63,6 +63,7 @@ def admin_list_stories(
             .options(joinedload(Story.reporter), joinedload(Story.revision))
             .filter(
                 Story.organization_id == org_id,
+                Story.status != "draft",
                 or_(Story.updated_at >= dt, Story.deleted_at >= dt),
             )
         )
