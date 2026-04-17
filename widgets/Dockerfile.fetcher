@@ -1,0 +1,18 @@
+# Cloud Run Job — widget-fetcher
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY widgets_core ./widgets_core
+COPY plugins ./plugins
+COPY templates ./templates
+COPY fetcher ./fetcher
+
+CMD ["python", "-m", "fetcher.main"]

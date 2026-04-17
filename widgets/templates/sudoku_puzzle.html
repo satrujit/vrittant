@@ -1,0 +1,41 @@
+<h2>{{ title_or or title_en }}</h2>
+<div class="vw-sub" style="margin-bottom:6px;">କଠିନତା: <strong>{{ data.difficulty }}</strong></div>
+<table style="border-collapse:collapse; margin:0 auto; font-family: 'Courier New', monospace;">
+  {% for row in data.value %}
+    <tr>
+      {% for v in row %}
+        <td style="
+          width:24px; height:24px; text-align:center; vertical-align:middle;
+          border:1px solid #d1d5db; font-size:13px; font-weight:600;
+          {% if loop.index == 3 or loop.index == 6 %}border-right:2px solid #111;{% endif %}
+          {% if loop.first %}border-left:2px solid #111;{% endif %}
+          {% if loop.last %}border-right:2px solid #111;{% endif %}
+        ">
+          {% if v %}{{ v }}{% endif %}
+        </td>
+      {% endfor %}
+    </tr>
+    {% if loop.index == 3 or loop.index == 6 %}
+      <tr><td colspan="9" style="border-top:2px solid #111; padding:0; height:0;"></td></tr>
+    {% endif %}
+    {% if loop.first %}
+      <tr><td colspan="9" style="border-top:2px solid #111; padding:0; height:0;"></td></tr>
+    {% endif %}
+    {% if loop.last %}
+      <tr><td colspan="9" style="border-top:2px solid #111; padding:0; height:0;"></td></tr>
+    {% endif %}
+  {% endfor %}
+</table>
+<details style="margin-top:8px;">
+  <summary style="cursor:pointer; font-size:12px; color:#16a34a;">ସମାଧାନ ଦେଖନ୍ତୁ</summary>
+  <table style="border-collapse:collapse; margin:6px auto 0; font-family:'Courier New',monospace;">
+    {% for row in data.solution %}
+      <tr>
+        {% for v in row %}
+          <td style="width:20px; height:20px; text-align:center; border:1px solid #e5e7eb; font-size:11px; color:#6b7280;">{{ v }}</td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </table>
+</details>
+{% include "_source.html" %}

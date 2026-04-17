@@ -1,0 +1,15 @@
+<h2>{{ title_or or title_en }}</h2>
+{% if data.usd_inr %}<div class="vw-sub">USD ↔ INR ₹{{ data.usd_inr }}</div>{% endif %}
+<table class="vw-table" style="margin-top:6px;">
+  <tbody>
+    {% for r in data.rows %}
+    <tr>
+      <td>{{ r.label_or }}</td>
+      <td class="num">
+        {% if r.inr %}₹{{ '{:,}'.format(r.inr) }}{% else %}${{ r.usd }}{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% include "_source.html" %}

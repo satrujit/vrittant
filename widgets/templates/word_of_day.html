@@ -1,0 +1,10 @@
+<h2>{{ title_or or title_en }}</h2>
+<div style="font-size:22px; font-weight:700;">{{ data.word }}</div>
+<div class="vw-sub">
+  {% if data.phonetic %}{{ data.phonetic }} · {% endif %}<em>{{ data.part }}</em>
+</div>
+<p style="margin:8px 0 0;">{{ data.definition_or or data.definition }}</p>
+{% if data.example %}
+  <p style="margin:6px 0 0; font-style:italic; color:#6b7280;">"{{ data.example_or or data.example }}"</p>
+{% endif %}
+{% include "_source.html" %}

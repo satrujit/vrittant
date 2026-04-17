@@ -15,6 +15,7 @@ import SettingsPage from './pages/SettingsPage';
 import LeaderboardPage from './pages/LeaderboardPage';
 import NewsFeedPage from './pages/NewsFeedPage';
 import ReviewPage from './pages/ReviewPage';
+import WidgetsPage from './pages/WidgetsPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 
 const LANG_MAP = { odia: 'or', english: 'en', hindi: 'hi' };
@@ -57,6 +58,7 @@ function App() {
                 <Route path="/buckets/:editionId" element={<BucketsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/news-feed" element={<NewsFeedPage />} />
+                <Route path="/widgets" element={<WidgetsPage />} />
               </Route>
               <Route path="/review/:id" element={<ReviewPage />} />
             </Route>

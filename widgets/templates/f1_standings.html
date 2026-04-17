@@ -1,0 +1,16 @@
+<h2>{{ title_or or title_en }}{% if data.season %} <span class="vw-sub">({{ data.season }})</span>{% endif %}</h2>
+<table class="vw-table">
+  <tbody>
+    {% for r in data.rows %}
+    <tr>
+      <td style="width:20px;"><strong>{{ r.pos }}</strong></td>
+      <td>
+        <div>{{ r.name }}</div>
+        <div class="vw-sub">{{ r.team }}</div>
+      </td>
+      <td class="num">{{ r.points }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% include "_source.html" %}

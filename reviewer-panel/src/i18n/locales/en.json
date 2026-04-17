@@ -11,7 +11,12 @@
     "archive": "Archive",
     "settings": "Settings",
     "poweredBy": "Powered by",
-    "newsFeed": "News Feed"
+    "newsFeed": "News Feed",
+    "widgets": "Widgets"
+  },
+  "widgets": {
+    "title": "Daily Widgets",
+    "subtitle": "Auto-refreshed daily at 12:30 AM IST. Pulled from public sources, translated to Odia."
   },
   "dashboard": {
     "title": "Report Review Queue",

@@ -1,0 +1,15 @@
+<h2>{{ title_or or title_en }}</h2>
+<table class="vw-table">
+  <tbody>
+    {% for r in data.rows %}
+    <tr>
+      <td>{{ r.name_or }}</td>
+      <td class="num">{{ r.temp }}°</td>
+      <td class="num vw-sub" style="font-size:11px;">
+        {% if r.tmax is not none %}↑{{ r.tmax }}° ↓{{ r.tmin }}°{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% include "_source.html" %}

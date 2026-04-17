@@ -1,0 +1,11 @@
+<h2>{{ title_or or title_en }}</h2>
+<div class="vw-sub">ଅଧ୍ୟାୟ {{ data.chapter }} · ଶ୍ଳୋକ {{ data.verse }}</div>
+<blockquote>
+  {% if data.sanskrit %}<div style="font-style:italic">{{ data.sanskrit }}</div>{% endif %}
+  {% if data.english_meaning_or %}
+    <div style="margin-top:6px">{{ data.english_meaning_or }}</div>
+  {% elif data.english_meaning %}
+    <div style="margin-top:6px">{{ data.english_meaning }}</div>
+  {% endif %}
+</blockquote>
+{% include "_source.html" %}

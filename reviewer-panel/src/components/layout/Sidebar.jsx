@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Archive, Users, Columns3, Newspaper, Trophy, LogOut, Settings } from 'lucide-react';
+import { LayoutDashboard, Archive, Users, Columns3, Newspaper, Trophy, LogOut, Settings, LayoutGrid } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { useAuth } from '../../contexts/AuthContext';
 import { getInitialsFromName, getMediaUrl } from '../../services/api';
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { key: 'leaderboard', path: '/leaderboard', icon: Trophy,          labelKey: 'Leaderboard',     entitlementKey: 'dashboard' },
   { key: 'pageBuckets', path: '/buckets',    icon: Columns3,        labelKey: 'nav.pageBuckets', entitlementKey: 'editions' },
   { key: 'newsFeed',    path: '/news-feed',  icon: Newspaper,       labelKey: 'nav.newsFeed',    entitlementKey: 'news_feed' },
+  { key: 'widgets',     path: '/widgets',    icon: LayoutGrid,      labelKey: 'nav.widgets',     entitlementKey: 'dashboard' },
 ];
 
 const navItemBase =

@@ -1,0 +1,17 @@
+<h2>{{ title_or or title_en }}</h2>
+{% if data.rows %}
+<table class="vw-table">
+  <tbody>
+    {% for r in data.rows %}
+    <tr>
+      <td>{{ r.label_or }}</td>
+      <td class="num">₹{{ '{:.2f}'.format(r.price) }}</td>
+      <td class="vw-sub" style="font-size:11px;">{{ r.unit }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="vw-sub">ମୂଲ୍ୟ ଅନୁପଲବ୍ଧ। ଅନଗ୍ରସର ଡାଟା ସୋର୍ସ ଯାଞ୍ଚ କରନ୍ତୁ।</div>
+{% endif %}
+{% include "_source.html" %}

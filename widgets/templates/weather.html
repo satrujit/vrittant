@@ -1,0 +1,18 @@
+<h2>{{ title_or or title_en }}</h2>
+<div class="vw-row">
+  <span class="vw-num">{{ data.current.temp_c }}°C</span>
+  <span class="vw-sub">{{ data.current.label }} · ଆର୍ଦ୍ରତା {{ data.current.humidity }}%</span>
+</div>
+<div style="margin-top:8px; display:grid; grid-template-columns:repeat({{ data.days|length }}, 1fr); gap:6px;">
+  {% for d in data.days %}
+  <div style="text-align:center; padding:6px; background:#fff; border-radius:6px;">
+    <div class="vw-sub">{{ d.date[5:] }}</div>
+    <div class="vw-num">{{ d.max_c|round|int }}° / {{ d.min_c|round|int }}°</div>
+    <div class="vw-sub" style="font-size:11px">{{ d.label }}</div>
+    {% if d.precip_mm and d.precip_mm > 0 %}
+      <div class="vw-sub" style="font-size:11px">☂ {{ d.precip_mm }}mm</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% include "_source.html" %}
