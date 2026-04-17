@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { fetchCurrentUser, fetchOrgConfig, setAuthToken, clearAuthToken, getAuthToken } from '../services/api';
-import { auth } from '../services/firebase';
 
 const AuthContext = createContext(null);
 
@@ -40,7 +39,6 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     clearAuthToken();
     setUser(null);
-    try { auth.signOut(); } catch {}
   }, []);
 
   const refreshUser = useCallback(async () => {
