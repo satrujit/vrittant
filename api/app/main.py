@@ -13,7 +13,7 @@ from .models.org_config import OrgConfig  # noqa: F401
 from .models.news_article import NewsArticle  # noqa: F401
 from .models.layout_template import LayoutTemplate  # noqa: F401
 from .models.voice_enrollment import VoiceEnrollment  # noqa: F401
-from .routers import admin, auth, editions, files, layout_ai, layout_templates, news_articles, sarvam, speaker, stories, templates
+from .routers import admin, auth, editions, files, layout_ai, layout_templates, news_articles, sarvam, speaker, stories, templates, widgets
 
 try:
     Base.metadata.create_all(bind=engine)
@@ -86,6 +86,7 @@ app.include_router(layout_templates.router)
 app.include_router(layout_ai.router)
 app.include_router(news_articles.router)
 app.include_router(speaker.router, tags=["speaker"])
+app.include_router(widgets.router)
 
 @app.get("/health")
 def health():
