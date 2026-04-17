@@ -13,25 +13,30 @@ def _is_odia_char(ch: str) -> bool:
 def _split_runs(text: str) -> list[tuple[str, bool]]:
     """Split text into consecutive (chunk, is_odia) runs.
 
-    Latin letters, digits and punctuation form a "Latin" run
-    (is_odia=False). Consecutive Odia-block chars form an "Odia" run
-    (is_odia=True). ASCII whitespace is treated as "neutral" — it
-    adheres to the surrounding run so a pure-Odia sentence with spaces
-    stays a single Noto Sans Oriya run instead of being chopped at every
-    space (which would also break shaping). Combining marks live in
-    U+0B00–U+0B7F so they naturally stay attached to their Odia base.
+    Classification:
+      - Odia block (U+0B00–U+0B7F)   → Odia run
+      - ASCII letters/digits         → Latin run
+      - Everything else              → neutral, adheres to surrounding run
+
+    Treating only ASCII alphanumerics as "Latin" keeps Odia sentence
+    punctuation (danda U+0964, double-danda U+0965), zero-width
+    joiners (U+200C/U+200D), smart quotes, em/en dashes, etc. attached
+    to the Odia run so they render in Noto Sans Oriya instead of being
+    sent to Minion Pro (which lacks those glyphs and shows a missing-
+    glyph box). Whitespace is also neutral so a pure-Odia sentence
+    stays a single run instead of being chopped at every space.
     """
     if not text:
         return []
 
-    classes: list[bool | None] = []  # True=odia, False=latin, None=whitespace
+    classes: list[bool | None] = []  # True=odia, False=latin, None=neutral
     for ch in text:
         if _is_odia_char(ch):
             classes.append(True)
-        elif ch in (" ", "\t", "\n", "\r"):
-            classes.append(None)
-        else:
+        elif ("A" <= ch <= "Z") or ("a" <= ch <= "z") or ("0" <= ch <= "9"):
             classes.append(False)
+        else:
+            classes.append(None)
 
     # Collapse: whitespace inherits from the previous non-whitespace
     # class; if none yet, look ahead to the next non-whitespace.
