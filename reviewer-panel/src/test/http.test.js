@@ -52,4 +52,35 @@ describe('http wrapper', () => {
     fetch.mockResolvedValue({ ok: true, status: 204 });
     expect(await apiDelete('/foo')).toBeNull();
   });
+
+  it('omits Authorization header when no token is set', async () => {
+    fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    await apiGet('/foo');
+    const [, opts] = fetch.mock.calls[0];
+    expect(opts.headers).not.toHaveProperty('Authorization');
+  });
+
+  it('clears token and throws ApiError(401, "Session expired") on 401', async () => {
+    localStorage.setItem('vr_token', 'tok');
+    fetch.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized' });
+    await expect(apiGet('/foo')).rejects.toMatchObject({
+      name: 'ApiError', status: 401, message: 'Session expired',
+    });
+    expect(localStorage.getItem('vr_token')).toBeNull();
+  });
+
+  it('apiPut sends PUT with JSON-stringified body', async () => {
+    fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    await apiPut('/foo', { a: 1 });
+    const [, opts] = fetch.mock.calls[0];
+    expect(opts.method).toBe('PUT');
+    expect(JSON.parse(opts.body)).toEqual({ a: 1 });
+  });
+
+  it('wraps fetch network failures as ApiError(0, "Network error: ...")', async () => {
+    fetch.mockRejectedValue(new TypeError('Failed to fetch'));
+    await expect(apiGet('/foo')).rejects.toMatchObject({
+      name: 'ApiError', status: 0, message: /Network error/,
+    });
+  });
 });

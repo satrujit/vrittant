@@ -21,11 +21,17 @@ function authHeader() {
 
 async function request(method, path, body) {
   const url = `${import.meta.env.VITE_API_BASE}${path}`;
-  const res = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...authHeader() },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError(0, `Network error: ${err.message}`, null);
+  }
 
   if (res.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
