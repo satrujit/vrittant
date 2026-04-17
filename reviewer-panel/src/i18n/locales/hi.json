@@ -204,7 +204,9 @@
       "action": "हटाएं",
       "confirm": "क्या आप इस कहानी को हटाना चाहते हैं?",
       "success": "कहानी हटा दी गई"
-    }
+    },
+    "reviewedBy": "समीक्षा",
+    "reviewedByOn": "{{name}} द्वारा {{date}} को समीक्षित"
   },
   "allStories": {
     "title": "सभी खबरें",

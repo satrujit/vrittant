@@ -376,6 +376,9 @@ export default function AllStoriesPage() {
                   {t('table.status')}
                 </TableHead>
                 <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
+                  {t('stories.reviewedBy')}
+                </TableHead>
+                <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
                   {t('table.action')}
                 </TableHead>
                 {isOrgAdmin && (
@@ -450,6 +453,20 @@ export default function AllStoriesPage() {
                     {/* Status */}
                     <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
                       <StatusBadge status={story.status} size="sm" />
+                    </TableCell>
+
+                    {/* Reviewed by */}
+                    <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
+                      {story.reviewer_name ? (
+                        <div className="flex flex-col gap-0.5 whitespace-nowrap">
+                          <span className="text-xs text-foreground">{story.reviewer_name}</span>
+                          {story.reviewed_at && (
+                            <span className="text-[11px] text-muted-foreground">{formatDate(story.reviewed_at)}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </TableCell>
 
                     {/* Action */}

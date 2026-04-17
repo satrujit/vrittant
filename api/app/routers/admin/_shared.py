@@ -40,6 +40,9 @@ class AdminStoryResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     reporter: AdminReporterInfo
+    reviewed_by: Optional[str] = None
+    reviewer_name: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -60,6 +63,9 @@ class AdminStoryListItem(BaseModel):
     reporter: AdminReporterInfo
     has_revision: bool = False
     is_deleted: bool = False
+    reviewed_by: Optional[str] = None
+    reviewer_name: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -106,6 +112,9 @@ class AdminStoryWithRevisionResponse(BaseModel):
     reporter: AdminReporterInfo
     revision: Optional[AdminRevisionInfo] = None
     edition_info: list[EditionAssignmentInfo] = []
+    reviewed_by: Optional[str] = None
+    reviewer_name: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

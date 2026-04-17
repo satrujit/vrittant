@@ -204,7 +204,9 @@
       "action": "Delete",
       "confirm": "Are you sure you want to delete this story?",
       "success": "Story deleted"
-    }
+    },
+    "reviewedBy": "Reviewed by",
+    "reviewedByOn": "Reviewed by {{name}} on {{date}}"
   },
   "allStories": {
     "title": "All Stories",

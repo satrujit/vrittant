@@ -29,7 +29,7 @@ class User(Base):
     deleted_at = Column(DateTime, nullable=True, default=None)
 
     org = relationship("Organization")
-    stories = relationship("Story", back_populates="reporter")
+    stories = relationship("Story", foreign_keys="Story.reporter_id", back_populates="reporter")
     entitlements = relationship("Entitlement", back_populates="user", cascade="all, delete-orphan")
 
 

@@ -100,7 +100,7 @@ async def semantic_search_stories(
 
     base_query = (
         db.query(Story, best_similarity.label("score"))
-        .options(joinedload(Story.reporter), joinedload(Story.revision))
+        .options(joinedload(Story.reporter), joinedload(Story.revision), joinedload(Story.reviewer))
         .filter(
             Story.organization_id == org_id,
             Story.status != "draft",
@@ -134,6 +134,9 @@ async def semantic_search_stories(
             updated_at=s.updated_at,
             reporter=s.reporter,
             has_revision=s.revision is not None,
+            reviewed_by=s.reviewed_by,
+            reviewer_name=s.reviewer.name if s.reviewer else None,
+            reviewed_at=s.reviewed_at,
         )
         for s, score in results
     ]

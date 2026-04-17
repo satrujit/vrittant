@@ -48,8 +48,11 @@ class Story(Base):
     updated_at = Column(DateTime, default=now_ist, onupdate=now_ist)
     deleted_at = Column(DateTime, nullable=True, default=None)
     search_text = Column(Text, default="", server_default="")  # denormalized text for trigram search
+    reviewed_by = Column(String, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
 
-    reporter = relationship("User", back_populates="stories")
+    reporter = relationship("User", foreign_keys=[reporter_id], back_populates="stories")
+    reviewer = relationship("User", foreign_keys=[reviewed_by])
     revision = relationship("StoryRevision", back_populates="story", uselist=False)
 
     def refresh_search_text(self):

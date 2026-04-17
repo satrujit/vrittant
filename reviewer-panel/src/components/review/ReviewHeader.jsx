@@ -321,6 +321,18 @@ export default function ReviewHeader({
         </div>
       </div>
 
+      {/* ── Reviewed-by attribution (only for terminal statuses) ── */}
+      {['approved', 'rejected', 'published'].includes(status) && story.reviewer_name && (
+        <div className="shrink-0 border-b border-border bg-muted/30 px-6 py-1">
+          <span className="text-[11px] text-muted-foreground">
+            {t('stories.reviewedByOn', {
+              name: story.reviewer_name,
+              date: formatDate(story.reviewed_at),
+            })}
+          </span>
+        </div>
+      )}
+
       {/* ── Sticky headline ── */}
       <div className="shrink-0 border-b border-border bg-background px-6 py-2">
         <input

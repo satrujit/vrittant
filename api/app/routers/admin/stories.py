@@ -60,7 +60,7 @@ def admin_list_stories(
 
         delta_query = (
             db.query(Story)
-            .options(joinedload(Story.reporter), joinedload(Story.revision))
+            .options(joinedload(Story.reporter), joinedload(Story.revision), joinedload(Story.reviewer))
             .filter(
                 Story.organization_id == org_id,
                 Story.status != "draft",
@@ -100,6 +100,9 @@ def admin_list_stories(
                 reporter=s.reporter,
                 has_revision=s.revision is not None,
                 is_deleted=s.deleted_at is not None,
+                reviewed_by=s.reviewed_by,
+                reviewer_name=s.reviewer.name if s.reviewer else None,
+                reviewed_at=s.reviewed_at,
             )
             for s in stories
         ]
@@ -124,7 +127,7 @@ def admin_list_stories(
 
     total = query.count()
     stories = (
-        query.options(joinedload(Story.revision))
+        query.options(joinedload(Story.revision), joinedload(Story.reviewer))
         .order_by(Story.updated_at.desc())
         .offset(offset)
         .limit(limit)
@@ -146,6 +149,9 @@ def admin_list_stories(
             updated_at=s.updated_at,
             reporter=s.reporter,
             has_revision=s.revision is not None,
+            reviewed_by=s.reviewed_by,
+            reviewer_name=s.reviewer.name if s.reviewer else None,
+            reviewed_at=s.reviewed_at,
         )
         for s in stories
     ]
@@ -193,7 +199,7 @@ def create_blank_story(
 def admin_get_story(story_id: str, db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
     story = (
         db.query(Story)
-        .options(joinedload(Story.reporter), joinedload(Story.revision))
+        .options(joinedload(Story.reporter), joinedload(Story.revision), joinedload(Story.reviewer))
         .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
         .first()
     )
@@ -204,12 +210,16 @@ def admin_get_story(story_id: str, db: Session = Depends(get_db), user: User = D
     # Build response with edition info
     resp = AdminStoryWithRevisionResponse.model_validate(story)
     resp.edition_info = _get_edition_info(db, story_id)
+    resp.reviewer_name = story.reviewer.name if story.reviewer else None
     return resp
 
 
 # ---------------------------------------------------------------------------
 # PUT /admin/stories/{story_id}/status
 # ---------------------------------------------------------------------------
+
+TERMINAL_STATUSES = {"approved", "rejected", "published"}
+
 
 @router.put("/stories/{story_id}/status", response_model=AdminStoryResponse)
 def admin_update_story_status(
@@ -228,7 +238,7 @@ def admin_update_story_status(
 
     story = (
         db.query(Story)
-        .options(joinedload(Story.reporter))
+        .options(joinedload(Story.reporter), joinedload(Story.reviewer))
         .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
         .first()
     )
@@ -239,10 +249,18 @@ def admin_update_story_status(
 
     # Edition assignment is optional — approval no longer requires it
     story.status = body.status
+    if body.status in TERMINAL_STATUSES:
+        story.reviewed_by = user.id
+        story.reviewed_at = now_ist()
+    else:
+        story.reviewed_by = None
+        story.reviewed_at = None
     story.updated_at = now_ist()
     db.commit()
     db.refresh(story)
-    return story
+    resp = AdminStoryResponse.model_validate(story)
+    resp.reviewer_name = story.reviewer.name if story.reviewer else None
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +277,7 @@ def admin_update_story(
 ):
     story = (
         db.query(Story)
-        .options(joinedload(Story.reporter), joinedload(Story.revision))
+        .options(joinedload(Story.reporter), joinedload(Story.revision), joinedload(Story.reviewer))
         .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
         .first()
     )
@@ -312,7 +330,10 @@ def admin_update_story(
     story.refresh_search_text()
     db.commit()
     db.refresh(story)
-    return story
+    resp = AdminStoryWithRevisionResponse.model_validate(story)
+    resp.edition_info = _get_edition_info(db, story.id)
+    resp.reviewer_name = story.reviewer.name if story.reviewer else None
+    return resp
 
 
 # ---------------------------------------------------------------------------

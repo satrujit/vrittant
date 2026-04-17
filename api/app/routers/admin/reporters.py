@@ -149,7 +149,7 @@ def admin_reporter_stories(
 
     total = query.count()
     stories = (
-        query.options(joinedload(Story.revision))
+        query.options(joinedload(Story.revision), joinedload(Story.reviewer))
         .order_by(Story.updated_at.desc())
         .offset(offset)
         .limit(limit)
@@ -171,6 +171,9 @@ def admin_reporter_stories(
             updated_at=s.updated_at,
             reporter=s.reporter,
             has_revision=s.revision is not None,
+            reviewed_by=s.reviewed_by,
+            reviewer_name=s.reviewer.name if s.reviewer else None,
+            reviewed_at=s.reviewed_at,
         )
         for s in stories
     ]
