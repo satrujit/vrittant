@@ -1,0 +1,87 @@
+"""Edition read endpoints: list, detail."""
+from fastapi import Depends, HTTPException, Query, status
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
+
+from ...database import get_db
+from ...deps import require_reviewer, get_current_org_id
+from ...models.edition import Edition, EditionPage
+from ...models.user import User
+from ...schemas.edition import (
+    EditionDetailResponse,
+    EditionListResponse,
+)
+from . import router
+from ._shared import _edition_to_response, _page_to_response
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/editions
+# ---------------------------------------------------------------------------
+
+@router.get("", response_model=EditionListResponse)
+def list_editions(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
+    status_filter: str | None = Query(None, alias="status"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+):
+    base_filters = [Edition.organization_id == org_id]
+    if status_filter:
+        base_filters.append(Edition.status == status_filter)
+
+    # Total count (without joins)
+    total = db.query(func.count(Edition.id)).filter(*base_filters).scalar()
+
+    # Fetch editions with eager-loaded pages and story assignments
+    editions = (
+        db.query(Edition)
+        .filter(*base_filters)
+        .options(
+            joinedload(Edition.pages).joinedload(EditionPage.story_assignments)
+        )
+        .order_by(Edition.publication_date.desc(), Edition.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    # Deduplicate from joinedload (SQLAlchemy may return duplicates with joins)
+    seen = set()
+    unique_editions = []
+    for e in editions:
+        if e.id not in seen:
+            seen.add(e.id)
+            unique_editions.append(e)
+
+    return EditionListResponse(
+        editions=[_edition_to_response(e) for e in unique_editions],
+        total=total,
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/editions/{edition_id}
+# ---------------------------------------------------------------------------
+
+@router.get("/{edition_id}", response_model=EditionDetailResponse)
+def get_edition(edition_id: str, db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
+    edition = (
+        db.query(Edition)
+        .options(
+            joinedload(Edition.pages).joinedload(EditionPage.story_assignments)
+        )
+        .filter(Edition.id == edition_id, Edition.organization_id == org_id)
+        .first()
+    )
+    if not edition:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Edition not found"
+        )
+
+    pages_data = [_page_to_response(p) for p in edition.pages]
+    resp = _edition_to_response(edition)
+    resp["pages"] = pages_data
+    return resp
