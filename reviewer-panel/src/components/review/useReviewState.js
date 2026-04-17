@@ -689,13 +689,13 @@ export function useReviewState({ id, t }) {
     setTranslating(true);
     try {
       const odiaText = story.paragraphs.map((p) => p.text).filter(Boolean).join('\n\n');
-      const res = await llmChat(
-        [
-          { role: 'system', content: 'Translate the following Odia newspaper article to English. Maintain journalistic tone. Return only the translated text.' },
+      const translatedText = await llmChat({
+        messages: [
+          { role: 'system', content: 'Translate the following Odia newspaper article to English. Maintain journalistic tone. Return only the translated text in English. Do not output any Odia script.' },
           { role: 'user', content: `Headline: ${story.headline}\n\n${odiaText}` },
-        ]
-      );
-      const translatedText = res.choices[0].message.content;
+        ],
+        expectEnglish: true,
+      });
       setEnglishTranslation(translatedText);
       if (englishEditor) {
         const html = translatedText.split('\n\n').filter(Boolean).map(p => `<p>${p}</p>`).join('');

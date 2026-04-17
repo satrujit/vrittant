@@ -75,13 +75,15 @@ export function _isPredominantlyOdia(text, threshold = 0.4) {
  *   - finish_reason === 'length' (truncation) — doubles max_tokens up to 16384.
  *   - expectOdia && output is not predominantly Odia — strengthens the system
  *     prompt and retries.
+ *   - expectEnglish && output is predominantly Odia — strengthens the system
+ *     prompt and retries.
  */
 export async function llmChat(arg1, arg2) {
   // Detect legacy positional call: `llmChat(messages, options)`.
   const legacy = Array.isArray(arg1);
   const messages = legacy ? arg1 : arg1?.messages;
   const options = legacy ? (arg2 || {}) : arg1 || {};
-  const { max_tokens, temperature, model, expectOdia = false } = options;
+  const { max_tokens, temperature, model, expectOdia = false, expectEnglish = false } = options;
 
   const buildBody = (mt, msgs) => ({
     messages: msgs,
@@ -96,17 +98,28 @@ export async function llmChat(arg1, arg2) {
   let finishReason = res?.choices?.[0]?.finish_reason;
 
   const truncated = finishReason === 'length';
-  const wrongLang = expectOdia && !_isPredominantlyOdia(text);
+  const wantOdiaButGotElse = expectOdia && !_isPredominantlyOdia(text);
+  const wantEnglishButGotOdia = expectEnglish && _isPredominantlyOdia(text);
+  const wrongLang = wantOdiaButGotElse || wantEnglishButGotOdia;
 
   if (truncated || wrongLang) {
     let retryMessages = messages;
-    if (wrongLang) {
+    if (wantOdiaButGotElse) {
       retryMessages = [
         ...(messages || []).filter((m) => m.role !== 'system'),
         {
           role: 'system',
           content:
             'You MUST respond in Odia (ଓଡ଼ିଆ) script only. Do not use English or transliteration.',
+        },
+      ];
+    } else if (wantEnglishButGotOdia) {
+      retryMessages = [
+        ...(messages || []).filter((m) => m.role !== 'system'),
+        {
+          role: 'system',
+          content:
+            'You MUST respond in English only. Do not output any Odia (ଓଡ଼ିଆ) script. Translate every word into natural English.',
         },
       ];
     }
