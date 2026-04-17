@@ -1,21 +1,16 @@
 # vrittant-widgets
 
-Standalone widget microservice. Daily-refreshed, plugin-based, read-only. Fully isolated from the main API and frontend.
+Plugin-based daily widget fetcher. Writes consolidated snapshots to Postgres; the reviewer panel reads them via `GET /api/widgets/all` and renders natively in React.
 
 ## Architecture
 
 ```
 fetcher/        Cloud Run Job — runs daily 00:30 IST via Cloud Scheduler
-renderer/       Cloud Run Service — SSR HTML for iframe embedding
-widgets_core/   Plugin ABC, registry, Firestore client, Sarvam translate, dedup
+widgets_core/   Plugin ABC, registry, DB client, Sarvam translate, dedup
 plugins/        One file per widget (drop in / remove freely)
-templates/      Jinja2 templates, one per widget + _page.html wrapper
 ```
 
-Storage: **Firestore** (no SQL).
-- `widget_snapshots/{widgetId}_{YYYY-MM-DD}` — today's payload + rendered HTML
-- `widget_served_items/{widgetId}/items/{hash}` — dedup ledger
-- `widget_runs/{runId}` — fetch run audit log
+Storage: **Postgres** (`widgets.snapshots` — one row per widget per day).
 
 ## Adding a widget
 
@@ -27,7 +22,6 @@ Storage: **Firestore** (no SQL).
    class MyWidget(WidgetPlugin):
        id = "my_widget"
        category = "misc"
-       template = "my_widget.html"
        title_or = "ମୋର ୱିଜେଟ୍"
        dedup_strategy = "none"
        translate_fields = ["headline"]
@@ -35,8 +29,8 @@ Storage: **Firestore** (no SQL).
        async def fetch(self) -> dict:
            return {"headline": "Hello from my widget"}
    ```
-2. Create `templates/my_widget.html`.
-3. Redeploy fetcher + renderer.
+2. Add a matching React renderer in `reviewer-panel/src/pages/WidgetsPage.jsx` (CATALOG entry).
+3. Redeploy the fetcher.
 
 ## Deploy
 
@@ -45,7 +39,6 @@ Storage: **Firestore** (no SQL).
 bash scripts/setup_iam.sh
 
 # every change
-bash scripts/deploy_renderer.sh
 bash scripts/deploy_fetcher.sh
 ```
 
@@ -53,19 +46,5 @@ bash scripts/deploy_fetcher.sh
 
 ```bash
 gcloud auth application-default login
-bash scripts/run_fetcher_local.sh   # runs all plugins once and writes to real Firestore
-bash scripts/run_renderer_local.sh  # http://localhost:8081/render/all
+bash scripts/run_fetcher_local.sh   # runs all plugins once and writes to Postgres
 ```
-
-## Frontend embed
-
-```jsx
-<iframe
-  src="https://widgets.vrittant.in/render/all"
-  sandbox="allow-scripts allow-popups"
-  referrerPolicy="no-referrer"
-  style={{ width: "100%", height: 600, border: 0 }}
-/>
-```
-
-The renderer sets `Content-Security-Policy: frame-ancestors` so only allow-listed origins can embed it. Iframe height is auto-managed via `postMessage({type:'vrittant-widget-resize', height})`.

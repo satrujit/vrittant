@@ -1,9 +1,0 @@
-<h2>{{ title_or or title_en }}</h2>
-<div style="display:grid; grid-template-columns:1fr 1fr; gap:6px 12px;">
-  <div class="vw-row"><span class="vw-sub">☀ ସୂର୍ଯ୍ୟୋଦୟ</span><span class="vw-num">{{ data.sunrise }}</span></div>
-  <div class="vw-row"><span class="vw-sub">🌇 ସୂର୍ଯ୍ୟାସ୍ତ</span><span class="vw-num">{{ data.sunset }}</span></div>
-  <div class="vw-row"><span class="vw-sub">ଦିନ ଲମ୍ବ</span><span class="vw-num">{{ data.daylight }}</span></div>
-  <div class="vw-row"><span class="vw-sub">ଚନ୍ଦ୍ର</span><span class="vw-num">{{ data.moon_illum_pct }}%</span></div>
-</div>
-<div class="vw-sub" style="margin-top:8px; text-align:center;">{{ data.moon_phase_or }}</div>
-{% include "_source.html" %}
