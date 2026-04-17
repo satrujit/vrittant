@@ -17,7 +17,7 @@ from ..models.layout_template import LayoutTemplate
 from ..models.story import Story
 from ..models.story_revision import StoryRevision
 from ..models.user import User
-from ..services.idml_generator import generate_idml
+from ..services.idml import generate_idml
 from ..services.openai_client import call_openai
 from sqlalchemy.orm import joinedload
 

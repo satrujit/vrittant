@@ -13,7 +13,7 @@ from ...deps import require_reviewer, get_current_org_id
 from ...models.edition import Edition, EditionPage
 from ...models.story import Story
 from ...models.user import User
-from ...services.idml_generator import generate_idml
+from ...services.idml import generate_idml
 from . import router
 
 logger = logging.getLogger(__name__)
