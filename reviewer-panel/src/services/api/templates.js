@@ -2,78 +2,64 @@
  * Story templates, layout templates, AI auto-layout, and IDML export.
  */
 
-import { API_BASE, apiFetch } from './_internal.js';
+import { apiGet, apiPost, apiPut, apiDelete } from '../http.js';
+import { API_BASE } from './_internal.js';
 import { getAuthToken } from './auth.js';
 
 // ── Templates API ──
 
 export async function fetchTemplates() {
-  return apiFetch('/admin/templates');
+  return apiGet('/admin/templates');
 }
 
 export async function fetchTemplate(id) {
-  return apiFetch(`/admin/templates/${id}`);
+  return apiGet(`/admin/templates/${id}`);
 }
 
 export async function createTemplate(data) {
-  return apiFetch('/admin/templates', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return apiPost('/admin/templates', data);
 }
 
 export async function updateTemplate(id, data) {
-  return apiFetch(`/admin/templates/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  return apiPut(`/admin/templates/${id}`, data);
 }
 
 export async function deleteTemplate(id) {
-  return apiFetch(`/admin/templates/${id}`, { method: 'DELETE' });
+  return apiDelete(`/admin/templates/${id}`);
 }
 
 // ── Layout Templates API ──
 
 export async function fetchLayoutTemplates(category) {
   const query = category ? `?category=${encodeURIComponent(category)}` : '';
-  return apiFetch(`/admin/layout-templates${query}`);
+  return apiGet(`/admin/layout-templates${query}`);
 }
 
 export async function fetchLayoutTemplate(id) {
-  return apiFetch(`/admin/layout-templates/${id}`);
+  return apiGet(`/admin/layout-templates/${id}`);
 }
 
 export async function createLayoutTemplate(data) {
-  return apiFetch('/admin/layout-templates', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return apiPost('/admin/layout-templates', data);
 }
 
 export async function updateLayoutTemplate(id, data) {
-  return apiFetch(`/admin/layout-templates/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  return apiPut(`/admin/layout-templates/${id}`, data);
 }
 
 export async function deleteLayoutTemplate(id) {
-  return apiFetch(`/admin/layout-templates/${id}`, { method: 'DELETE' });
+  return apiDelete(`/admin/layout-templates/${id}`);
 }
 
 // ── AI Layout + IDML Export ──
 
 export async function generateAutoLayout(storyId, options = {}) {
-  return apiFetch(`/admin/stories/${storyId}/auto-layout`, {
-    method: 'POST',
-    body: JSON.stringify({
-      instructions: options.instructions || null,
-      headline: options.headline || null,
-      paragraphs: options.paragraphs || null,
-      layout_template_id: options.layoutTemplateId || null,
-      preferences: options.preferences || null,
-    }),
+  return apiPost(`/admin/stories/${storyId}/auto-layout`, {
+    instructions: options.instructions || null,
+    headline: options.headline || null,
+    paragraphs: options.paragraphs || null,
+    layout_template_id: options.layoutTemplateId || null,
+    preferences: options.preferences || null,
   });
 }
 

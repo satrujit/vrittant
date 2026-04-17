@@ -5,7 +5,8 @@
  * stories, so they live here now.)
  */
 
-import { API_BASE, apiFetch, buildQuery } from './_internal.js';
+import { apiGet, apiPost, apiPut, apiDelete } from '../http.js';
+import { API_BASE, buildQuery } from './_internal.js';
 import { cachedGet, invalidateCache } from './cache.js';
 import { getAuthToken } from './auth.js';
 
@@ -14,7 +15,7 @@ export async function semanticSearchStories(params = {}) {
   if (params.q) searchParams.set('q', params.q);
   if (params.offset != null) searchParams.set('offset', String(params.offset));
   if (params.limit != null) searchParams.set('limit', String(params.limit));
-  return apiFetch(`/admin/stories/semantic-search?${searchParams.toString()}`);
+  return apiGet(`/admin/stories/semantic-search?${searchParams.toString()}`);
 }
 
 /**
@@ -32,7 +33,7 @@ export async function fetchStories(params = {}, opts = {}) {
  * Returns a single story object with nested reporter info.
  */
 export async function fetchStory(id) {
-  return apiFetch(`/admin/stories/${id}`);
+  return apiGet(`/admin/stories/${id}`);
 }
 
 /**
@@ -42,10 +43,7 @@ export async function fetchStory(id) {
  * @param {string} reason — optional reason for rejection or changes
  */
 export async function updateStoryStatus(id, status, reason = '') {
-  const result = await apiFetch(`/admin/stories/${id}/status`, {
-    method: 'PUT',
-    body: JSON.stringify({ status, reason }),
-  });
+  const result = await apiPut(`/admin/stories/${id}/status`, { status, reason });
   invalidateCache('/admin/stories', '/admin/stats', '/admin/leaderboard', '/admin/reporters');
   return result;
 }
@@ -56,22 +54,17 @@ export async function updateStoryStatus(id, status, reason = '') {
  * @param {object} data — { headline, category, paragraphs }
  */
 export async function updateStory(id, data) {
-  const result = await apiFetch(`/admin/stories/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  const result = await apiPut(`/admin/stories/${id}`, data);
   invalidateCache('/admin/stories');
   return result;
 }
 
 export async function deleteStory(id) {
-  return apiFetch(`/admin/stories/${id}`, { method: 'DELETE' });
+  return apiDelete(`/admin/stories/${id}`);
 }
 
 export async function createBlankStory() {
-  return apiFetch('/admin/stories/create-blank', {
-    method: 'POST',
-  });
+  return apiPost('/admin/stories/create-blank');
 }
 
 export async function uploadStoryImage(storyId, file) {
@@ -88,5 +81,5 @@ export async function uploadStoryImage(storyId, file) {
 }
 
 export async function fetchRelatedStories(storyId) {
-  return apiFetch(`/admin/stories/${storyId}/related`);
+  return apiGet(`/admin/stories/${storyId}/related`);
 }

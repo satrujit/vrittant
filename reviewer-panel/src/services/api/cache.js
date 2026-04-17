@@ -5,7 +5,7 @@
  * is module-private.
  */
 
-import { apiFetch } from './_internal.js';
+import { apiGet } from '../http.js';
 
 // ── Delta-Aware SWR Cache ──
 // Shows cached data instantly on page revisit.
@@ -83,7 +83,7 @@ export async function cachedGet(path, opts = {}) {
         ? _deltaUrl(path, cached.fetchedAt)
         : path;
 
-      apiFetch(fetchUrl).then((data) => {
+      apiGet(fetchUrl).then((data) => {
         const fetchedAt = new Date().toISOString();
         let merged;
         if (useDelta && cached.fetchedAt) {
@@ -99,7 +99,7 @@ export async function cachedGet(path, opts = {}) {
   }
 
   // Expired or missing — full fetch
-  const data = await apiFetch(path);
+  const data = await apiGet(path);
   const fetchedAt = new Date().toISOString();
   _cache.set(path, { data, timestamp: Date.now(), fetchedAt });
   return data;

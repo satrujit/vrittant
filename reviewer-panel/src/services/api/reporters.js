@@ -2,7 +2,8 @@
  * Reporter list + per-reporter story feed.
  */
 
-import { apiFetch, buildQuery } from './_internal.js';
+import { apiGet } from '../http.js';
+import { buildQuery } from './_internal.js';
 import { cachedGet } from './cache.js';
 
 /**
@@ -22,5 +23,5 @@ export async function fetchReporters({ includeInactive = false, ...opts } = {}) 
  */
 export async function fetchReporterStories(reporterId, params = {}) {
   const query = buildQuery(params);
-  return apiFetch(`/admin/reporters/${reporterId}/stories${query}`);
+  return apiGet(`/admin/reporters/${reporterId}/stories${query}`);
 }

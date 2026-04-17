@@ -4,7 +4,8 @@
  * markdown artifacts from model output before returning to the UI.
  */
 
-import { API_BASE, apiFetch } from './_internal.js';
+import { apiPost } from '../http.js';
+import { API_BASE } from './_internal.js';
 import { getAuthToken } from './auth.js';
 
 /**
@@ -37,14 +38,11 @@ function cleanLLMContent(text) {
 }
 
 export async function llmChat(messages, options = {}) {
-  const res = await apiFetch('/api/llm/chat', {
-    method: 'POST',
-    body: JSON.stringify({
-      messages,
-      model: options.model || 'sarvam-30b',
-      temperature: options.temperature,
-      max_tokens: options.max_tokens || 2048,
-    }),
+  const res = await apiPost('/api/llm/chat', {
+    messages,
+    model: options.model || 'sarvam-30b',
+    temperature: options.temperature,
+    max_tokens: options.max_tokens || 2048,
   });
   // Strip <think>/<thinking> tags from all choices
   if (res?.choices) {

@@ -4,9 +4,9 @@
  * because the api/ directory has an index.js.
  *
  * Re-exports are explicit (named, not export *) so each name is grep-able
- * to its owning module. Phase 2.1b will swap apiFetch (in _internal.js)
- * for apiGet/apiPost/apiPut/apiDelete from services/http.js — none of the
- * names in this file change.
+ * to its owning module. Phase 2.1b swapped the legacy apiFetch (in
+ * _internal.js) for apiGet/apiPost/apiPut/apiDelete from services/http.js —
+ * none of the names in this file changed.
  */
 
 // Auth — token storage + auth endpoints

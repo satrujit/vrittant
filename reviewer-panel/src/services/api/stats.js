@@ -2,7 +2,7 @@
  * Admin dashboard stats — totals, heatmap, leaderboard.
  */
 
-import { apiFetch } from './_internal.js';
+import { apiGet } from '../http.js';
 import { cachedGet } from './cache.js';
 
 /**
@@ -16,7 +16,7 @@ export async function fetchStats(opts = {}) {
 export async function fetchActivityHeatmap(days = 365, reporterId = null) {
   let url = `/admin/activity-heatmap?days=${days}`;
   if (reporterId) url += `&reporter_id=${reporterId}`;
-  return apiFetch(url);
+  return apiGet(url);
 }
 
 export async function fetchLeaderboard(period = 'month', opts = {}) {
