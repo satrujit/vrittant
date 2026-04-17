@@ -677,13 +677,6 @@ export async function resendOtp(phone, reqId = '') {
   });
 }
 
-export async function firebaseLogin(firebaseToken) {
-  return apiFetch('/auth/firebase-login', {
-    method: 'POST',
-    body: JSON.stringify({ firebase_token: firebaseToken }),
-  });
-}
-
 export async function fetchCurrentUser() {
   return apiFetch('/auth/me');
 }
