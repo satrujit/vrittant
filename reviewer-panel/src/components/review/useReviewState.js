@@ -47,10 +47,8 @@ export function useReviewState({ id, t }) {
   const [status, setStatus] = useState('submitted');
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
 
-  // Tab & layout state
+  // Tab state
   const [activeTab, setActiveTab] = useState('editor');
-  const [layoutHtml, setLayoutHtml] = useState('');
-  const [layoutGenerating, setLayoutGenerating] = useState(false);
 
   // Confirmation popovers
   const [approveOpen, setApproveOpen] = useState(false);
@@ -220,10 +218,6 @@ export function useReviewState({ id, t }) {
               .map((p) => `<p>${(p.text || '').replace(/\n/g, '<br>')}</p>`)
               .join('');
             editor.commands.setContent(html);
-          }
-
-          if (rev && rev.layout_config && rev.layout_config.html) {
-            setLayoutHtml(rev.layout_config.html);
           }
 
           if (rev && rev.english_translation) {
@@ -665,9 +659,6 @@ export function useReviewState({ id, t }) {
         text,
       }));
       const payload = { headline, paragraphs };
-      if (layoutHtml) {
-        payload.layout_config = { html: layoutHtml };
-      }
       const enHtml = englishEditor ? englishEditor.getHTML() : englishTranslation;
       if (enHtml) {
         payload.english_translation = enHtml;
@@ -681,7 +672,7 @@ export function useReviewState({ id, t }) {
     } finally {
       setSaving(false);
     }
-  }, [id, story, headline, editor, englishEditor, layoutHtml, englishTranslation, socialPosts]);
+  }, [id, story, headline, editor, englishEditor, englishTranslation, socialPosts]);
 
   // Translate to English via Sarvam AI
   const handleTranslateToEnglish = useCallback(async () => {
@@ -814,13 +805,9 @@ export function useReviewState({ id, t }) {
     showStatusDropdown,
     setShowStatusDropdown,
 
-    // tabs / layout
+    // tabs
     activeTab,
     setActiveTab,
-    layoutHtml,
-    setLayoutHtml,
-    layoutGenerating,
-    setLayoutGenerating,
 
     // popovers
     approveOpen,

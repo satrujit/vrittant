@@ -13,7 +13,6 @@ import {
   updateEditionPage,
   deleteEditionPage,
   assignStoriesToPage,
-  exportEditionZip,
 } from '../services/api';
 import UnassignedPanel from '../components/buckets/UnassignedPanel';
 import BucketColumn from '../components/buckets/BucketColumn';
@@ -49,7 +48,6 @@ export default function BucketDetailPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
-  const [exporting, setExporting] = useState(false);
 
   const editInputRef = useRef(null);
   const editionTitleInputRef = useRef(null);
@@ -287,18 +285,6 @@ export default function BucketDetailPage() {
     setEditionTitleDraft('');
   };
 
-  const handleExport = useCallback(async () => {
-    setExporting(true);
-    try {
-      await exportEditionZip(editionId);
-    } catch (err) {
-      console.error('Export failed:', err);
-      alert(err.message || 'Export failed');
-    } finally {
-      setExporting(false);
-    }
-  }, [editionId]);
-
   const saveEditionTitle = useCallback(async () => {
     if (editionTitleDraft.trim() && edition) {
       try {
@@ -360,9 +346,6 @@ export default function BucketDetailPage() {
         onBack={() => navigate('/buckets')}
         search={search}
         setSearch={setSearch}
-        exporting={exporting}
-        canExport={pages.length > 0}
-        onExport={handleExport}
         showAddPage={showAddPage}
         setShowAddPage={setShowAddPage}
         pageSuggestions={pageSuggestions}

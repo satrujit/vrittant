@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Pencil, FileText, Languages, LayoutTemplate, Share2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil, FileText, Languages, Share2 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useReviewState } from '../components/review/useReviewState';
 import ReviewHeader from '../components/review/ReviewHeader';
@@ -14,9 +14,9 @@ import { Button } from '@/components/ui/button';
  *
  * All data + editor state lives in `useReviewState`. The shell renders:
  *   ReviewHeader     — top metadata bar + headline
- *   Tabs             — editor / original / english / layout / social
+ *   Tabs             — editor / original / english / social
  *     ReviewEditor   — toolbar + TipTap + voice/sparkle + attachments
- *     ReviewSidebar  — original / english / layout / social tab panes
+ *     ReviewSidebar  — original / english / social tab panes
  *
  * Phase 2.5 split: ReviewPage was 1671 LOC; the body now lives in
  * components/review/. No behavior change — every API call still flows
@@ -104,7 +104,6 @@ function ReviewPage() {
             <TabsTrigger value="editor"><Pencil size={14} /> {t('review.tabs.editor')}</TabsTrigger>
             <TabsTrigger value="original"><FileText size={14} /> {t('review.tabs.original')}</TabsTrigger>
             <TabsTrigger value="english"><Languages size={14} /> {t('review.tabs.english')}</TabsTrigger>
-            <TabsTrigger value="layout"><LayoutTemplate size={14} /> {t('review.tabs.pageLayout')}</TabsTrigger>
             <TabsTrigger value="social"><Share2 size={14} /> {t('review.tabs.social')}</TabsTrigger>
           </TabsList>
         </div>
@@ -155,10 +154,6 @@ function ReviewPage() {
           englishEditor={s.englishEditor}
           translating={s.translating}
           handleTranslateToEnglish={s.handleTranslateToEnglish}
-          layoutHtml={s.layoutHtml}
-          setLayoutHtml={s.setLayoutHtml}
-          layoutGenerating={s.layoutGenerating}
-          setLayoutGenerating={s.setLayoutGenerating}
           editor={s.editor}
           headline={s.headline}
           socialPosts={s.socialPosts}

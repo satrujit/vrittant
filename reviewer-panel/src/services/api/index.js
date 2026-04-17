@@ -61,23 +61,7 @@ export {
   transformReporter,
 } from './helpers.js';
 
-// Templates — story templates, layout templates, AI auto-layout, IDML export
-export {
-  fetchTemplates,
-  fetchTemplate,
-  createTemplate,
-  updateTemplate,
-  deleteTemplate,
-  fetchLayoutTemplates,
-  fetchLayoutTemplate,
-  createLayoutTemplate,
-  updateLayoutTemplate,
-  deleteLayoutTemplate,
-  generateAutoLayout,
-  exportIdml,
-} from './templates.js';
-
-// Editions — CRUD, page CRUD, story-to-page mapping, ZIP export
+// Editions — CRUD, page CRUD, story-to-page mapping
 export {
   fetchEditions,
   fetchEdition,
@@ -90,7 +74,6 @@ export {
   assignStoriesToPage,
   addStoryToPage,
   removeStoryFromPage,
-  exportEditionZip,
 } from './editions.js';
 
 // Org admin — users, roles, entitlements, org metadata + config

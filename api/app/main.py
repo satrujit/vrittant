@@ -11,7 +11,6 @@ from .models.story_revision import StoryRevision  # noqa: F401 — ensure table 
 from .models.page_template import PageTemplate  # noqa: F401
 from .models.org_config import OrgConfig  # noqa: F401
 from .models.news_article import NewsArticle  # noqa: F401
-from .models.layout_template import LayoutTemplate  # noqa: F401
 from .models.voice_enrollment import VoiceEnrollment  # noqa: F401
 from .routers import ROUTERS
 

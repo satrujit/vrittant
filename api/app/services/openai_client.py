@@ -1,4 +1,4 @@
-"""Shared OpenAI (GPT) client used by layout_ai, news research, etc."""
+"""Shared OpenAI (GPT) client used by news research, etc."""
 
 import httpx
 

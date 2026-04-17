@@ -301,8 +301,6 @@ def admin_update_story(
             existing_rev.headline = body.headline
         if rev_paragraphs is not None:
             existing_rev.paragraphs = rev_paragraphs
-        if body.layout_config is not None:
-            existing_rev.layout_config = body.layout_config
         if body.english_translation is not None:
             existing_rev.english_translation = body.english_translation
         if body.social_posts is not None:
@@ -314,7 +312,6 @@ def admin_update_story(
             editor_id=current_user.id,
             headline=body.headline or story.headline,
             paragraphs=rev_paragraphs or story.paragraphs,
-            layout_config=body.layout_config,
             english_translation=body.english_translation,
             social_posts=body.social_posts,
         )

@@ -1,6 +1,6 @@
 """All routers, exposed as a single mount-table for main.py."""
 from . import (
-    admin, auth, editions, files, layout_ai, layout_templates,
+    admin, auth, editions, files,
     news_articles, sarvam, speaker, stories, templates, widgets,
 )
 
@@ -13,8 +13,6 @@ ROUTERS = [
     (files.router,            "/files",    ["files"]),
     (sarvam.router,           None,        ["sarvam"]),
     (templates.router,        None,        None),
-    (layout_templates.router, None,        None),
-    (layout_ai.router,        None,        None),
     (news_articles.router,    None,        None),
     (speaker.router,          None,        ["speaker"]),
     (widgets.router,          None,        None),

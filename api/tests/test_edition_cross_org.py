@@ -3,7 +3,7 @@
 Vuln (pre-fix): assign_stories / add_story_to_page / remove_story_from_page only
 verified that the *edition* belonged to the caller's org, not the *story_id*.
 A reviewer could attach any story (by guessing UUIDs) to their own edition,
-then read content, export-zip the IDML, etc.
+then read content, etc.
 """
 
 from datetime import date

@@ -79,18 +79,3 @@ def test_put_preserves_original_story_immutably(client, auth_header, sample_stor
         {"id": "p1", "text": "Original paragraph one."},
         {"id": "p2", "text": "Original paragraph two."},
     ]
-
-
-def test_save_layout_config(client, auth_header, sample_story):
-    """PUT with layout_config should persist it on the revision."""
-    layout = {
-        "template_id": "tpl-1",
-        "zones": [{"id": "z1", "type": "headline", "font_size_pt": 32}],
-    }
-    resp = client.put(
-        f"/admin/stories/{sample_story.id}",
-        json={"headline": "Test", "layout_config": layout},
-        headers=auth_header,
-    )
-    assert resp.status_code == 200
-    assert resp.json()["revision"]["layout_config"] == layout

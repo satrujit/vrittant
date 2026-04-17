@@ -80,7 +80,6 @@ class AdminRevisionInfo(BaseModel):
     editor_id: str
     headline: str
     paragraphs: list[dict]
-    layout_config: Optional[dict] = None
     english_translation: Optional[str] = None
     social_posts: Optional[dict] = None
     created_at: datetime
@@ -138,7 +137,6 @@ class AdminStoryUpdate(BaseModel):
     category: Optional[str] = None
     priority: Optional[str] = None
     paragraphs: Optional[list[ParagraphSchema]] = None
-    layout_config: Optional[dict] = None
     english_translation: Optional[str] = None
     social_posts: Optional[dict] = None
 

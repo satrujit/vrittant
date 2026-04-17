@@ -19,7 +19,6 @@ class StoryRevision(Base):
     editor_id = Column(String, ForeignKey("users.id"), nullable=False)
     headline = Column(String, nullable=False)
     paragraphs = Column(JSON, nullable=False, default=list)
-    layout_config = Column(JSON, nullable=True, default=None)
     english_translation = Column(Text, nullable=True, default=None)
     social_posts = Column(JSON, nullable=True, default=None)
     created_at = Column(DateTime, default=now_ist)

@@ -8,9 +8,8 @@
  * After Phase 2.1b, the legacy apiFetch wrapper is gone — every api/<domain>.js
  * module now goes through apiGet/apiPost/apiPut/apiDelete in services/http.js.
  * The token helpers stay here because the FormData uploads (uploadOrgLogo,
- * uploadStoryImage), the blob download (exportEditionZip), and the STT
- * WebSocket URL builder all need raw fetch + Authorization header at call
- * time — those shapes don't fit the JSON wrapper.
+ * uploadStoryImage) and the STT WebSocket URL builder all need raw fetch +
+ * Authorization header at call time — those shapes don't fit the JSON wrapper.
  */
 
 export const API_BASE = import.meta.env.VITE_API_BASE;

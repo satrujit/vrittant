@@ -1,4 +1,4 @@
-import { Search, Plus, ArrowLeft, Loader2, Pencil, Check, Download } from 'lucide-react';
+import { Search, Plus, ArrowLeft, Pencil, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,7 +6,7 @@ import AddPagePopover from './AddPagePopover';
 
 /**
  * Header bar for the bucket-detail page: back-button, edition title (with inline edit),
- * search, export-zip, and the new-page popover trigger.
+ * search, and the new-page popover trigger.
  */
 export default function BucketDetailHeader({
   // edition title
@@ -23,10 +23,6 @@ export default function BucketDetailHeader({
   // search
   search,
   setSearch,
-  // export
-  exporting,
-  canExport,
-  onExport,
   // add-page popover
   showAddPage,
   setShowAddPage,
@@ -138,16 +134,6 @@ export default function BucketDetailHeader({
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-
-        <Button
-          variant="outline"
-          className="gap-1.5 px-4 font-semibold rounded-lg hover:-translate-y-px active:translate-y-0"
-          disabled={exporting || !canExport}
-          onClick={onExport}
-        >
-          {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-          {exporting ? t('buckets.exporting', 'Exporting...') : t('buckets.downloadZip', 'Download ZIP')}
-        </Button>
 
         <div className="relative">
           <Button

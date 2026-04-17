@@ -12,20 +12,18 @@ import {
 } from 'lucide-react';
 import { EditorContent } from '@tiptap/react';
 import { useI18n } from '../../i18n';
-import { PageLayoutCanvas, LayoutConfigPanel } from '../PageLayoutPreview';
 import SocialTab from './SocialTab';
 import { TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 
 /**
- * ReviewSidebar — the non-editor tab panes (original / english / layout / social).
+ * ReviewSidebar — the non-editor tab panes (original / english / social).
  *
  * Despite the name, these tabs render in the same content area as the
  * main editor, not in a literal sidebar. Grouped here to keep the page
  * shell thin; each pane is small enough to live as one block.
  */
 export default function ReviewSidebar({
-  id,
   story,
   imageFiles,
   audioFiles,
@@ -36,13 +34,6 @@ export default function ReviewSidebar({
   englishEditor,
   translating,
   handleTranslateToEnglish,
-  // layout
-  layoutHtml,
-  setLayoutHtml,
-  layoutGenerating,
-  setLayoutGenerating,
-  editor,
-  headline,
   // social
   socialPosts,
   setSocialPosts,
@@ -153,37 +144,6 @@ export default function ReviewSidebar({
             </>
           )}
         </div>
-      </TabsContent>
-
-      {/* ── Page Layout tab ── */}
-      <TabsContent value="layout" className="flex min-h-0 flex-1 overflow-hidden">
-        <PageLayoutCanvas layoutHtml={layoutHtml} isGenerating={layoutGenerating} />
-        <LayoutConfigPanel
-          storyId={id}
-          layoutHtml={layoutHtml}
-          onHtmlChange={setLayoutHtml}
-          onLoadingChange={setLayoutGenerating}
-          getStoryContent={() => {
-            const bodyText = editor ? editor.getText() : '';
-            const textParagraphs = bodyText.split('\n\n').filter(Boolean).map((text, i) => ({
-              id: `p-${i}`,
-              text,
-              type: 'paragraph',
-            }));
-
-            const storyParas = story?.revision?.paragraphs || story?.paragraphs || [];
-            const imageParagraphs = storyParas
-              .filter(p => p.type === 'media' || p.type === 'image' || p.image_url || p.media_path)
-              .map(p => ({
-                id: p.id || `img-${Math.random().toString(36).slice(2)}`,
-                text: p.text || p.media_name || '',
-                type: p.type || 'image',
-                image_url: p.image_url || p.media_path || '',
-              }));
-
-            return { headline, paragraphs: [...textParagraphs, ...imageParagraphs] };
-          }}
-        />
       </TabsContent>
 
       {/* ── Social Media tab ── */}
