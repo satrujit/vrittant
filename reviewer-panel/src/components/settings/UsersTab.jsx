@@ -57,7 +57,7 @@ function UsersTab() {
 
   const handleCreate = async (form) => {
     await createUser(form);
-    loadUsers();
+    await loadUsers();
   };
 
   const handleEdit = async (form) => {
@@ -67,22 +67,22 @@ function UsersTab() {
       area_name: form.area_name,
     });
     setEditUser(null);
-    loadUsers();
+    await loadUsers();
   };
 
   const handleToggleActive = async (u) => {
     await updateUser(u.id, { is_active: !u.is_active });
-    loadUsers();
+    await loadUsers();
   };
 
   const handleRoleChange = async (u, newRole) => {
     await updateUserRole(u.id, newRole);
-    loadUsers();
+    await loadUsers();
   };
 
   const handleEntitlements = async (pageKeys) => {
     await updateUserEntitlements(entitlementsUser.id, pageKeys);
-    loadUsers();
+    await loadUsers();
   };
 
   if (loading) {
