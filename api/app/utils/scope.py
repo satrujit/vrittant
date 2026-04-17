@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 T = TypeVar("T")
 
 
-def get_owned_or_404(db: Session, model: Type[T], obj_id, org_id: str) -> T:
+def get_owned_or_404(db: Session, model: Type[T], obj_id: str, org_id: str) -> T:
     """Fetch a single row of ``model`` scoped to the caller's organization.
 
     Filters by both ``model.id == obj_id`` AND ``model.organization_id == org_id``
@@ -33,7 +33,17 @@ def get_owned_or_404(db: Session, model: Type[T], obj_id, org_id: str) -> T:
     distinguishing "doesn't exist" from "exists but not yours" would let a
     caller probe whether arbitrary ids belong to other orgs. Same response
     shape for both cases means existence cannot be leaked.
+
+    Raises ``TypeError`` if ``model`` is not org-scoped (missing ``id`` or
+    ``organization_id``). The unbounded ``TypeVar`` would otherwise let such
+    a misuse surface as a confusing ``AttributeError`` deep inside SQLAlchemy's
+    filter expression — fail fast with the model name instead.
     """
+    if not hasattr(model, "organization_id") or not hasattr(model, "id"):
+        raise TypeError(
+            f"{model.__name__} is not org-scoped (missing 'id' or 'organization_id'). "
+            f"get_owned_or_404 is only for models with both columns."
+        )
     obj = (
         db.query(model)
         .filter(model.id == obj_id, model.organization_id == org_id)

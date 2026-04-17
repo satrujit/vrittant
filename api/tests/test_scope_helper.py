@@ -9,6 +9,7 @@ three required behaviors so future refactors can't regress the contract.
 import pytest
 from fastapi import HTTPException
 
+from app.models.organization import Organization
 from app.models.story import Story
 from app.models.user import User
 from app.utils.scope import get_owned_or_404
@@ -65,3 +66,14 @@ def test_raises_404_when_org_mismatch(db):
         get_owned_or_404(db, Story, "story-rival", "org-test")
 
     assert exc_info.value.status_code == 404
+
+
+def test_raises_typeerror_for_non_org_scoped_model(db):
+    # Organization itself has 'id' but NO 'organization_id' — it IS the org.
+    # If a Phase 2 caller mistakenly passes such a model, we want a loud,
+    # immediate TypeError instead of a confusing AttributeError surfacing
+    # deep inside SQLAlchemy's filter expression.
+    with pytest.raises(TypeError) as exc_info:
+        get_owned_or_404(db, Organization, "org-test", "org-test")
+
+    assert "Organization" in str(exc_info.value)
