@@ -62,7 +62,7 @@ const STATUS_COLORS = {
   },
 };
 
-export default function EditionsPage() {
+export default function BucketsListPage() {
   const { t } = useI18n();
   const { config } = useAuth();
   const navigate = useNavigate();

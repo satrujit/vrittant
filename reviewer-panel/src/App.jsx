@@ -9,8 +9,8 @@ import DashboardPage from './pages/DashboardPage';
 import AllStoriesPage from './pages/AllStoriesPage';
 import ReportersPage from './pages/ReportersPage';
 import ReporterDetailPage from './pages/ReporterDetailPage';
-import EditionsPage from './pages/EditionsPage';
-import BucketsPage from './pages/BucketsPage';
+import BucketsListPage from './pages/BucketsListPage';
+import BucketDetailPage from './pages/BucketDetailPage';
 import SettingsPage from './pages/SettingsPage';
 import LeaderboardPage from './pages/LeaderboardPage';
 import NewsFeedPage from './pages/NewsFeedPage';
@@ -54,8 +54,8 @@ function App() {
                 <Route path="/reporters" element={<ReportersPage />} />
                 <Route path="/reporters/:id" element={<ReporterDetailPage />} />
                 <Route path="/leaderboard" element={<LeaderboardPage />} />
-                <Route path="/buckets" element={<EditionsPage />} />
-                <Route path="/buckets/:editionId" element={<BucketsPage />} />
+                <Route path="/buckets" element={<BucketsListPage />} />
+                <Route path="/buckets/:editionId" element={<BucketDetailPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/news-feed" element={<NewsFeedPage />} />
                 <Route path="/widgets" element={<WidgetsPage />} />

@@ -1,0 +1,176 @@
+import { Search, Plus, ArrowLeft, Loader2, Pencil, Check, Download } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import AddPagePopover from './AddPagePopover';
+
+/**
+ * Header bar for the bucket-detail page: back-button, edition title (with inline edit),
+ * search, export-zip, and the new-page popover trigger.
+ */
+export default function BucketDetailHeader({
+  // edition title
+  editionDisplayTitle,
+  editingEditionTitle,
+  editionTitleDraft,
+  setEditionTitleDraft,
+  editionTitleInputRef,
+  onStartEditEditionTitle,
+  onSaveEditionTitle,
+  onCancelEditEditionTitle,
+  // navigation
+  onBack,
+  // search
+  search,
+  setSearch,
+  // export
+  exporting,
+  canExport,
+  onExport,
+  // add-page popover
+  showAddPage,
+  setShowAddPage,
+  pageSuggestions,
+  newPageName,
+  setNewPageName,
+  addPageInputRef,
+  onAddPage,
+  onCancelAddPage,
+  // i18n
+  t,
+}) {
+  return (
+    <div className="flex items-center justify-between gap-5 px-6 pt-5 pb-3 border-b border-border shrink-0">
+      <div className="flex items-center gap-3 min-w-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(
+            'w-[34px] h-[34px]',
+            'bg-accent border border-border rounded-lg',
+            'text-muted-foreground cursor-pointer shrink-0',
+            'transition-[background,color,border-color] duration-150',
+            'hover:bg-primary/10 hover:text-primary hover:border-primary/40'
+          )}
+          onClick={onBack}
+          aria-label={t('buckets.backToEditions')}
+          title={t('buckets.backToEditions')}
+        >
+          <ArrowLeft size={18} />
+        </Button>
+
+        {editingEditionTitle ? (
+          <div className="flex items-center gap-1 min-w-0">
+            <Input
+              ref={editionTitleInputRef}
+              className={cn(
+                'min-w-[200px] px-2 py-1 h-auto',
+                'text-xl font-bold text-foreground',
+                'bg-card border border-primary rounded-md outline-none',
+                'shadow-none focus-visible:ring-0 focus-visible:border-primary'
+              )}
+              value={editionTitleDraft}
+              onChange={(e) => setEditionTitleDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSaveEditionTitle();
+                if (e.key === 'Escape') onCancelEditEditionTitle();
+              }}
+              onBlur={onSaveEditionTitle}
+            />
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={cn(
+                'w-7 h-7',
+                'bg-primary border-none rounded-md',
+                'text-primary-foreground cursor-pointer shrink-0',
+                'hover:bg-primary/80 hover:text-primary-foreground'
+              )}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onSaveEditionTitle}
+            >
+              <Check size={14} />
+            </Button>
+          </div>
+        ) : (
+          <div className="group/title flex items-center gap-1 min-w-0">
+            <h1 className={cn(
+              'text-xl font-bold',
+              'text-foreground leading-tight',
+              'whitespace-nowrap overflow-hidden text-ellipsis'
+            )}>
+              {editionDisplayTitle}
+            </h1>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={cn(
+                'text-muted-foreground cursor-pointer shrink-0',
+                'opacity-0 transition-[opacity,background,color] duration-150',
+                'group-hover/title:opacity-100',
+                'hover:bg-accent hover:text-primary'
+              )}
+              onClick={onStartEditEditionTitle}
+              aria-label="Edit edition title"
+            >
+              <Pencil size={14} />
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3 shrink-0">
+        <div className="relative flex items-center">
+          <Search size={16} className="absolute left-3 text-muted-foreground pointer-events-none" />
+          <Input
+            type="text"
+            className={cn(
+              'w-[220px] py-2 pr-4 pl-[38px] h-auto',
+              'font-sans text-sm text-foreground',
+              'bg-card border border-border rounded-lg outline-none',
+              'transition-[border-color,box-shadow] duration-150',
+              'placeholder:text-muted-foreground',
+              'shadow-none focus-visible:ring-0',
+              'focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20'
+            )}
+            placeholder={t('buckets.searchPlaceholder')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        <Button
+          variant="outline"
+          className="gap-1.5 px-4 font-semibold rounded-lg hover:-translate-y-px active:translate-y-0"
+          disabled={exporting || !canExport}
+          onClick={onExport}
+        >
+          {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+          {exporting ? t('buckets.exporting', 'Exporting...') : t('buckets.downloadZip', 'Download ZIP')}
+        </Button>
+
+        <div className="relative">
+          <Button
+            className="px-5 font-semibold rounded-lg hover:-translate-y-px active:translate-y-0"
+            onClick={() => setShowAddPage(!showAddPage)}
+          >
+            <Plus size={16} />
+            {t('buckets.newPage')}
+          </Button>
+
+          {showAddPage && (
+            <AddPagePopover
+              pageSuggestions={pageSuggestions}
+              newPageName={newPageName}
+              setNewPageName={setNewPageName}
+              onSubmit={onAddPage}
+              onCancel={onCancelAddPage}
+              inputRef={addPageInputRef}
+              t={t}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
