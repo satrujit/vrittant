@@ -22,6 +22,7 @@ import {
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '../components/common';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import StoryPreviewDialog from '../components/StoryPreviewDialog';
 
@@ -209,12 +210,13 @@ export default function NewsFeedPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">{t('newsFeed.title', 'News Feed')}</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">{t('newsFeed.subtitle', 'Latest news articles — create stories from any article.')}</p>
-      </div>
+    <div className="flex flex-col gap-5 max-w-[1400px] mx-auto p-6 lg:p-8">
+      <PageHeader
+        icon={Newspaper}
+        title={t('newsFeed.title', 'News Feed')}
+        subtitle={t('newsFeed.subtitle', 'Latest news articles — create stories from any article.')}
+        className="mb-0"
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">

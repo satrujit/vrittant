@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { LayoutGrid } from 'lucide-react';
 import { CATALOG } from '../components/widgets';
+import { PageHeader } from '../components/common';
 
 // Same host-routing as the rest of the app: UAT site → UAT backend
 const API_BASE = (typeof window !== 'undefined' && window.location.hostname === 'vrittant-uat.web.app')
@@ -143,21 +145,22 @@ export default function WidgetsPage() {
   const categories = ['All', ...CATEGORY_ORDER];
 
   return (
-    <div className="px-6 py-6">
-      <div className="mb-5">
-        <div className="flex items-center justify-between gap-4 mb-3">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Newspaper Widgets</h1>
-            <p className="text-xs text-gray-500">As of {data.as_of || '—'} · {ordered.length} widgets</p>
-          </div>
+    <div className="p-6 lg:p-8 max-w-[1400px]">
+      <PageHeader
+        icon={LayoutGrid}
+        title="Newspaper Widgets"
+        subtitle={`As of ${data.as_of || '—'} · ${ordered.length} widgets`}
+        actions={
           <input
             type="search"
             placeholder="Search widgets…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded-md w-64 focus:outline-none focus:ring-2 focus:ring-orange-500"
+            className="px-3 py-1.5 text-sm border border-input rounded-md w-64 focus:outline-none focus:ring-2 focus:ring-primary"
           />
-        </div>
+        }
+      />
+      <div className="mb-5">
         <div className="flex flex-wrap gap-2">
           {categories.map(c => (
             <button

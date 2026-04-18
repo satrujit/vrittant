@@ -7,7 +7,7 @@ import {
   transformReporter,
   fetchLeaderboard,
 } from '../services/api';
-import { Avatar, SearchBar } from '../components/common';
+import { Avatar, SearchBar, PageHeader } from '../components/common';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -156,20 +156,11 @@ function ReportersPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-[1400px]">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="flex items-center justify-center size-10 rounded-lg bg-primary/10">
-          <Trophy className="size-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-foreground leading-tight">
-            Reporters
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Reporters ranked by score
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        icon={Trophy}
+        title="Reporters"
+        subtitle="Reporters ranked by score"
+      />
 
       {/* Toolbar — search · period · show deleted */}
       <div className="flex items-center gap-3 mb-5 flex-wrap">
