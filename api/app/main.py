@@ -12,6 +12,7 @@ from .models.page_template import PageTemplate  # noqa: F401
 from .models.org_config import OrgConfig  # noqa: F401
 from .models.news_article import NewsArticle  # noqa: F401
 from .models.voice_enrollment import VoiceEnrollment  # noqa: F401
+from .models.webhook_dedup import WhatsappInboundDedup  # noqa: F401
 from .routers import ROUTERS
 
 try:
