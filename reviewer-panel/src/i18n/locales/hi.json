@@ -352,7 +352,12 @@
       "enableUser": "उपयोगकर्ता सक्रिय करें",
       "deleteUser": "हटाएं",
       "restoreUser": "पुनर्स्थापित करें",
-      "showDeleted": "हटाए गए दिखाएं"
+      "showDeleted": "हटाए गए दिखाएं",
+      "categories": "श्रेणियाँ (बीट)",
+      "regions": "क्षेत्र",
+      "areaRequired": "संवाददाताओं के लिए क्षेत्र आवश्यक है",
+      "categoriesHelp": "इन श्रेणियों से मेल खाने वाली खबरें इस समीक्षक को स्वतः सौंपी जाएंगी",
+      "regionsHelp": "इन क्षेत्रों की खबरें इस समीक्षक को स्वतः सौंपी जाएंगी"
     },
     "userForm": {
       "editTitle": "उपयोगकर्ता संपादित करें",
@@ -413,6 +418,26 @@
         "news_feed": "न्यूज़ फीड"
       }
     }
+  },
+  "assignment": {
+    "assignedTo": "सौंपा गया",
+    "unassigned": "अनिर्दिष्ट",
+    "assigneeFilter": "नियुक्त व्यक्ति",
+    "assignedToMe": "मुझे सौंपा गया",
+    "allAssignees": "सभी नियुक्त",
+    "reassign": "पुनः सौंपें",
+    "reassignTo": "पुनः सौंपें...",
+    "matchReason": {
+      "category": "श्रेणी मेल",
+      "region": "क्षेत्र मेल",
+      "load_balance": "लोड-संतुलित",
+      "manual": "मैनुअल"
+    },
+    "history": "नियुक्ति इतिहास",
+    "historyEmpty": "अभी कोई नियुक्ति नहीं",
+    "autoAssigned": "स्वतः सौंपा गया",
+    "redistributed": "पुनर्वितरित",
+    "noReviewersAvailable": "कोई समीक्षक उपलब्ध नहीं"
   },
   "common": {
     "loading": "लोड हो रहा है...",

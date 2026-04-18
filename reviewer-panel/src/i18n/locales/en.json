@@ -352,7 +352,12 @@
       "enableUser": "Enable User",
       "deleteUser": "Delete",
       "restoreUser": "Restore",
-      "showDeleted": "Show deleted"
+      "showDeleted": "Show deleted",
+      "categories": "Categories (beats)",
+      "regions": "Regions",
+      "areaRequired": "Area is required for reporters",
+      "categoriesHelp": "Stories matching these categories will be auto-assigned to this reviewer",
+      "regionsHelp": "Stories from these regions will be auto-assigned to this reviewer"
     },
     "userForm": {
       "editTitle": "Edit User",
@@ -413,6 +418,26 @@
         "news_feed": "News Feed"
       }
     }
+  },
+  "assignment": {
+    "assignedTo": "Assigned to",
+    "unassigned": "Unassigned",
+    "assigneeFilter": "Assignee",
+    "assignedToMe": "Assigned to me",
+    "allAssignees": "All assignees",
+    "reassign": "Reassign",
+    "reassignTo": "Reassign to...",
+    "matchReason": {
+      "category": "Category match",
+      "region": "Region match",
+      "load_balance": "Load-balanced",
+      "manual": "Manual"
+    },
+    "history": "Assignment history",
+    "historyEmpty": "No assignments yet",
+    "autoAssigned": "Auto-assigned",
+    "redistributed": "Redistributed",
+    "noReviewersAvailable": "No reviewers available"
   },
   "common": {
     "loading": "Loading...",

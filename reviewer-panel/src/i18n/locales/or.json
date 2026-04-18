@@ -352,7 +352,12 @@
       "enableUser": "ବ୍ୟବହାରକାରୀ ସକ୍ରିୟ",
       "deleteUser": "ବିଲୋପ",
       "restoreUser": "ପୁନଃସ୍ଥାପନ",
-      "showDeleted": "ବିଲୋପିତ ଦେଖନ୍ତୁ"
+      "showDeleted": "ବିଲୋପିତ ଦେଖନ୍ତୁ",
+      "categories": "ଶ୍ରେଣୀ (ବିଟ୍)",
+      "regions": "ଅଞ୍ଚଳ",
+      "areaRequired": "ସାମ୍ବାଦିକଙ୍କ ପାଇଁ ଅଞ୍ଚଳ ଆବଶ୍ୟକ",
+      "categoriesHelp": "ଏହି ଶ୍ରେଣୀ ସହ ମେଳ ଖାଉଥିବା ଖବର ଏହି ସମୀକ୍ଷକଙ୍କୁ ସ୍ୱୟଂ-ନିୟୋଜିତ ହେବ",
+      "regionsHelp": "ଏହି ଅଞ୍ଚଳରୁ ଆସୁଥିବା ଖବର ଏହି ସମୀକ୍ଷକଙ୍କୁ ସ୍ୱୟଂ-ନିୟୋଜିତ ହେବ"
     },
     "userForm": {
       "editTitle": "ବ୍ୟବହାରକାରୀ ସମ୍ପାଦନା",
@@ -413,6 +418,26 @@
         "news_feed": "ନ୍ୟୁଜ୍ ଫିଡ୍"
       }
     }
+  },
+  "assignment": {
+    "assignedTo": "ନିୟୋଜିତ",
+    "unassigned": "ଅନିର୍ଦ୍ଧାରିତ",
+    "assigneeFilter": "ନିୟୋଜିତ ବ୍ୟକ୍ତି",
+    "assignedToMe": "ମୋତେ ନିୟୋଜିତ",
+    "allAssignees": "ସମସ୍ତ ନିୟୋଜିତ",
+    "reassign": "ପୁନଃ ନିୟୋଜନ",
+    "reassignTo": "ପୁନଃ ନିୟୋଜନ କରନ୍ତୁ...",
+    "matchReason": {
+      "category": "ଶ୍ରେଣୀ ମେଳ",
+      "region": "ଅଞ୍ଚଳ ମେଳ",
+      "load_balance": "ଲୋଡ-ସନ୍ତୁଳିତ",
+      "manual": "ମାନୁଆଲ"
+    },
+    "history": "ନିୟୋଜନ ଇତିହାସ",
+    "historyEmpty": "ଏପର୍ଯ୍ୟନ୍ତ କୌଣସି ନିୟୋଜନ ନାହିଁ",
+    "autoAssigned": "ସ୍ୱୟଂ-ନିୟୋଜିତ",
+    "redistributed": "ପୁନଃ ବଣ୍ଟନ",
+    "noReviewersAvailable": "କୌଣସି ସମୀକ୍ଷକ ଉପଲବ୍ଧ ନାହାନ୍ତି"
   },
   "common": {
     "loading": "ଲୋଡ ହେଉଛି...",
