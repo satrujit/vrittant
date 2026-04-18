@@ -127,6 +127,18 @@ class AdminStoryWithRevisionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AssignmentLogEntry(BaseModel):
+    id: str
+    from_user_id: Optional[str] = None
+    from_user_name: Optional[str] = None
+    to_user_id: str
+    to_user_name: str
+    assigned_by: Optional[str] = None
+    assigned_by_name: Optional[str] = None
+    reason: str
+    created_at: datetime
+
+
 class StatsResponse(BaseModel):
     pending_review: int
     reviewed_today: int

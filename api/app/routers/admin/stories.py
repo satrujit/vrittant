@@ -22,6 +22,7 @@ from ._shared import (
     AdminStoryResponse,
     AdminStoryUpdate,
     AdminStoryWithRevisionResponse,
+    AssignmentLogEntry,
     StatusUpdate,
     _build_story_query,
     _get_edition_info,
@@ -408,6 +409,65 @@ async def upload_story_image(
     db.refresh(story)
 
     return {"media_url": media_url, "message": "Image uploaded"}
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/stories/{story_id}/assignment-log
+# ---------------------------------------------------------------------------
+
+@router.get("/stories/{story_id}/assignment-log", response_model=list[AssignmentLogEntry])
+def admin_get_assignment_log(
+    story_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
+):
+    from ...models.story_assignment_log import StoryAssignmentLog
+
+    story = (
+        db.query(Story)
+        .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
+        .first()
+    )
+    if not story:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
+
+    rows = (
+        db.query(StoryAssignmentLog)
+        .filter(StoryAssignmentLog.story_id == story_id)
+        .order_by(StoryAssignmentLog.created_at.desc())
+        .all()
+    )
+
+    # Bulk-hydrate user names with a single query
+    user_ids: set[str] = set()
+    for r in rows:
+        if r.from_user_id:
+            user_ids.add(r.from_user_id)
+        if r.to_user_id:
+            user_ids.add(r.to_user_id)
+        if r.assigned_by:
+            user_ids.add(r.assigned_by)
+
+    name_by_id: dict[str, str] = {}
+    if user_ids:
+        for u in db.query(User.id, User.name).filter(User.id.in_(user_ids)).all():
+            name_by_id[u.id] = u.name
+
+    return [
+        AssignmentLogEntry(
+            id=r.id,
+            from_user_id=r.from_user_id,
+            from_user_name=name_by_id.get(r.from_user_id) if r.from_user_id else None,
+            to_user_id=r.to_user_id,
+            to_user_name=name_by_id.get(r.to_user_id, ""),
+            assigned_by=r.assigned_by,
+            assigned_by_name=name_by_id.get(r.assigned_by) if r.assigned_by else None,
+            reason=r.reason,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
 
 
 # ---------------------------------------------------------------------------
