@@ -27,6 +27,7 @@ from ..database import get_db
 from ..models.story import Story
 from ..models.user import User
 from ..models.webhook_dedup import WhatsappInboundDedup
+from ..services import storage
 from ..utils.tz import now_ist
 
 router = APIRouter(prefix="/webhooks/whatsapp", tags=["webhooks"])
@@ -64,6 +65,47 @@ def _extract_content(inner_type: str, inner_payload: dict) -> tuple[str, str | N
         caption = inner_payload.get("caption") or inner_payload.get("name") or ""
         return (caption, inner_payload.get("url"))
     return ("", None)
+
+
+# Map common Gupshup contentType values → file extension for the GCS object.
+_CONTENT_TYPE_EXT = {
+    "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
+    "image/webp": ".webp", "image/gif": ".gif", "image/heic": ".heic",
+    "video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm",
+    "audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a",
+    "audio/aac": ".aac", "audio/amr": ".amr",
+    "application/pdf": ".pdf",
+}
+
+
+async def _persist_media(url: str, content_type: str | None = None) -> str | None:
+    """Download a media file from Gupshup's transient URL and re-host it
+    in our own bucket. Returns the public URL on success, ``None`` on
+    failure (the caller falls back to the original link)."""
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            body = resp.content
+            # Prefer the response's Content-Type; fall back to Gupshup's hint.
+            ct = (resp.headers.get("content-type") or content_type or "").split(";")[0].strip()
+    except Exception:
+        logger.exception("Failed to download Gupshup media from %s", url)
+        return None
+
+    ext = _CONTENT_TYPE_EXT.get(ct.lower(), "")
+    if not ext:
+        # Try the URL path as a last resort (e.g. /abc.jpg).
+        url_path = url.split("?", 1)[0]
+        if "." in url_path.rsplit("/", 1)[-1]:
+            ext = "." + url_path.rsplit(".", 1)[-1].lower()
+    filename = f"{uuid.uuid4().hex}{ext}"
+
+    try:
+        return storage.save_file(body, filename, subfolder="whatsapp")
+    except Exception:
+        logger.exception("Failed to upload WhatsApp media to storage")
+        return None
 
 
 async def _send_gupshup_reply(to_phone: str, text: str) -> None:
@@ -135,15 +177,24 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     inner_payload = payload.get("payload") or {}
     text, media_url = _extract_content(inner_type, inner_payload)
 
+    # Re-host any media on our own storage so the link doesn't expire when
+    # Gupshup garbage-collects it. Fall back to the original URL on failure
+    # so the reporter at least sees *something* and doesn't have to resend.
+    stored_media_url: str | None = None
+    if media_url:
+        stored_media_url = await _persist_media(
+            media_url, inner_payload.get("contentType")
+        ) or media_url
+
     headline = (text.split("\n", 1)[0][:120] if text else "Forwarded from WhatsApp")
     paragraphs: list[dict] = []
     if text:
         paragraphs.append({"id": str(uuid.uuid4()), "text": text})
-    if media_url:
+    if stored_media_url:
         paragraphs.append({
             "id": str(uuid.uuid4()),
-            "text": f"[Attachment: {media_url}]",
-            "media_url": media_url,
+            "text": f"[Attachment: {stored_media_url}]",
+            "media_url": stored_media_url,
         })
 
     story = Story(
