@@ -194,6 +194,10 @@ def create_blank_story(
         paragraphs=[],
         status="draft",
         source="Editor Created",
+        # Auto-assign to creator — they're the one writing it, so the story
+        # shouldn't sit in an "Unassigned" state in the side panel.
+        assigned_to=current_user.id,
+        assigned_match_reason="manual",
         created_at=now,
         updated_at=now,
     )

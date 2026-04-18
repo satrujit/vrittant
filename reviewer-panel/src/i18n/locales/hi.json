@@ -88,6 +88,7 @@
   },
   "review": {
     "title": "रिपोर्ट समीक्षा",
+    "headlinePlaceholder": "शीर्षक...",
     "draftingReport": "रिपोर्ट संपादन",
     "autoSaved": "{time} पर स्वतः सहेजा गया",
     "revert": "पूर्ववत करें",

@@ -88,6 +88,7 @@
   },
   "review": {
     "title": "Review Report",
+    "headlinePlaceholder": "Headline...",
     "draftingReport": "Editing Report",
     "autoSaved": "Auto-saved {time}",
     "revert": "Revert",
