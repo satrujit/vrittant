@@ -60,7 +60,7 @@ def admin_list_stories(
 
         delta_query = (
             db.query(Story)
-            .options(joinedload(Story.reporter), joinedload(Story.revision), joinedload(Story.reviewer))
+            .options(joinedload(Story.reporter), joinedload(Story.revision), joinedload(Story.reviewer), joinedload(Story.assignee))
             .filter(
                 Story.organization_id == org_id,
                 Story.status != "draft",
@@ -103,6 +103,9 @@ def admin_list_stories(
                 reviewed_by=s.reviewed_by,
                 reviewer_name=s.reviewer.name if s.reviewer else None,
                 reviewed_at=s.reviewed_at,
+                assigned_to=s.assigned_to,
+                assignee_name=s.assignee.name if s.assignee else None,
+                assigned_match_reason=s.assigned_match_reason,
             )
             for s in stories
         ]
@@ -127,7 +130,7 @@ def admin_list_stories(
 
     total = query.count()
     stories = (
-        query.options(joinedload(Story.revision), joinedload(Story.reviewer))
+        query.options(joinedload(Story.revision), joinedload(Story.reviewer), joinedload(Story.assignee))
         .order_by(Story.updated_at.desc())
         .offset(offset)
         .limit(limit)
@@ -152,6 +155,9 @@ def admin_list_stories(
             reviewed_by=s.reviewed_by,
             reviewer_name=s.reviewer.name if s.reviewer else None,
             reviewed_at=s.reviewed_at,
+            assigned_to=s.assigned_to,
+            assignee_name=s.assignee.name if s.assignee else None,
+            assigned_match_reason=s.assigned_match_reason,
         )
         for s in stories
     ]
@@ -199,7 +205,7 @@ def create_blank_story(
 def admin_get_story(story_id: str, db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
     story = (
         db.query(Story)
-        .options(joinedload(Story.reporter), joinedload(Story.revision), joinedload(Story.reviewer))
+        .options(joinedload(Story.reporter), joinedload(Story.revision), joinedload(Story.reviewer), joinedload(Story.assignee))
         .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
         .first()
     )
@@ -211,6 +217,7 @@ def admin_get_story(story_id: str, db: Session = Depends(get_db), user: User = D
     resp = AdminStoryWithRevisionResponse.model_validate(story)
     resp.edition_info = _get_edition_info(db, story_id)
     resp.reviewer_name = story.reviewer.name if story.reviewer else None
+    resp.assignee_name = story.assignee.name if story.assignee else None
     return resp
 
 
@@ -238,7 +245,7 @@ def admin_update_story_status(
 
     story = (
         db.query(Story)
-        .options(joinedload(Story.reporter), joinedload(Story.reviewer))
+        .options(joinedload(Story.reporter), joinedload(Story.reviewer), joinedload(Story.assignee))
         .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
         .first()
     )
@@ -260,6 +267,7 @@ def admin_update_story_status(
     db.refresh(story)
     resp = AdminStoryResponse.model_validate(story)
     resp.reviewer_name = story.reviewer.name if story.reviewer else None
+    resp.assignee_name = story.assignee.name if story.assignee else None
     return resp
 
 
@@ -277,7 +285,7 @@ def admin_update_story(
 ):
     story = (
         db.query(Story)
-        .options(joinedload(Story.reporter), joinedload(Story.revision), joinedload(Story.reviewer))
+        .options(joinedload(Story.reporter), joinedload(Story.revision), joinedload(Story.reviewer), joinedload(Story.assignee))
         .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
         .first()
     )
@@ -330,6 +338,7 @@ def admin_update_story(
     resp = AdminStoryWithRevisionResponse.model_validate(story)
     resp.edition_info = _get_edition_info(db, story.id)
     resp.reviewer_name = story.reviewer.name if story.reviewer else None
+    resp.assignee_name = story.assignee.name if story.assignee else None
     return resp
 
 
@@ -394,3 +403,55 @@ async def upload_story_image(
     db.refresh(story)
 
     return {"media_url": media_url, "message": "Image uploaded"}
+
+
+# ---------------------------------------------------------------------------
+# PATCH /admin/stories/{story_id}/assignee  (any reviewer or admin)
+# ---------------------------------------------------------------------------
+
+class ReassignRequest(BaseModel):
+    assignee_id: str
+
+
+@router.patch("/stories/{story_id}/assignee", response_model=AdminStoryResponse)
+def admin_reassign_story(
+    story_id: str,
+    body: ReassignRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
+):
+    from ...models.story_assignment_log import StoryAssignmentLog
+
+    story = (
+        db.query(Story).options(joinedload(Story.reporter), joinedload(Story.reviewer), joinedload(Story.assignee))
+        .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
+        .first()
+    )
+    if not story:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
+
+    new_assignee = (
+        db.query(User)
+        .filter(User.id == body.assignee_id, User.organization_id == org_id,
+                User.user_type == "reviewer", User.is_active.is_(True), User.deleted_at.is_(None))
+        .first()
+    )
+    if not new_assignee:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Assignee must be an active reviewer in this organization")
+
+    previous = story.assigned_to
+    story.assigned_to = new_assignee.id
+    story.assigned_match_reason = "manual"
+    story.updated_at = now_ist()
+    db.add(StoryAssignmentLog(
+        story_id=story.id, from_user_id=previous, to_user_id=new_assignee.id,
+        assigned_by=user.id, reason="manual",
+    ))
+    db.commit()
+    db.refresh(story)
+    resp = AdminStoryResponse.model_validate(story)
+    resp.reviewer_name = story.reviewer.name if story.reviewer else None
+    resp.assignee_name = new_assignee.name
+    return resp

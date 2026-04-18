@@ -43,6 +43,9 @@ class AdminStoryResponse(BaseModel):
     reviewed_by: Optional[str] = None
     reviewer_name: Optional[str] = None
     reviewed_at: Optional[datetime] = None
+    assigned_to: Optional[str] = None
+    assignee_name: Optional[str] = None
+    assigned_match_reason: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -66,6 +69,9 @@ class AdminStoryListItem(BaseModel):
     reviewed_by: Optional[str] = None
     reviewer_name: Optional[str] = None
     reviewed_at: Optional[datetime] = None
+    assigned_to: Optional[str] = None
+    assignee_name: Optional[str] = None
+    assigned_match_reason: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -114,6 +120,9 @@ class AdminStoryWithRevisionResponse(BaseModel):
     reviewed_by: Optional[str] = None
     reviewer_name: Optional[str] = None
     reviewed_at: Optional[datetime] = None
+    assigned_to: Optional[str] = None
+    assignee_name: Optional[str] = None
+    assigned_match_reason: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
