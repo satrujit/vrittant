@@ -38,6 +38,8 @@ class StoryResponse(BaseModel):
     submitted_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+    assigned_to: Optional[str] = None
+    assigned_match_reason: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

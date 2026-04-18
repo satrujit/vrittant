@@ -7,6 +7,7 @@ from jose import jwt
 
 from app.database import Base, get_db
 from app.config import settings
+from app.deps import get_current_user, get_current_org_id
 from app.main import app
 from app.models.user import User
 from app.models.story import Story
@@ -43,6 +44,17 @@ def client(db):
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def override_user():
+    """Returns a setter — call override_user(some_user) to inject as current user."""
+    def _set(user):
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_current_org_id] = lambda: user.organization_id
+    yield _set
+    app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_current_org_id, None)
 
 
 @pytest.fixture()

@@ -129,9 +129,24 @@ def submit_story(
     if story.status != "draft":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only drafts can be submitted")
 
+    from ..services.assignment import pick_assignee, NoReviewersAvailable
+    from ..models.story_assignment_log import StoryAssignmentLog
+
     story.status = "submitted"
     story.submitted_at = now_ist()
     story.updated_at = now_ist()
+
+    try:
+        reviewer, reason = pick_assignee(story, db)
+        story.assigned_to = reviewer.id
+        story.assigned_match_reason = reason
+        db.add(StoryAssignmentLog(
+            story_id=story.id, from_user_id=None, to_user_id=reviewer.id,
+            assigned_by=None, reason="auto",
+        ))
+    except NoReviewersAvailable:
+        pass
+
     db.commit()
     db.refresh(story)
     return story
