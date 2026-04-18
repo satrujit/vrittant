@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Flame, Trophy } from 'lucide-react';
+import { Loader2, Flame, Trophy, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useI18n } from '../i18n';
 import {
   fetchReporters,
@@ -10,7 +10,6 @@ import {
 import { Avatar, SearchBar } from '../components/common';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Table,
   TableHeader,
@@ -28,121 +27,50 @@ const PERIODS = [
   { key: 'all', label: 'All Time' },
 ];
 
+const PAGE_SIZE = 20;
+
 const RANK_STYLES = {
   1: 'bg-amber-100 text-amber-700 border-amber-300',
   2: 'bg-slate-100 text-slate-700 border-slate-300',
   3: 'bg-orange-100 text-orange-700 border-orange-300',
 };
 
-/**
- * Merged Users + Leaderboard table.
- *
- * Sorted by points (desc) for the selected period; reporters not in the
- * leaderboard appear at the bottom with 0 points. Click a name to open the
- * reporter's detail page — no separate View column.
- */
-function UsersTable({ users, t }) {
-  if (users.length === 0) {
-    return (
-      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground italic">
-        {t('reporters.noReporters')}
-      </div>
-    );
-  }
-
+/** Compact prev/next pagination with page indicator. */
+function Pagination({ currentPage, totalPages, onChange }) {
+  if (totalPages <= 1) return null;
   return (
-    <Card className="overflow-hidden p-0">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-14">Rank</TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead>Location</TableHead>
-            <TableHead className="text-right">Points</TableHead>
-            <TableHead className="text-right">Streak</TableHead>
-            <TableHead className="text-right">Submissions</TableHead>
-            <TableHead className="text-right">Approved</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {users.map((user, i) => {
-            const rank = i + 1;
-            const rankStyle = RANK_STYLES[rank];
-            return (
-              <TableRow
-                key={user.id}
-                className={cn(
-                  i % 2 === 1 ? 'bg-muted/20' : '',
-                  !user.isActive && 'opacity-50'
-                )}
-              >
-                <TableCell>
-                  {rankStyle ? (
-                    <span
-                      className={cn(
-                        'inline-flex items-center justify-center size-6 rounded-full border text-xs font-bold',
-                        rankStyle
-                      )}
-                    >
-                      {rank}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground font-medium pl-1.5">
-                      {rank}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Link
-                    to={`/reporters/${user.id}`}
-                    className="flex items-center gap-3 group no-underline"
-                  >
-                    <Avatar initials={user.initials} color={user.color} size="sm" />
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate">
-                        {user.name}
-                      </span>
-                      {!user.isActive && (
-                        <span className="text-[10px] font-medium text-destructive">
-                          Deleted
-                        </span>
-                      )}
-                    </div>
-                  </Link>
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {user.areaName || '—'}
-                </TableCell>
-                <TableCell className="text-right">
-                  <span className="text-sm font-semibold text-foreground tabular-nums">
-                    {user.points ?? 0}
-                  </span>
-                </TableCell>
-                <TableCell className="text-right">
-                  {user.streak > 0 ? (
-                    <span className="inline-flex items-center gap-1 text-xs text-orange-600 font-medium tabular-nums">
-                      <Flame size={12} />
-                      {user.streak}d
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-right text-sm text-muted-foreground tabular-nums">
-                  {user.submissionCount ?? 0}
-                </TableCell>
-                <TableCell className="text-right text-sm text-muted-foreground tabular-nums">
-                  {user.publishedCount ?? 0}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </Card>
+    <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-border">
+      <Button
+        variant="outline"
+        size="icon-xs"
+        onClick={() => onChange(Math.max(1, currentPage - 1))}
+        disabled={currentPage === 1}
+        aria-label="Previous page"
+      >
+        <ChevronLeft size={14} />
+      </Button>
+      <span className="text-xs text-muted-foreground tabular-nums px-1">
+        Page {currentPage} of {totalPages}
+      </span>
+      <Button
+        variant="outline"
+        size="icon-xs"
+        onClick={() => onChange(Math.min(totalPages, currentPage + 1))}
+        disabled={currentPage === totalPages}
+        aria-label="Next page"
+      >
+        <ChevronRight size={14} />
+      </Button>
+    </div>
   );
 }
 
+/**
+ * Reporters page — leaderboard view.
+ *
+ * Reviewers are managed under Settings → Users; they don't have points or
+ * streaks (those are reporter-only signals), so we don't surface them here.
+ */
 function ReportersPage() {
   const { t } = useI18n();
   const [search, setSearch] = useState('');
@@ -150,18 +78,17 @@ function ReportersPage() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showDeleted, setShowDeleted] = useState(false);
-  const [tab, setTab] = useState('reporters');
   const [period, setPeriod] = useState('month');
+  const [page, setPage] = useState(1);
 
-  // Fetch reporters list (people)
+  // Fetch users
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     fetchReporters({ includeInactive: showDeleted })
       .then((data) => {
         if (!cancelled) {
-          const transformed = (data.reporters || []).map(transformReporter);
-          setReportersList(transformed);
+          setReportersList((data.reporters || []).map(transformReporter));
         }
       })
       .catch((err) => {
@@ -172,7 +99,7 @@ function ReportersPage() {
     return () => { cancelled = true; };
   }, [showDeleted]);
 
-  // Fetch leaderboard (scores) per period — keyed off period only
+  // Fetch leaderboard scores per period
   useEffect(() => {
     let cancelled = false;
     fetchLeaderboard(period)
@@ -192,38 +119,42 @@ function ReportersPage() {
     return () => { cancelled = true; };
   }, [period]);
 
-  // Merge leaderboard scores onto each user, then partition + sort by points desc
-  const { reporters, reviewers } = useMemo(() => {
+  // Reset page when filters change so user isn't stranded on an empty page
+  useEffect(() => { setPage(1); }, [search, showDeleted, period]);
+
+  // Merge + filter to reporters only, sorted by points desc
+  const reporters = useMemo(() => {
     const scoreById = new Map(
       leaderboard.map((e) => [String(e.id), { points: e.points, streak: e.streak }])
     );
 
-    const noAdmins = reportersList.filter((r) => r.user_type !== 'org_admin');
-
-    const withScores = noAdmins.map((u) => {
-      const score = scoreById.get(String(u.id)) || { points: 0, streak: 0 };
-      return { ...u, points: score.points, streak: score.streak };
-    });
+    const onlyReporters = reportersList.filter((r) => r.user_type === 'reporter');
 
     const q = search.trim().toLowerCase();
     const filtered = q
-      ? withScores.filter(
+      ? onlyReporters.filter(
           (r) =>
             r.name.toLowerCase().includes(q) ||
             (r.areaName || '').toLowerCase().includes(q)
         )
-      : withScores;
+      : onlyReporters;
 
-    const sorted = [...filtered].sort((a, b) => {
-      if ((b.points ?? 0) !== (a.points ?? 0)) return (b.points ?? 0) - (a.points ?? 0);
-      return (b.submissionCount ?? 0) - (a.submissionCount ?? 0);
-    });
-
-    return {
-      reporters: sorted.filter((r) => r.user_type === 'reporter'),
-      reviewers: sorted.filter((r) => r.user_type === 'reviewer'),
-    };
+    return filtered
+      .map((u) => {
+        const score = scoreById.get(String(u.id)) || { points: 0, streak: 0 };
+        return { ...u, points: score.points, streak: score.streak };
+      })
+      .sort((a, b) => {
+        if ((b.points ?? 0) !== (a.points ?? 0)) return (b.points ?? 0) - (a.points ?? 0);
+        return (b.submissionCount ?? 0) - (a.submissionCount ?? 0);
+      })
+      // Assign rank in the fully sorted list so pagination doesn't break it.
+      .map((u, i) => ({ ...u, _rank: i + 1 }));
   }, [search, reportersList, leaderboard]);
+
+  const totalPages = Math.max(1, Math.ceil(reporters.length / PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+  const slice = reporters.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
 
   return (
     <div className="p-6 lg:p-8 max-w-[1400px]">
@@ -234,10 +165,10 @@ function ReportersPage() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-foreground leading-tight">
-            Users
+            Reporters
           </h1>
           <p className="text-sm text-muted-foreground">
-            Reporters and reviewers, ranked by score
+            Reporters ranked by score
           </p>
         </div>
       </div>
@@ -277,35 +208,107 @@ function ReportersPage() {
         </label>
       </div>
 
-      {/* Tabs + Table */}
+      {/* Table */}
       {loading ? (
         <div className="flex items-center justify-center py-16 text-sm text-muted-foreground italic">
           <Loader2 size={24} className="animate-spin" />
         </div>
+      ) : reporters.length === 0 ? (
+        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground italic">
+          {t('reporters.noReporters')}
+        </div>
       ) : (
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="mb-4">
-            <TabsTrigger value="reporters">
-              Reporters
-              <span className="ml-1.5 text-xs text-muted-foreground font-normal">
-                ({reporters.length})
-              </span>
-            </TabsTrigger>
-            <TabsTrigger value="reviewers">
-              Reviewers
-              <span className="ml-1.5 text-xs text-muted-foreground font-normal">
-                ({reviewers.length})
-              </span>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="reporters">
-            <UsersTable users={reporters} t={t} />
-          </TabsContent>
-          <TabsContent value="reviewers">
-            <UsersTable users={reviewers} t={t} />
-          </TabsContent>
-        </Tabs>
+        <Card className="overflow-hidden p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-14">Rank</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead className="text-right">Points</TableHead>
+                <TableHead className="text-right">Streak</TableHead>
+                <TableHead className="text-right">Submissions</TableHead>
+                <TableHead className="text-right">Approved</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {slice.map((user) => {
+                const rank = user._rank;
+                const rankStyle = RANK_STYLES[rank];
+                return (
+                  <TableRow
+                    key={user.id}
+                    className={cn(!user.isActive && 'opacity-50')}
+                  >
+                    <TableCell>
+                      {rankStyle ? (
+                        <span
+                          className={cn(
+                            'inline-flex items-center justify-center size-6 rounded-full border text-xs font-bold',
+                            rankStyle
+                          )}
+                        >
+                          {rank}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground font-medium pl-1.5">
+                          {rank}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        to={`/reporters/${user.id}`}
+                        className="flex items-center gap-3 group no-underline"
+                      >
+                        <Avatar initials={user.initials} color={user.color} size="sm" />
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate">
+                            {user.name}
+                          </span>
+                          {!user.isActive && (
+                            <span className="text-[10px] font-medium text-destructive">
+                              Deleted
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {user.areaName || '—'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <span className="text-sm font-semibold text-foreground tabular-nums">
+                        {user.points ?? 0}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {user.streak > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-orange-600 font-medium tabular-nums">
+                          <Flame size={12} />
+                          {user.streak}d
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground tabular-nums">
+                      {user.submissionCount ?? 0}
+                    </TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground tabular-nums">
+                      {user.publishedCount ?? 0}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+          <Pagination
+            currentPage={pageSafe}
+            totalPages={totalPages}
+            onChange={setPage}
+          />
+        </Card>
       )}
     </div>
   );
