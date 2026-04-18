@@ -93,6 +93,7 @@ export {
 export {
   getSTTWebSocketUrl,
   llmChat,
+  translateText,
 } from './sarvam.js';
 
 // News articles ingestion + researched-story pipeline

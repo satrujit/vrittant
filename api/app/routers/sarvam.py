@@ -292,6 +292,138 @@ async def llm_chat(
 
 
 # ---------------------------------------------------------------------------
+# Translate proxy — Sarvam dedicated /translate endpoint (mayura:v1)
+#
+# Why this exists alongside /api/llm/chat: the chat-completions LLM
+# (sarvam-30b) is unreliable for "translate to English" — it sometimes
+# returns the source Odia even with retries. Sarvam's /translate is purpose-
+# built for translation and respects target language deterministically.
+# Limit: 1000 chars per request, so we chunk by paragraph.
+# ---------------------------------------------------------------------------
+
+_TRANSLATE_CHUNK_LIMIT = 950  # leave a bit of headroom under Sarvam's 1000
+
+
+class TranslateRequest(BaseModel):
+    text: str = Field(..., max_length=200_000)
+    source_language_code: str = "od-IN"
+    target_language_code: str = "en-IN"
+    mode: str = "formal"  # formal | classic-colloquial | modern-colloquial | code-mixed
+
+
+def _hard_split(text: str, limit: int) -> list[str]:
+    """Last-resort: cut on whitespace nearest to `limit`, else hard-cut."""
+    out: list[str] = []
+    remaining = text
+    while len(remaining) > limit:
+        # Prefer cutting on a space within the last 20% of the window
+        cut = remaining.rfind(" ", int(limit * 0.8), limit)
+        if cut <= 0:
+            cut = limit
+        out.append(remaining[:cut].strip())
+        remaining = remaining[cut:].lstrip()
+    if remaining.strip():
+        out.append(remaining.strip())
+    return out
+
+
+def _chunk_for_translate(text: str, limit: int = _TRANSLATE_CHUNK_LIMIT) -> list[str]:
+    """Split text into <=`limit`-char chunks on paragraph → sentence → word boundaries."""
+    chunks: list[str] = []
+    for paragraph in text.split("\n\n"):
+        if not paragraph.strip():
+            continue
+        if len(paragraph) <= limit:
+            chunks.append(paragraph)
+            continue
+        # Paragraph too long — split on sentence boundaries (। or .)
+        buf = ""
+        for sentence in re.split(r"(?<=[।.!?])\s+", paragraph):
+            if not sentence:
+                continue
+            # A single sentence may itself exceed the limit (no punctuation
+            # in long Odia text). Hard-split it on whitespace as fallback.
+            if len(sentence) > limit:
+                if buf.strip():
+                    chunks.append(buf.strip())
+                    buf = ""
+                chunks.extend(_hard_split(sentence, limit))
+                continue
+            if len(buf) + len(sentence) + 1 > limit and buf:
+                chunks.append(buf.strip())
+                buf = sentence
+            else:
+                buf = f"{buf} {sentence}".strip() if buf else sentence
+        if buf.strip():
+            chunks.append(buf.strip())
+    return chunks
+
+
+@router.post("/api/llm/translate")
+async def llm_translate(
+    body: TranslateRequest,
+    user: User = Depends(get_current_user),
+):
+    """Translate text using Sarvam's dedicated /translate endpoint.
+
+    Chunks the input on paragraph/sentence boundaries (Sarvam caps each
+    request at 1000 chars), translates each chunk, then rejoins with the
+    original paragraph separators preserved.
+    """
+    chunks = _chunk_for_translate(body.text)
+    if not chunks:
+        return {"translated_text": ""}
+
+    url = f"{settings.SARVAM_BASE_URL}/translate"
+    headers = {
+        "Authorization": f"Bearer {settings.SARVAM_API_KEY}",
+        "api-subscription-key": settings.SARVAM_API_KEY,
+        "Content-Type": "application/json",
+    }
+
+    translated_chunks: list[str] = []
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        for chunk in chunks:
+            payload = {
+                "input": chunk,
+                "source_language_code": body.source_language_code,
+                "target_language_code": body.target_language_code,
+                "mode": body.mode,
+                "model": "mayura:v1",
+                "enable_preprocessing": True,
+            }
+            try:
+                resp = await client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+                translated_chunks.append(data.get("translated_text", ""))
+            except httpx.HTTPStatusError as exc:
+                from fastapi.responses import JSONResponse
+
+                body_preview = exc.response.text[:500]
+                logger.warning(
+                    "Sarvam /translate returned %s (chunk_len=%d, src=%s, tgt=%s): %s",
+                    exc.response.status_code, len(chunk),
+                    body.source_language_code, body.target_language_code,
+                    body_preview,
+                )
+                return JSONResponse(
+                    status_code=exc.response.status_code,
+                    content=exc.response.json()
+                    if exc.response.headers.get("content-type", "").startswith("application/json")
+                    else {"detail": exc.response.text},
+                )
+            except httpx.RequestError:
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=502,
+                    content={"detail": "Unable to reach Sarvam AI service"},
+                )
+
+    return {"translated_text": "\n\n".join(translated_chunks)}
+
+
+# ---------------------------------------------------------------------------
 # Task 4 – OCR via Sarvam Document Intelligence
 # ---------------------------------------------------------------------------
 

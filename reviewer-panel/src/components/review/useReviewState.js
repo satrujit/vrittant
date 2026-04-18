@@ -20,6 +20,7 @@ import {
   updateStory,
   transformStory,
   llmChat,
+  translateText,
   getSTTWebSocketUrl,
   fetchEditions,
   fetchEdition,
@@ -674,23 +675,25 @@ export function useReviewState({ id, t }) {
     }
   }, [id, story, headline, editor, englishEditor, englishTranslation, socialPosts]);
 
-  // Translate to English via Sarvam AI
+  // Translate to English via Sarvam's dedicated /translate endpoint.
+  // We translate headline + body separately so the headline always survives
+  // intact even if the body is large/chunked, then render headline as a
+  // bold first line so it's clearly distinguished in the English view.
   const handleTranslateToEnglish = useCallback(async () => {
     if (!story) return;
     setTranslating(true);
     try {
-      const odiaText = story.paragraphs.map((p) => p.text).filter(Boolean).join('\n\n');
-      const translatedText = await llmChat({
-        messages: [
-          { role: 'system', content: 'Translate the following Odia newspaper article to English. Maintain journalistic tone. Return only the translated text in English. Do not output any Odia script.' },
-          { role: 'user', content: `Headline: ${story.headline}\n\n${odiaText}` },
-        ],
-        expectEnglish: true,
-      });
-      setEnglishTranslation(translatedText);
+      const odiaBody = story.paragraphs.map((p) => p.text).filter(Boolean).join('\n\n');
+      const [translatedHeadline, translatedBody] = await Promise.all([
+        story.headline ? translateText(story.headline) : Promise.resolve(''),
+        odiaBody ? translateText(odiaBody) : Promise.resolve(''),
+      ]);
+      const combined = [translatedHeadline, translatedBody].filter(Boolean).join('\n\n');
+      setEnglishTranslation(combined);
       if (englishEditor) {
-        const html = translatedText.split('\n\n').filter(Boolean).map(p => `<p>${p}</p>`).join('');
-        englishEditor.commands.setContent(html);
+        const headlineHtml = translatedHeadline ? `<p><strong>${translatedHeadline}</strong></p>` : '';
+        const bodyHtml = translatedBody.split('\n\n').filter(Boolean).map((p) => `<p>${p}</p>`).join('');
+        englishEditor.commands.setContent(headlineHtml + bodyHtml);
       }
     } catch (err) {
       console.error('Translation failed:', err);

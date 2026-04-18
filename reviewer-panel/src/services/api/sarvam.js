@@ -138,3 +138,32 @@ export async function llmChat(arg1, arg2) {
 
   return legacy ? res : text;
 }
+
+/**
+ * Translate Odia (or another source language) to English via Sarvam's
+ * dedicated /translate endpoint. Much more reliable than asking the chat
+ * LLM to translate — chat-completions sometimes returns the source
+ * language even after a retry. /translate respects target language
+ * deterministically (mayura:v1 is a translation model).
+ *
+ * Backend handles chunking under Sarvam's 1000-char per-request cap.
+ *
+ * @param {string} text — text to translate
+ * @param {object} [options] — { source = 'od-IN', target = 'en-IN', mode = 'formal' }
+ * @returns {Promise<string>} translated text
+ */
+export async function translateText(text, options = {}) {
+  if (!text || !text.trim()) return '';
+  const {
+    source = 'od-IN',
+    target = 'en-IN',
+    mode = 'formal',
+  } = options;
+  const res = await apiPost('/api/llm/translate', {
+    text,
+    source_language_code: source,
+    target_language_code: target,
+    mode,
+  });
+  return res?.translated_text ?? '';
+}
