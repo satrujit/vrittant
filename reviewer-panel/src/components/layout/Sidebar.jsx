@@ -124,7 +124,7 @@ function Sidebar() {
           type="button"
           onClick={handleNewStory}
           disabled={creatingStory}
-          title={collapsed ? t('newsFeed.newStory', '+ New Story') : undefined}
+          title={collapsed ? t('newsFeed.newStory', 'New Story') : undefined}
           className={cn(
             'flex items-center gap-2 w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer border-none text-[0.8125rem] font-semibold disabled:opacity-60 disabled:cursor-not-allowed',
             collapsed ? 'justify-center px-0 py-2' : 'px-3 py-2'
@@ -137,7 +137,7 @@ function Sidebar() {
           )}
           {!collapsed && (
             <span className="whitespace-nowrap overflow-hidden text-ellipsis">
-              {t('newsFeed.newStory', '+ New Story')}
+              {t('newsFeed.newStory', 'New Story')}
             </span>
           )}
         </button>

@@ -42,6 +42,8 @@ export function useReviewState({ id, t }) {
   const [story, setStory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [saveError, setSaveError] = useState(null);
 
   // Editable state
   const [headline, setHeadline] = useState('');
@@ -653,6 +655,7 @@ export function useReviewState({ id, t }) {
   const handleSaveContent = useCallback(async () => {
     if (!story || !editor) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const bodyText = editor.getText();
       const paragraphs = bodyText.split('\n\n').map((text, i) => ({
@@ -667,9 +670,16 @@ export function useReviewState({ id, t }) {
       if (socialPosts) {
         payload.social_posts = socialPosts;
       }
-      await updateStory(id, payload);
+      const updated = await updateStory(id, payload);
+      // Refresh local story so subsequent saves don't re-emit stale paragraph
+      // ids and the side panel reflects the latest persisted state.
+      if (updated) {
+        setStory(transformStory(updated));
+      }
+      setLastSavedAt(new Date());
     } catch (err) {
       console.error('Failed to save story:', err);
+      setSaveError(err?.message || 'Save failed');
     } finally {
       setSaving(false);
     }
@@ -809,6 +819,8 @@ export function useReviewState({ id, t }) {
     setStory,
     loading,
     saving,
+    lastSavedAt,
+    saveError,
 
     // editable
     headline,
