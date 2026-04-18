@@ -3,6 +3,7 @@ import { Loader2, ExternalLink, RefreshCw, Sparkles, Check, ChevronDown, X } fro
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { fetchRelatedArticles } from '../services/api';
+import { useSidebarCollapsed } from '../hooks/useSidebarCollapsed';
 
 const WORD_PRESETS = [200, 400, 600, 800, 1000];
 const MAX_SOURCES = 3;
@@ -22,6 +23,7 @@ export default function StoryPreviewDialog({
   confirming,
   generating,
 }) {
+  const [collapsed] = useSidebarCollapsed();
   const [instructions, setInstructions] = useState('');
   const [wordCount, setWordCount] = useState(400);
   const [relatedArticles, setRelatedArticles] = useState([]);
@@ -93,7 +95,12 @@ export default function StoryPreviewDialog({
   const selectedCount = selectedIds.size;
 
   return (
-    <div className="fixed inset-0 z-[300] bg-background flex flex-col">
+    <div
+      className={cn(
+        'fixed inset-y-0 right-0 z-[90] bg-background flex flex-col transition-[left] duration-200',
+        collapsed ? 'left-[64px]' : 'left-[240px]'
+      )}
+    >
       {/* Close button */}
       <button
         onClick={() => onOpenChange(false)}
