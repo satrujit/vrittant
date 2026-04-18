@@ -32,10 +32,12 @@
   "table": {
     "storyTitle": "खबर",
     "reporterSubject": "संवाददाता और विषय",
-    "submissionTime": "प्रस्तुति समय",
+    "submissionTime": "प्रस्तुत",
     "category": "श्रेणी",
     "status": "स्थिति",
     "action": "कार्रवाई",
+    "reviewer": "समीक्षक",
+    "assignee": "नियुक्त",
     "today": "आज",
     "yesterday": "कल",
     "ago": "पहले",
@@ -90,6 +92,19 @@
     "autoSaved": "{time} पर स्वतः सहेजा गया",
     "revert": "पूर्ववत करें",
     "metadata": "गुण",
+    "priority": "प्राथमिकता",
+    "dateLabel": "प्रस्तुत",
+    "sourceLabel": "स्रोत",
+    "sidePanel": {
+      "details": "विवरण"
+    },
+    "comments": {
+      "title": "टिप्पणियाँ",
+      "empty": "अभी तक कोई टिप्पणी नहीं",
+      "placeholder": "टिप्पणी जोड़ें…",
+      "post": "पोस्ट",
+      "shortcut": "⌘↩ से पोस्ट करें"
+    },
     "categoryLabel": "श्रेणी",
     "statusLabel": "स्थिति",
     "priorityLabel": "प्राथमिकता",

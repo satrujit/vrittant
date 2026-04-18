@@ -3,6 +3,7 @@ from .organization import Organization
 from .user import User, Entitlement
 from .story import Story
 from .story_assignment_log import StoryAssignmentLog
+from .story_comment import StoryComment
 
 __all__ = [
     "Edition", "EditionPage", "EditionPageStory",
@@ -10,4 +11,5 @@ __all__ = [
     "User", "Entitlement",
     "Story",
     "StoryAssignmentLog",
+    "StoryComment",
 ]
