@@ -6,6 +6,7 @@ import {
   MapPin,
   Loader2,
   RefreshCw,
+  Clock,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
@@ -267,10 +268,10 @@ export default function DashboardPage() {
                     {t('table.category')}
                   </th>
                   <th className="px-6 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2">
-                    {t('assignment.assignedTo')}
+                    {t('table.status')}
                   </th>
                   <th className="px-6 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2">
-                    {t('table.action')}
+                    {t('assignment.assignedTo')}
                   </th>
                 </tr>
               </thead>
@@ -284,12 +285,15 @@ export default function DashboardPage() {
                       key={story.id}
                       className="transition-colors hover:bg-accent [&:last-child_td]:border-b-0"
                     >
-                      {/* Story title (prominent) + reporter/location metadata */}
+                      {/* Story title (clickable) + reporter/location metadata */}
                       <td className="px-6 py-3 border-b border-border align-middle max-sm:px-3 max-sm:py-2 max-w-[420px]">
                         <div className="flex flex-col gap-1.5 min-w-[200px]">
-                          <span className="text-[0.9375rem] font-semibold text-foreground leading-tight line-clamp-1">
+                          <Link
+                            to={`/review/${story.id}`}
+                            className="text-[0.9375rem] font-semibold text-foreground leading-tight line-clamp-1 hover:text-primary transition-colors no-underline"
+                          >
                             {story.headline}
-                          </span>
+                          </Link>
                           <div className="flex items-center gap-1.5">
                             <Avatar
                               initials={story.reporter.initials}
@@ -312,23 +316,25 @@ export default function DashboardPage() {
                         </div>
                       </td>
 
-                      {/* Submission Time */}
+                      {/* Submission Time — relative w/ clock icon, absolute on hover */}
                       <td className="px-6 py-3 border-b border-border align-middle max-sm:px-3 max-sm:py-2">
-                        <div className="flex flex-col gap-0.5 whitespace-nowrap">
-                          <span className="text-sm text-foreground">
-                            {timePrimary}
-                          </span>
-                          {timeSecondary && (
-                            <span className="text-xs text-muted-foreground">
-                              {timeSecondary}
-                            </span>
-                          )}
-                        </div>
+                        <span
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap"
+                          title={timePrimary}
+                        >
+                          <Clock size={11} className="shrink-0" />
+                          {timeSecondary || timePrimary}
+                        </span>
                       </td>
 
-                      {/* Category */}
+                      {/* Category — dot + label */}
                       <td className="px-6 py-3 border-b border-border align-middle max-sm:px-3 max-sm:py-2">
-                        <CategoryChip category={story.category} />
+                        <CategoryChip category={story.category} minimal />
+                      </td>
+
+                      {/* Status — dot + label */}
+                      <td className="px-6 py-3 border-b border-border align-middle max-sm:px-3 max-sm:py-2">
+                        <StatusBadge status={story.status} minimal />
                       </td>
 
                       {/* Assigned to — inline reassign */}
@@ -340,15 +346,6 @@ export default function DashboardPage() {
                           reviewers={reviewers}
                           onReassign={(userId) => handleReassign(story.id, userId)}
                         />
-                      </td>
-
-                      {/* Action -- all submitted so always "Review" */}
-                      <td className="px-6 py-3 border-b border-border align-middle max-sm:px-3 max-sm:py-2">
-                        <Button asChild size="sm">
-                          <Link to={`/review/${story.id}`}>
-                            {t('actions.review')}
-                          </Link>
-                        </Button>
                       </td>
                     </tr>
                   );
