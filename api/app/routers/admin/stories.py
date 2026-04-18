@@ -520,3 +520,99 @@ def admin_reassign_story(
     resp.reviewer_name = story.reviewer.name if story.reviewer else None
     resp.assignee_name = new_assignee.name
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Comments — GET / POST /admin/stories/{story_id}/comments
+# Flat editorial thread visible to all reviewers/admins in the org.
+# ---------------------------------------------------------------------------
+
+class CommentResponse(BaseModel):
+    id: str
+    author_id: str
+    author_name: str
+    body: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CommentCreate(BaseModel):
+    body: str
+
+
+@router.get("/stories/{story_id}/comments", response_model=list[CommentResponse])
+def admin_list_story_comments(
+    story_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
+):
+    from ...models.story_comment import StoryComment
+
+    story = (
+        db.query(Story)
+        .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
+        .first()
+    )
+    if not story:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
+
+    rows = (
+        db.query(StoryComment)
+        .filter(StoryComment.story_id == story_id)
+        .order_by(StoryComment.created_at.asc())
+        .all()
+    )
+
+    author_ids = {r.author_id for r in rows}
+    name_by_id: dict[str, str] = {}
+    if author_ids:
+        for u in db.query(User.id, User.name).filter(User.id.in_(author_ids)).all():
+            name_by_id[u.id] = u.name
+
+    return [
+        CommentResponse(
+            id=r.id,
+            author_id=r.author_id,
+            author_name=name_by_id.get(r.author_id, ""),
+            body=r.body,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+@router.post("/stories/{story_id}/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
+def admin_create_story_comment(
+    story_id: str,
+    body: CommentCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
+):
+    from ...models.story_comment import StoryComment
+
+    text = (body.body or "").strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Comment body required")
+
+    story = (
+        db.query(Story)
+        .filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None))
+        .first()
+    )
+    if not story:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
+
+    comment = StoryComment(story_id=story_id, author_id=user.id, body=text)
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return CommentResponse(
+        id=comment.id,
+        author_id=comment.author_id,
+        author_name=user.name,
+        body=comment.body,
+        created_at=comment.created_at,
+    )

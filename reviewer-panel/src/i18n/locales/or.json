@@ -32,10 +32,12 @@
   "table": {
     "storyTitle": "ଖବର",
     "reporterSubject": "ସାମ୍ବାଦିକ ଏବଂ ବିଷୟ",
-    "submissionTime": "ଦାଖଲ ସମୟ",
+    "submissionTime": "ଦାଖଲ",
     "category": "ଶ୍ରେଣୀ",
     "status": "ସ୍ଥିତି",
     "action": "କାର୍ଯ୍ୟ",
+    "reviewer": "ସମୀକ୍ଷକ",
+    "assignee": "ନ୍ୟସ୍ତ",
     "today": "ଆଜି",
     "yesterday": "ଗତକାଲି",
     "ago": "ପୂର୍ବେ",
@@ -90,6 +92,19 @@
     "autoSaved": "{time} ରେ ସ୍ୱତଃ ସଞ୍ଚୟ",
     "revert": "ପୂର୍ବାବସ୍ଥା",
     "metadata": "ଗୁଣାବଳୀ",
+    "priority": "ପ୍ରାଥମିକତା",
+    "dateLabel": "ଦାଖଲ",
+    "sourceLabel": "ଉତ୍ସ",
+    "sidePanel": {
+      "details": "ବିବରଣୀ"
+    },
+    "comments": {
+      "title": "ମନ୍ତବ୍ୟ",
+      "empty": "ଏ ପର୍ଯ୍ୟନ୍ତ କୌଣସି ମନ୍ତବ୍ୟ ନାହିଁ",
+      "placeholder": "ଏକ ମନ୍ତବ୍ୟ ଯୋଗ କରନ୍ତୁ…",
+      "post": "ପ୍ରକାଶ",
+      "shortcut": "⌘↩ ଦବାଇ ପ୍ରକାଶ କରନ୍ତୁ"
+    },
     "categoryLabel": "ଶ୍ରେଣୀ",
     "statusLabel": "ସ୍ଥିତି",
     "priorityLabel": "ପ୍ରାଥମିକତା",

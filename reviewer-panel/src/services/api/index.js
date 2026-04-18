@@ -46,6 +46,8 @@ export {
   fetchRelatedStories,
   reassignStory,
   getAssignmentLog,
+  fetchStoryComments,
+  postStoryComment,
 } from './stories.js';
 
 // Reporters

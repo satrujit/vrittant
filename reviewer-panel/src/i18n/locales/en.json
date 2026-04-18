@@ -32,10 +32,12 @@
   "table": {
     "storyTitle": "Story",
     "reporterSubject": "Reporter & Subject",
-    "submissionTime": "Submission Time",
-    "category": "Category",
+    "submissionTime": "Submitted",
+    "category": "Cat.",
     "status": "Status",
     "action": "Action",
+    "reviewer": "Reviewer",
+    "assignee": "Assignee",
     "today": "Today",
     "yesterday": "Yesterday",
     "ago": "ago",
@@ -90,6 +92,19 @@
     "autoSaved": "Auto-saved {time}",
     "revert": "Revert",
     "metadata": "Properties",
+    "priority": "Priority",
+    "dateLabel": "Submitted",
+    "sourceLabel": "Source",
+    "sidePanel": {
+      "details": "Details"
+    },
+    "comments": {
+      "title": "Comments",
+      "empty": "No comments yet",
+      "placeholder": "Add a comment…",
+      "post": "Post",
+      "shortcut": "⌘↩ to post"
+    },
     "categoryLabel": "Category",
     "statusLabel": "Status",
     "priorityLabel": "Priority",

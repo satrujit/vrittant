@@ -113,3 +113,19 @@ export async function reassignStory(storyId, assigneeId) {
 export async function getAssignmentLog(storyId) {
   return apiGet(`/admin/stories/${storyId}/assignment-log`);
 }
+
+/**
+ * GET /admin/stories/:id/comments
+ * Editorial comments on a story (flat list, oldest first).
+ */
+export async function fetchStoryComments(storyId) {
+  return apiGet(`/admin/stories/${storyId}/comments`);
+}
+
+/**
+ * POST /admin/stories/:id/comments
+ * Add a comment to a story.
+ */
+export async function postStoryComment(storyId, body) {
+  return apiPost(`/admin/stories/${storyId}/comments`, { body });
+}
