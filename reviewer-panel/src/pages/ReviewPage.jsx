@@ -72,6 +72,8 @@ function ReviewPage() {
           headline={s.headline}
           setHeadline={s.setHeadline}
           saving={s.saving}
+          lastSavedAt={s.lastSavedAt}
+          saveError={s.saveError}
           approveOpen={s.approveOpen}
           setApproveOpen={s.setApproveOpen}
           rejectOpen={s.rejectOpen}

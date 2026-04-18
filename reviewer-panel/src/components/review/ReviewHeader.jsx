@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Loader2, MoreVertical, X } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, MoreVertical, X, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../../i18n';
 import { formatDate } from '../../utils/helpers';
@@ -27,6 +27,8 @@ export default function ReviewHeader({
   headline,
   setHeadline,
   saving,
+  lastSavedAt,
+  saveError,
   approveOpen,
   setApproveOpen,
   rejectOpen,
@@ -55,6 +57,38 @@ export default function ReviewHeader({
         </Button>
 
         <div className="flex-1" />
+
+        {/* Save status indicator */}
+        {(saving || lastSavedAt || saveError) && (
+          <span
+            className={
+              'mr-1 flex items-center gap-1 text-[11px] ' +
+              (saveError
+                ? 'text-destructive'
+                : saving
+                ? 'text-muted-foreground'
+                : 'text-emerald-600')
+            }
+          >
+            {saving ? (
+              <>
+                <Loader2 size={11} className="animate-spin" />
+                {t('actions.saving', 'Saving...')}
+              </>
+            ) : saveError ? (
+              <>
+                <AlertCircle size={11} />
+                {saveError}
+              </>
+            ) : (
+              <>
+                <Check size={11} />
+                {t('review.savedAt', 'Saved')}{' '}
+                {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </>
+            )}
+          </span>
+        )}
 
         {/* ── Right: Cancel / Save / Approve / ⋮ ── */}
         <div className="flex shrink-0 items-center gap-1.5">
