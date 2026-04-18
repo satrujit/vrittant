@@ -427,6 +427,8 @@
     "allAssignees": "सभी नियुक्त",
     "reassign": "पुनः सौंपें",
     "reassignTo": "पुनः सौंपें...",
+    "searchReviewers": "समीक्षक खोजें...",
+    "noMatches": "कोई मेल नहीं",
     "matchReason": {
       "category": "श्रेणी मेल",
       "region": "क्षेत्र मेल",

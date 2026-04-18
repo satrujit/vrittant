@@ -8,12 +8,13 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
-import { fetchStats, fetchStories, transformStory } from '../services/api';
+import { fetchStats, fetchStories, fetchReporters, transformStory, reassignStory } from '../services/api';
 import { Avatar, StatusBadge, CategoryChip, SearchBar } from '../components/common';
 import { formatDate, formatTimeAgo } from '../utils/helpers';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import ReassignPopover from '../components/assignment/ReassignPopover';
 
 const PAGE_SIZE = 10;
 const REFRESH_INTERVAL = 30_000; // 30 seconds
@@ -37,7 +38,40 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [reviewers, setReviewers] = useState([]);
   const intervalRef = useRef(null);
+
+  // Fetch active reviewers once for reassign dropdown
+  useEffect(() => {
+    fetchReporters()
+      .then((data) => {
+        const list = data.reporters || [];
+        setReviewers(list.filter((u) => u.user_type === 'reviewer' && (u.is_active ?? true)));
+      })
+      .catch(() => setReviewers([]));
+  }, []);
+
+  const handleReassign = useCallback(async (storyId, userId) => {
+    const reviewer = reviewers.find((r) => String(r.id) === String(userId));
+    setStories((prev) =>
+      prev.map((s) =>
+        s.id === storyId
+          ? {
+              ...s,
+              assigned_to: userId,
+              assignee_id: userId,
+              assignee_name: reviewer?.name || s.assignee_name,
+              assigned_match_reason: 'manual',
+            }
+          : s
+      )
+    );
+    try {
+      await reassignStory(storyId, userId);
+    } catch (err) {
+      console.error('Failed to reassign story:', err);
+    }
+  }, [reviewers]);
 
   // Fetch stats
   const loadStats = useCallback(async (silent) => {
@@ -223,6 +257,9 @@ export default function DashboardPage() {
                     {t('table.category')}
                   </th>
                   <th className="px-6 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2">
+                    {t('assignment.assignedTo')}
+                  </th>
+                  <th className="px-6 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2">
                     {t('table.action')}
                   </th>
                 </tr>
@@ -282,6 +319,17 @@ export default function DashboardPage() {
                       {/* Category */}
                       <td className="px-6 py-3 border-b border-border align-middle max-sm:px-3 max-sm:py-2">
                         <CategoryChip category={story.category} />
+                      </td>
+
+                      {/* Assigned to — inline reassign */}
+                      <td className="px-6 py-3 border-b border-border align-middle max-sm:px-3 max-sm:py-2">
+                        <ReassignPopover
+                          assigneeId={story.assignee_id ?? story.assigned_to}
+                          assigneeName={story.assignee_name}
+                          matchReason={story.assigned_match_reason}
+                          reviewers={reviewers}
+                          onReassign={(userId) => handleReassign(story.id, userId)}
+                        />
                       </td>
 
                       {/* Action -- all submitted so always "Review" */}

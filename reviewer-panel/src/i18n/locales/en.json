@@ -427,6 +427,8 @@
     "allAssignees": "All assignees",
     "reassign": "Reassign",
     "reassignTo": "Reassign to...",
+    "searchReviewers": "Search reviewers...",
+    "noMatches": "No matches",
     "matchReason": {
       "category": "Category match",
       "region": "Region match",

@@ -427,6 +427,8 @@
     "allAssignees": "ସମସ୍ତ ନିୟୋଜିତ",
     "reassign": "ପୁନଃ ନିୟୋଜନ",
     "reassignTo": "ପୁନଃ ନିୟୋଜନ କରନ୍ତୁ...",
+    "searchReviewers": "ସମୀକ୍ଷକ ଖୋଜନ୍ତୁ...",
+    "noMatches": "କୌଣସି ମେଳ ନାହିଁ",
     "matchReason": {
       "category": "ଶ୍ରେଣୀ ମେଳ",
       "region": "ଅଞ୍ଚଳ ମେଳ",

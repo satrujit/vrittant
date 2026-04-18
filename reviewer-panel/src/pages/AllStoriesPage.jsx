@@ -40,11 +40,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import ReassignPopover from '../components/assignment/ReassignPopover';
 
 const PAGE_SIZE = 10;
 
@@ -551,66 +547,13 @@ export default function AllStoriesPage() {
 
                     {/* Assigned to — inline reassign popover */}
                     <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button
-                            type="button"
-                            className="flex flex-col items-start gap-0.5 text-left hover:bg-accent/40 rounded px-1.5 py-1 -mx-1.5 -my-1 transition-colors min-w-[120px]"
-                          >
-                            {story.assignee_name ? (
-                              <>
-                                <span className="text-xs text-foreground whitespace-nowrap">
-                                  {story.assignee_name}
-                                </span>
-                                {story.assigned_match_reason && (
-                                  <Badge
-                                    variant="secondary"
-                                    className="text-[10px] px-1.5 py-0 h-4 font-normal"
-                                  >
-                                    {t(`assignment.matchReason.${story.assigned_match_reason}`)}
-                                  </Badge>
-                                )}
-                              </>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">
-                                {t('assignment.unassigned')}
-                              </span>
-                            )}
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent align="start" className="w-56 p-1">
-                          {reviewers.length === 0 ? (
-                            <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                              {t('assignment.noReviewersAvailable')}
-                            </div>
-                          ) : (
-                            <>
-                              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                {t('assignment.reassignTo')}
-                              </div>
-                              <div className="flex flex-col">
-                                {reviewers.map((r) => {
-                                  const isCurrent = String(r.id) === String(story.assignee_id);
-                                  return (
-                                    <button
-                                      key={r.id}
-                                      type="button"
-                                      disabled={isCurrent}
-                                      onClick={() => handleReassign(story.id, r.id)}
-                                      className={cn(
-                                        'text-left px-2 py-1.5 text-xs rounded hover:bg-accent transition-colors',
-                                        isCurrent && 'bg-accent/60 text-muted-foreground cursor-default'
-                                      )}
-                                    >
-                                      {r.name}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </>
-                          )}
-                        </PopoverContent>
-                      </Popover>
+                      <ReassignPopover
+                        assigneeId={story.assignee_id}
+                        assigneeName={story.assignee_name}
+                        matchReason={story.assigned_match_reason}
+                        reviewers={reviewers}
+                        onReassign={(userId) => handleReassign(story.id, userId)}
+                      />
                     </TableCell>
 
                     {/* Action */}

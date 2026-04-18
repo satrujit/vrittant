@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, History, Loader2, UserCircle2 } from 'lucide-react';
+import { History, Loader2, UserCircle2 } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { fetchReporters, reassignStory, getAssignmentLog } from '../../services/api';
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import {
   Dialog,
   DialogContent,
@@ -11,8 +10,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import ReassignPopover from '../assignment/ReassignPopover';
 import { formatDate, formatTimeAgo } from '../../utils/helpers';
 
 /**
@@ -85,67 +83,13 @@ export default function AssigneeBar({ storyId, story, setStory }) {
       </span>
 
       {/* Assignee + reassign popover */}
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-left transition-colors hover:bg-accent/40"
-          >
-            {story?.assignee_name ? (
-              <>
-                <span className="text-xs font-medium text-foreground">
-                  {story.assignee_name}
-                </span>
-                {story.assigned_match_reason && (
-                  <Badge
-                    variant="secondary"
-                    className="h-4 px-1.5 py-0 text-[10px] font-normal"
-                  >
-                    {t(`assignment.matchReason.${story.assigned_match_reason}`)}
-                  </Badge>
-                )}
-              </>
-            ) : (
-              <span className="text-xs text-muted-foreground">
-                {t('assignment.unassigned')}
-              </span>
-            )}
-            <ChevronDown size={12} className="text-muted-foreground" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-56 p-1">
-          {reviewers.length === 0 ? (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
-              {t('assignment.noReviewersAvailable')}
-            </div>
-          ) : (
-            <>
-              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {t('assignment.reassignTo')}
-              </div>
-              <div className="flex flex-col">
-                {reviewers.map((r) => {
-                  const isCurrent = String(r.id) === String(currentAssigneeId);
-                  return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      disabled={isCurrent}
-                      onClick={() => handleReassign(r.id)}
-                      className={cn(
-                        'rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
-                        isCurrent && 'cursor-default bg-accent/60 text-muted-foreground'
-                      )}
-                    >
-                      {r.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </PopoverContent>
-      </Popover>
+      <ReassignPopover
+        assigneeId={currentAssigneeId}
+        assigneeName={story?.assignee_name}
+        matchReason={story?.assigned_match_reason}
+        reviewers={reviewers}
+        onReassign={handleReassign}
+      />
 
       {/* History dialog */}
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>

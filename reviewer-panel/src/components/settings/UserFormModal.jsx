@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Dialog, DialogContent, DialogHeader,
   DialogTitle, DialogFooter,
@@ -13,14 +13,7 @@ import {
 } from '@/components/ui/select';
 import { useI18n } from '../../i18n';
 import { useAuth } from '../../contexts/AuthContext';
-
-function normalizeRegions(value) {
-  if (Array.isArray(value)) return value.map((s) => String(s).trim()).filter(Boolean);
-  if (typeof value === 'string') {
-    return value.split(',').map((s) => s.trim()).filter(Boolean);
-  }
-  return [];
-}
+import { fetchReporters } from '../../services/api';
 
 function UserFormModal({ isOpen, onClose, onSubmit, user }) {
   const { t, locale } = useI18n();
@@ -36,10 +29,39 @@ function UserFormModal({ isOpen, onClose, onSubmit, user }) {
     area_name: user?.area_name || user?.areaName || '',
     user_type: user?.user_type || 'reporter',
     categories: Array.isArray(user?.categories) ? [...user.categories] : [],
-    regionsText: Array.isArray(user?.regions) ? user.regions.join(', ') : '',
+    regions: Array.isArray(user?.regions) ? [...user.regions] : [],
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [reporterAreas, setReporterAreas] = useState([]);
+
+  // Fetch distinct reporter area_names — used as the master list for the
+  // Regions multi-select. Existing user.regions outside this set are still
+  // preserved via the union below so we never silently drop stale values.
+  useEffect(() => {
+    fetchReporters()
+      .then((data) => {
+        const list = data.reporters || [];
+        const areas = Array.from(
+          new Set(
+            list
+              .filter((u) => u.user_type === 'reporter')
+              .map((u) => (u.area_name || '').trim())
+              .filter(Boolean)
+          )
+        ).sort((a, b) => a.localeCompare(b));
+        setReporterAreas(areas);
+      })
+      .catch(() => setReporterAreas([]));
+  }, []);
+
+  // Master regions list = union of distinct reporter areas + any regions
+  // already on the user (so previously-saved free-text values remain visible).
+  const regionOptions = useMemo(() => {
+    const set = new Set(reporterAreas);
+    form.regions.forEach((r) => set.add(r));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [reporterAreas, form.regions]);
 
   const handleChange = (field) => (e) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -50,6 +72,15 @@ function UserFormModal({ isOpen, onClose, onSubmit, user }) {
       categories: f.categories.includes(key)
         ? f.categories.filter((k) => k !== key)
         : [...f.categories, key],
+    }));
+  };
+
+  const toggleRegion = (region) => {
+    setForm((f) => ({
+      ...f,
+      regions: f.regions.includes(region)
+        ? f.regions.filter((r) => r !== region)
+        : [...f.regions, region],
     }));
   };
 
@@ -85,7 +116,7 @@ function UserFormModal({ isOpen, onClose, onSubmit, user }) {
     // backend accepts empty arrays for other roles.
     if (isReviewer) {
       submitForm.categories = form.categories;
-      submitForm.regions = normalizeRegions(form.regionsText);
+      submitForm.regions = form.regions;
     } else {
       submitForm.categories = [];
       submitForm.regions = [];
@@ -217,13 +248,28 @@ function UserFormModal({ isOpen, onClose, onSubmit, user }) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="regions">{t('settings.users.regions')}</Label>
-                <Input
-                  id="regions"
-                  value={form.regionsText}
-                  onChange={handleChange('regionsText')}
-                  placeholder="Bhubaneswar, Cuttack, Puri"
-                />
+                <Label>{t('settings.users.regions')}</Label>
+                {regionOptions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">—</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 border rounded-md p-3 max-h-40 overflow-y-auto">
+                    {regionOptions.map((region) => {
+                      const checked = form.regions.includes(region);
+                      return (
+                        <label
+                          key={region}
+                          className="flex items-center gap-2 text-sm cursor-pointer select-none"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={() => toggleRegion(region)}
+                          />
+                          <span className="truncate" title={region}>{region}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground">{t('settings.users.regionsHelp')}</p>
               </div>
             </>
