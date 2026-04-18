@@ -218,11 +218,14 @@ def _build_story_query(
     recent: bool = False,
     exclude_drafts: bool = True,
     available_for_edition: Optional[str] = None,
+    assigned_to: Optional[str] = None,
 ):
     query = db.query(Story).options(joinedload(Story.reporter)).filter(Story.organization_id == org_id, Story.deleted_at.is_(None))
 
     if reporter_id:
         query = query.filter(Story.reporter_id == reporter_id)
+    if assigned_to:
+        query = query.filter(Story.assigned_to == assigned_to)
     if status_filter:
         query = query.filter(Story.status == status_filter)
     if exclude_status:

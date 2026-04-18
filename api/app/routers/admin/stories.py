@@ -47,10 +47,12 @@ def admin_list_stories(
     date_to: Optional[str] = Query(None),
     recent: bool = Query(False),
     available_for_edition: Optional[str] = Query(None),
+    assigned_to: Optional[str] = Query(None, description="Filter by assignee user_id, or 'me'"),
     updated_since: Optional[str] = Query(None, description="ISO timestamp — return only stories updated after this time"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
 ):
+    resolved_assigned = user.id if assigned_to == "me" else assigned_to
     # --- Delta mode: return stories changed or soft-deleted since timestamp ---
     if updated_since:
         try:
@@ -69,6 +71,8 @@ def admin_list_stories(
         )
         if reporter_id:
             delta_query = delta_query.filter(Story.reporter_id == reporter_id)
+        if resolved_assigned:
+            delta_query = delta_query.filter(Story.assigned_to == resolved_assigned)
 
         # total = count of ALL non-deleted stories (so frontend can detect deletions)
         total = (
@@ -126,6 +130,7 @@ def admin_list_stories(
         date_to=date_to,
         recent=recent,
         available_for_edition=available_for_edition,
+        assigned_to=resolved_assigned,
     )
 
     total = query.count()
