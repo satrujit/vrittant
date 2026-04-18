@@ -8,6 +8,7 @@ import {
   Loader2,
   MoreHorizontal,
   Trash2,
+  Clock,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
@@ -464,39 +465,43 @@ export default function AllStoriesPage() {
                       </div>
                     </TableCell>
 
-                    {/* Submission Time */}
+                    {/* Submission Time — relative only, absolute on hover */}
                     <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
-                      <div className="flex flex-col gap-0.5 whitespace-nowrap">
-                        <span className="text-xs text-foreground">
-                          {timePrimary}
-                        </span>
-                        {timeSecondary && (
-                          <span className="text-[11px] text-muted-foreground">
-                            {timeSecondary}
-                          </span>
-                        )}
-                      </div>
+                      <span
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap"
+                        title={timePrimary}
+                      >
+                        <Clock size={11} className="shrink-0" />
+                        {timeSecondary || timePrimary}
+                      </span>
                     </TableCell>
 
-                    {/* Category */}
+                    {/* Category — dot + label */}
                     <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
-                      <CategoryChip category={story.category} />
+                      <CategoryChip category={story.category} minimal />
                     </TableCell>
 
-                    {/* Status */}
+                    {/* Status — dot + label */}
                     <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
-                      <StatusBadge status={story.status} size="sm" />
+                      <StatusBadge status={story.status} minimal />
                     </TableCell>
 
-                    {/* Reviewed by */}
+                    {/* Reviewed by — single condensed line */}
                     <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
                       {story.reviewer_name ? (
-                        <div className="flex flex-col gap-0.5 whitespace-nowrap">
-                          <span className="text-xs text-foreground">{story.reviewer_name}</span>
+                        <span
+                          className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap"
+                          title={story.reviewer_name}
+                        >
+                          <span className="text-foreground font-medium">
+                            {story.reviewer_name.split(' ')[0]}
+                          </span>
                           {story.reviewed_at && (
-                            <span className="text-[11px] text-muted-foreground">{formatDate(story.reviewed_at)}</span>
+                            <span className="text-muted-foreground">
+                              · {formatDate(story.reviewed_at)}
+                            </span>
                           )}
-                        </div>
+                        </span>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
                       )}

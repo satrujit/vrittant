@@ -25,10 +25,27 @@ const DOT_SIZES = {
   md: 'size-1.5',
 };
 
-function StatusBadge({ status, size = 'md' }) {
+function StatusBadge({ status, size = 'md', minimal = false }) {
   const { t } = useI18n();
   const { color, bg, dot } = getStatusColor(status);
   const i18nKey = STATUS_I18N_MAP[status] || 'status.draft';
+
+  // Minimal variant: dot + label only, no pill background. Keeps the row sleek
+  // when used inside dense tables.
+  if (minimal) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap leading-none"
+        style={{ color }}
+      >
+        <span
+          className="shrink-0 rounded-full size-[6px]"
+          style={{ backgroundColor: dot }}
+        />
+        {t(i18nKey)}
+      </span>
+    );
+  }
 
   return (
     <Badge
