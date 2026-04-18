@@ -5,7 +5,7 @@
  * stories, so they live here now.)
  */
 
-import { apiGet, apiPost, apiPut, apiDelete } from '../http.js';
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from '../http.js';
 import { API_BASE, buildQuery } from './_internal.js';
 import { cachedGet, invalidateCache } from './cache.js';
 import { getAuthToken } from './auth.js';
@@ -20,7 +20,9 @@ export async function semanticSearchStories(params = {}) {
 
 /**
  * GET /admin/stories
- * @param {object} params — { status, category, search, date_from, date_to, recent, offset, limit }
+ * @param {object} params — { status, category, search, date_from, date_to, recent, offset, limit, assigned_to }
+ *   assigned_to: a user id, or the literal string "me" to filter to the
+ *   current user's assigned stories (resolved server-side from the token).
  * Returns: { stories: [...], total: N }
  */
 export async function fetchStories(params = {}, opts = {}) {
@@ -88,4 +90,26 @@ export async function uploadStoryImage(storyId, file) {
 
 export async function fetchRelatedStories(storyId) {
   return apiGet(`/admin/stories/${storyId}/related`);
+}
+
+/**
+ * PATCH /admin/stories/:id/assignee
+ * Reassign a story to a different user (or unassign with null).
+ * @param {string|number} storyId
+ * @param {string|number|null} assigneeId
+ */
+export async function reassignStory(storyId, assigneeId) {
+  const result = await apiPatch(`/admin/stories/${storyId}/assignee`, {
+    assignee_id: assigneeId,
+  });
+  invalidateCache('/admin/stories');
+  return result;
+}
+
+/**
+ * GET /admin/stories/:id/assignment-log
+ * History of assignee changes for a story.
+ */
+export async function getAssignmentLog(storyId) {
+  return apiGet(`/admin/stories/${storyId}/assignment-log`);
 }

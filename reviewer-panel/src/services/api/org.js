@@ -31,14 +31,35 @@ export async function updateUser(id, data) {
   return result;
 }
 
-export async function updateUserRole(id, userType) {
-  const result = await apiPut(`/admin/users/${id}/role`, { user_type: userType });
+/**
+ * PUT /admin/users/:id/role
+ * @param {string|number} id
+ * @param {string} userType
+ * @param {object} [extra] — optional { categories, regions } to update alongside the role.
+ *   The reviewer-assignment work treats role + scope as a single edit; the
+ *   backend accepts these fields on the role endpoint so the UI can save
+ *   in one call.
+ */
+export async function updateUserRole(id, userType, extra = {}) {
+  const body = { user_type: userType };
+  if (extra.categories !== undefined) body.categories = extra.categories;
+  if (extra.regions !== undefined) body.regions = extra.regions;
+  const result = await apiPut(`/admin/users/${id}/role`, body);
   invalidateCache('/admin/reporters');
   return result;
 }
 
-export async function updateUserEntitlements(id, pageKeys) {
-  const result = await apiPut(`/admin/users/${id}/entitlements`, { page_keys: pageKeys });
+/**
+ * PUT /admin/users/:id/entitlements
+ * @param {string|number} id
+ * @param {string[]} pageKeys
+ * @param {object} [extra] — optional { categories, regions } to update alongside entitlements.
+ */
+export async function updateUserEntitlements(id, pageKeys, extra = {}) {
+  const body = { page_keys: pageKeys };
+  if (extra.categories !== undefined) body.categories = extra.categories;
+  if (extra.regions !== undefined) body.regions = extra.regions;
+  const result = await apiPut(`/admin/users/${id}/entitlements`, body);
   invalidateCache('/admin/reporters');
   return result;
 }

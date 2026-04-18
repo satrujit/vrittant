@@ -44,6 +44,8 @@ export {
   createBlankStory,
   uploadStoryImage,
   fetchRelatedStories,
+  reassignStory,
+  getAssignmentLog,
 } from './stories.js';
 
 // Reporters
