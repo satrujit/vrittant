@@ -10,7 +10,7 @@ import { useSidebarCollapsed } from '../../hooks/useSidebarCollapsed';
 const NAV_ITEMS = [
   { key: 'dashboard',   path: '/',           icon: LayoutDashboard, labelKey: 'nav.dashboard',   entitlementKey: 'dashboard' },
   { key: 'allStories',  path: '/stories',    icon: Archive,         labelKey: 'nav.allStories',  entitlementKey: 'stories' },
-  { key: 'reporters',   path: '/reporters',  icon: Users,           labelKey: 'Users',           entitlementKey: 'reporters' },
+  { key: 'reporters',   path: '/reporters',  icon: Users,           labelKey: 'Reporters',       entitlementKey: 'reporters' },
   { key: 'pageBuckets', path: '/buckets',    icon: Columns3,        labelKey: 'nav.pageBuckets', entitlementKey: 'editions' },
   { key: 'newsFeed',    path: '/news-feed',  icon: Newspaper,       labelKey: 'nav.newsFeed',    entitlementKey: 'news_feed' },
   { key: 'widgets',     path: '/widgets',    icon: LayoutGrid,      labelKey: 'nav.widgets',     entitlementKey: 'dashboard' },
