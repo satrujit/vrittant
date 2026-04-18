@@ -12,7 +12,7 @@ import ReporterDetailPage from './pages/ReporterDetailPage';
 import BucketsListPage from './pages/BucketsListPage';
 import BucketDetailPage from './pages/BucketDetailPage';
 import SettingsPage from './pages/SettingsPage';
-import LeaderboardPage from './pages/LeaderboardPage';
+// Leaderboard merged into /reporters — keep route alias so old links work.
 import NewsFeedPage from './pages/NewsFeedPage';
 import ReviewPage from './pages/ReviewPage';
 import WidgetsPage from './pages/WidgetsPage';
@@ -53,7 +53,7 @@ function App() {
                 <Route path="/stories" element={<AllStoriesPage />} />
                 <Route path="/reporters" element={<ReportersPage />} />
                 <Route path="/reporters/:id" element={<ReporterDetailPage />} />
-                <Route path="/leaderboard" element={<LeaderboardPage />} />
+                <Route path="/leaderboard" element={<ReportersPage />} />
                 <Route path="/buckets" element={<BucketsListPage />} />
                 <Route path="/buckets/:editionId" element={<BucketDetailPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
