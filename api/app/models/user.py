@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import relationship
 
 from ..database import Base
@@ -17,6 +17,8 @@ class User(Base):
     email = Column(String, nullable=True)
     user_type = Column(String, nullable=False, default="reporter")  # reporter | reviewer | org_admin
     area_name = Column(String, nullable=False, default="")
+    categories = Column(JSON, nullable=False, default=list)  # reviewer beats
+    regions = Column(JSON, nullable=False, default=list)     # reviewer beats
     organization = Column(String, nullable=False, default="")
     organization_id = Column(String, ForeignKey("organizations.id"), nullable=True, index=True)
     is_active = Column(Boolean, default=True)
