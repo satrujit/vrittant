@@ -1,6 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Calendar, Newspaper, Loader2, Trash2, FileText, BookOpen, Search, Pencil } from 'lucide-react';
+import { Plus, Calendar, Newspaper, Loader2, Trash2, FileText, BookOpen, Search, Pencil, ChevronRight, ChevronDown } from 'lucide-react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
 import { Modal, SearchableSelect } from '../components/common';
@@ -62,6 +70,127 @@ const STATUS_COLORS = {
   },
 };
 
+// Reusable table for both the active and published edition sections.
+// Stops row-click navigation propagating from interactive cells (status,
+// edit, delete) so those controls work without sending the user away.
+function EditionTable({ editions, t, onRowClick, onEdit, onDelete, onStatusChange, bordered = true }) {
+  return (
+    <div
+      className={cn(
+        'bg-card overflow-hidden',
+        bordered && 'border border-border rounded-lg shadow-sm'
+      )}
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em]">
+              {t('buckets.paperType')}
+            </TableHead>
+            <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em]">
+              {t('buckets.publicationDate')}
+            </TableHead>
+            <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em]">
+              {t('buckets.pages')}
+            </TableHead>
+            <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em]">
+              {t('buckets.stories')}
+            </TableHead>
+            <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em]">
+              {t('table.status')}
+            </TableHead>
+            <TableHead className="px-4 py-2 w-[80px]" aria-label="Row actions" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {editions.map((edition) => {
+            const statusKey = getStatusKey(edition.status);
+            const pageCount = edition.pages?.length ?? edition.page_count ?? 0;
+            const storyCount = edition.story_count ?? 0;
+            const statusStyle = STATUS_COLORS[statusKey] || STATUS_COLORS.draft;
+            const paperLabel = t(`buckets.paperTypes.${edition.paper_type}`) !== `buckets.paperTypes.${edition.paper_type}`
+              ? t(`buckets.paperTypes.${edition.paper_type}`)
+              : edition.paper_type;
+
+            return (
+              <TableRow
+                key={edition.id}
+                className="cursor-pointer group"
+                onClick={() => onRowClick(edition.id)}
+              >
+                <TableCell className="px-4 py-2">
+                  <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
+                    <Newspaper size={13} className="text-primary/70 shrink-0" />
+                    {paperLabel}
+                  </span>
+                </TableCell>
+                <TableCell className="px-4 py-2">
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
+                    <Calendar size={12} className="shrink-0" />
+                    {formatDisplayDate(edition.publication_date)}
+                  </span>
+                </TableCell>
+                <TableCell className="px-4 py-2 text-xs text-foreground">
+                  <span className="inline-flex items-center gap-1">
+                    <FileText size={12} className="text-muted-foreground" />
+                    {pageCount}
+                  </span>
+                </TableCell>
+                <TableCell className="px-4 py-2 text-xs text-foreground">
+                  {storyCount}
+                </TableCell>
+                <TableCell className="px-4 py-2">
+                  <Select
+                    value={statusKey}
+                    onValueChange={(val) => onStatusChange(edition.id, val)}
+                  >
+                    <SelectTrigger
+                      className="h-auto w-auto gap-1 border-none bg-transparent p-0 px-2 py-[2px] text-[11px] font-semibold rounded-full shadow-none focus:ring-0"
+                      style={{ color: statusStyle.color, backgroundColor: statusStyle.background }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">{t('buckets.editionStatus.draft')}</SelectItem>
+                      <SelectItem value="finalized">{t('buckets.editionStatus.finalized')}</SelectItem>
+                      <SelectItem value="published">{t('buckets.editionStatus.published')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </TableCell>
+                <TableCell className="px-4 py-2">
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:bg-accent hover:text-primary"
+                      onClick={(e) => onEdit(e, edition)}
+                      aria-label={t('buckets.editEdition')}
+                      title={t('buckets.editEdition')}
+                    >
+                      <Pencil size={14} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      onClick={(e) => onDelete(e, edition.id)}
+                      aria-label={t('buckets.deleteEdition')}
+                      title={t('buckets.deleteEdition')}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 export default function BucketsListPage() {
   const { t } = useI18n();
   const { config } = useAuth();
@@ -89,6 +218,9 @@ export default function BucketsListPage() {
   const [search, setSearch] = useState('');
   const [filterPaperType, setFilterPaperType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+
+  // Published-section toggle (collapsed by default — keeps focus on active editions)
+  const [publishedExpanded, setPublishedExpanded] = useState(false);
 
   const loadEditions = async () => {
     setLoading(true);
@@ -146,6 +278,19 @@ export default function BucketsListPage() {
 
     return result;
   }, [editions, search, filterPaperType, filterStatus, t]);
+
+  // Split into active (draft + finalized) and published.
+  // Active stays expanded; published collapses behind a toggle so the page
+  // doesn't drown in historical editions.
+  const { activeEditions, publishedEditions } = useMemo(() => {
+    const active = [];
+    const published = [];
+    for (const e of filteredEditions) {
+      if (getStatusKey(e.status) === 'published') published.push(e);
+      else active.push(e);
+    }
+    return { activeEditions: active, publishedEditions: published };
+  }, [filteredEditions]);
 
   const handleCreate = async () => {
     setCreating(true);
@@ -318,87 +463,55 @@ export default function BucketsListPage() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-5 max-md:grid-cols-1">
-          {filteredEditions.map((edition) => {
-            const statusKey = getStatusKey(edition.status);
-            const pageCount = edition.pages?.length ?? edition.page_count ?? 0;
-            const storyCount = edition.story_count ?? 0;
-            const statusStyle = STATUS_COLORS[statusKey] || STATUS_COLORS.draft;
+        <div className="flex flex-col gap-5">
+          {/* Active editions (draft + finalized) — always expanded */}
+          {activeEditions.length > 0 && (
+            <EditionTable
+              editions={activeEditions}
+              t={t}
+              onRowClick={handleCardClick}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onStatusChange={handleStatusChange}
+            />
+          )}
 
-            return (
-              <div
-                key={edition.id}
-                className="group relative flex flex-col gap-2 px-6 py-5 bg-card border border-border rounded-xl shadow-sm cursor-pointer transition-all duration-150 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/40"
-                onClick={() => handleCardClick(edition.id)}
+          {/* Published editions — collapsed by default */}
+          {publishedEditions.length > 0 && (
+            <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setPublishedExpanded((v) => !v)}
+                className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-accent/40 transition-colors"
               >
-                <div className="flex items-center justify-between">
-                  <span className="inline-flex items-center gap-1 px-2 py-[3px] text-xs font-semibold text-primary/80 bg-primary/10 rounded-full leading-none">
-                    <Newspaper size={12} />
-                    {t(`buckets.paperTypes.${edition.paper_type}`) !== `buckets.paperTypes.${edition.paper_type}`
-                      ? t(`buckets.paperTypes.${edition.paper_type}`)
-                      : edition.paper_type}
+                <span className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                  {publishedExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  {t('buckets.editionStatus.published')}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    ({publishedEditions.length})
                   </span>
-                  <div className="flex items-center gap-0.5">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-all duration-150 hover:bg-accent hover:text-primary"
-                      onClick={(e) => handleEdit(e, edition)}
-                      aria-label={t('buckets.editEdition')}
-                      title={t('buckets.editEdition')}
-                    >
-                      <Pencil size={14} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-all duration-150 hover:bg-destructive/10 hover:text-destructive"
-                      onClick={(e) => handleDelete(e, edition.id)}
-                      aria-label={t('buckets.deleteEdition')}
-                      title={t('buckets.deleteEdition')}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                </div>
+                </span>
+              </button>
+              {publishedExpanded && (
+                <EditionTable
+                  editions={publishedEditions}
+                  t={t}
+                  onRowClick={handleCardClick}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onStatusChange={handleStatusChange}
+                  bordered={false}
+                />
+              )}
+            </div>
+          )}
 
-                <h3 className="text-[0.9375rem] font-semibold text-foreground leading-tight">
-                  {getEditionTitle(edition, t)}
-                </h3>
-
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Calendar size={14} />
-                  <span>{formatDisplayDate(edition.publication_date)}</span>
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-border mt-1">
-                  <Select
-                    value={statusKey}
-                    onValueChange={(val) => handleStatusChange(edition.id, val)}
-                  >
-                    <SelectTrigger
-                      className="h-auto w-auto gap-1 border-none bg-transparent p-0 px-2 py-[2px] text-[11px] font-semibold rounded-full shadow-none focus:ring-0"
-                      style={{ color: statusStyle.color, backgroundColor: statusStyle.background }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="draft">{t('buckets.editionStatus.draft')}</SelectItem>
-                      <SelectItem value="finalized">{t('buckets.editionStatus.finalized')}</SelectItem>
-                      <SelectItem value="published">{t('buckets.editionStatus.published')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                    <FileText size={12} />
-                    {pageCount} {t('buckets.pages')}
-                    <span className="text-muted-foreground">&middot;</span>
-                    {storyCount} {t('buckets.stories')}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+          {/* Edge case: filters left only published, but it's collapsed */}
+          {activeEditions.length === 0 && publishedEditions.length === 0 && (
+            <div className="text-center text-sm text-muted-foreground py-6">
+              {t('allStories.noResults')}
+            </div>
+          )}
         </div>
       )}
 

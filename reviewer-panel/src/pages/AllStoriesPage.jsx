@@ -486,22 +486,22 @@ export default function AllStoriesPage() {
                       <StatusBadge status={story.status} minimal />
                     </TableCell>
 
-                    {/* Reviewed by — single condensed line */}
+                    {/* Reviewed by — stacked name / date */}
                     <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
                       {story.reviewer_name ? (
-                        <span
-                          className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap"
+                        <div
+                          className="flex flex-col gap-0.5 whitespace-nowrap leading-tight"
                           title={story.reviewer_name}
                         >
-                          <span className="text-foreground font-medium">
+                          <span className="text-xs text-foreground font-medium">
                             {story.reviewer_name.split(' ')[0]}
                           </span>
                           {story.reviewed_at && (
-                            <span className="text-muted-foreground">
-                              · {formatDate(story.reviewed_at)}
+                            <span className="text-[11px] text-muted-foreground">
+                              {formatDate(story.reviewed_at)}
                             </span>
                           )}
-                        </span>
+                        </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
