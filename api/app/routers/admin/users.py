@@ -7,6 +7,7 @@ from ...deps import get_current_org_id, require_org_admin
 from ...models.org_config import OrgConfig
 from ...models.organization import Organization
 from ...models.user import Entitlement, User
+from ...services.assignment import redistribute_open_stories
 from ...schemas.org_admin import (
     CreateUserRequest,
     UpdateUserEntitlementsRequest,
@@ -82,6 +83,9 @@ def update_user(
     org_id: str = Depends(get_current_org_id),
 ):
     user = get_owned_or_404(db, User, user_id, org_id)
+    # Capture pre-mutation state to detect reviewer-deactivation triggers.
+    was_active = user.is_active
+    was_reviewer = user.user_type == "reviewer"
     if body.name is not None: user.name = body.name
     if body.email is not None: user.email = body.email
     if body.area_name is not None: user.area_name = body.area_name
@@ -91,6 +95,9 @@ def update_user(
         user.categories = list(body.categories)
     if body.regions is not None:
         user.regions = list(body.regions)
+    db.flush()
+    if was_active and was_reviewer and user.is_active is False:
+        redistribute_open_stories(db, user, admin.id)
     db.commit()
     db.refresh(user)
     return _user_response(user)
@@ -106,7 +113,11 @@ def update_user_role(
     org_id: str = Depends(get_current_org_id),
 ):
     user = get_owned_or_404(db, User, user_id, org_id)
+    was_reviewer = user.user_type == "reviewer"
     user.user_type = body.user_type
+    db.flush()
+    if was_reviewer and user.user_type != "reviewer":
+        redistribute_open_stories(db, user, admin.id)
     db.commit()
     db.refresh(user)
     return _user_response(user)

@@ -3,6 +3,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..models.story import Story
+from ..models.story_assignment_log import StoryAssignmentLog
 from ..models.user import User
 
 
@@ -72,3 +73,50 @@ def pick_assignee(story: Story, db: Session) -> tuple[User, str]:
 
     # Step 3 — overall fallback
     return _least_loaded(db, reviewers), "load_balance"
+
+
+def redistribute_open_stories(db: Session, user: User, admin_id: str) -> int:
+    """Redistribute a (no-longer-eligible) reviewer's open stories to other reviewers.
+
+    Called when an admin deactivates a reviewer or changes their role away from
+    "reviewer". Open = status NOT IN ('published', 'rejected') and not soft-deleted.
+
+    On success: updates `assigned_to` / `assigned_match_reason` and writes a
+    `StoryAssignmentLog` row with reason="redistribute".
+
+    On `NoReviewersAvailable`: nulls out `assigned_to` / `assigned_match_reason`
+    on the story but skips the log row (because `StoryAssignmentLog.to_user_id`
+    is non-nullable). Cleaner UX than leaving the story stuck on an inactive user.
+
+    Caller is responsible for committing.
+    """
+    open_stories = (
+        db.query(Story)
+        .filter(
+            Story.assigned_to == user.id,
+            Story.organization_id == user.organization_id,
+            ~Story.status.in_(_CLOSED_STATUSES),
+            Story.deleted_at.is_(None),
+        )
+        .all()
+    )
+    redistributed = 0
+    for story in open_stories:
+        try:
+            new_assignee, match_reason = pick_assignee(story, db)
+        except NoReviewersAvailable:
+            # No replacement available — null out the story's assignment and skip the log row.
+            story.assigned_to = None
+            story.assigned_match_reason = None
+            continue
+        story.assigned_to = new_assignee.id
+        story.assigned_match_reason = match_reason
+        db.add(StoryAssignmentLog(
+            story_id=story.id,
+            from_user_id=user.id,
+            to_user_id=new_assignee.id,
+            assigned_by=admin_id,
+            reason="redistribute",
+        ))
+        redistributed += 1
+    return redistributed
