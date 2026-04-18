@@ -376,8 +376,9 @@ async def research_story_from_article(
     gen_category = article.category or "general"
     location = ""
 
-    # Odia uses ~4-6 tokens per word + buffer for JSON wrapper + thinking
-    max_tokens = min(max(word_count * 7, 3072), 16384)
+    # Odia uses ~4-6 tokens per word + buffer for JSON wrapper + thinking.
+    # Sarvam pro tier caps sarvam-30b output at 8192 tokens.
+    max_tokens = min(max(word_count * 7, 3072), 8192)
 
     try:
         url = f"{settings.SARVAM_BASE_URL}/v1/chat/completions"
