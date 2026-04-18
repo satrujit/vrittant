@@ -235,15 +235,16 @@ export default function AllStoriesPage() {
     setCurrentPage(1);
   };
 
-  // True when any filter (or search) is narrowing the default view.
-  // Default dateFrom is yesterday's ISO — anything else counts as "set".
+  // Show "Clear" whenever ANY filter has a value — including the default
+  // dateFrom (yesterday), since the user may want to clear that too. Keeps
+  // the affordance always discoverable instead of conditional.
   const hasActiveFilters = !!(
     statusFilter ||
     categoryFilter ||
     reporterFilter ||
     locationFilter ||
+    dateFrom ||
     dateTo ||
-    dateFrom !== getYesterdayISO() ||
     searchQuery
   );
 
@@ -252,7 +253,7 @@ export default function AllStoriesPage() {
     setCategoryFilter('');
     setReporterFilter('');
     setLocationFilter('');
-    setDateFrom(getYesterdayISO());
+    setDateFrom('');
     setDateTo('');
     setSearchQuery('');
     setDebouncedSearch('');
