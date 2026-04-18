@@ -14,7 +14,7 @@ describe('llmChat', () => {
       .mockResolvedValueOnce({ choices: [{ message: { content: 'complete' }, finish_reason: 'stop' }] });
     const result = await llmChat({ messages: [{ role: 'user', content: 'hi' }] });
     expect(apiPost).toHaveBeenCalledTimes(2);
-    expect(apiPost.mock.calls[1][1].max_tokens).toBe(16384);
+    expect(apiPost.mock.calls[1][1].max_tokens).toBe(8192);
     expect(result).toBe('complete');
   });
 

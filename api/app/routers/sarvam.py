@@ -211,7 +211,7 @@ class ChatRequest(BaseModel):
     messages: list[dict] = Field(..., max_length=20)
     model: str = "sarvam-30b"
     temperature: Optional[float] = None
-    max_tokens: Optional[int] = Field(None, le=16384)
+    max_tokens: Optional[int] = Field(None, le=8192)
 
 
 @router.post("/api/llm/chat")
@@ -242,7 +242,8 @@ async def llm_chat(
     if body.temperature is not None:
         payload["temperature"] = body.temperature
     if body.max_tokens is not None:
-        payload["max_tokens"] = body.max_tokens
+        # Sarvam pro tier caps sarvam-30b at 8192 output tokens
+        payload["max_tokens"] = min(body.max_tokens, 8192)
 
     url = f"{settings.SARVAM_BASE_URL}/v1/chat/completions"
     headers = {

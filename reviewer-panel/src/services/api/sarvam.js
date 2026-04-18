@@ -8,9 +8,10 @@ import { apiPost } from '../http.js';
 import { API_BASE } from './_internal.js';
 import { getAuthToken } from './auth.js';
 
-// Long story translations need ≥6k tokens; bump default to avoid truncation.
+// Sarvam pro tier caps sarvam-30b at 8192 output tokens — both default and
+// retry must stay at the ceiling to avoid 400 invalid_request_error.
 const DEFAULT_MAX_TOKENS = 8192;
-const MAX_RETRY_TOKENS = 16384;
+const MAX_RETRY_TOKENS = 8192;
 
 /**
  * Build the WebSocket URL for the Sarvam STT proxy.
@@ -72,7 +73,7 @@ export function _isPredominantlyOdia(text, threshold = 0.4) {
  *      (with cleaned content). Kept for backward compatibility.
  *
  * Retries once on:
- *   - finish_reason === 'length' (truncation) — doubles max_tokens up to 16384.
+ *   - finish_reason === 'length' (truncation) — doubles max_tokens up to 8192 (Sarvam pro tier cap).
  *   - expectOdia && output is not predominantly Odia — strengthens the system
  *     prompt and retries.
  *   - expectEnglish && output is predominantly Odia — strengthens the system
