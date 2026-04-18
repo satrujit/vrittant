@@ -6,6 +6,7 @@ import { useReviewState } from '../components/review/useReviewState';
 import ReviewHeader from '../components/review/ReviewHeader';
 import ReviewEditor, { getFabIcon } from '../components/review/ReviewEditor';
 import ReviewSidebar from '../components/review/ReviewSidebar';
+import AssigneeBar from '../components/review/AssigneeBar';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 
@@ -97,6 +98,8 @@ function ReviewPage() {
         handleAssignToEdition={s.handleAssignToEdition}
         handleRemoveFromEdition={s.handleRemoveFromEdition}
       />
+
+      <AssigneeBar storyId={id} story={s.story} setStory={s.setStory} />
 
       <Tabs value={s.activeTab} onValueChange={s.setActiveTab} className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 border-b border-border bg-background px-6">
