@@ -17,7 +17,6 @@ errors and double-create stories. Idempotency is enforced via the
 import json
 import logging
 import os
-import os as _os
 import uuid
 from datetime import timedelta
 
@@ -36,7 +35,7 @@ from ..utils.tz import now_ist
 router = APIRouter(prefix="/webhooks/whatsapp", tags=["webhooks"])
 logger = logging.getLogger(__name__)
 
-STITCH_MINUTES = int(_os.environ.get("WHATSAPP_STITCH_MINUTES", "10"))
+STITCH_MINUTES = int(os.environ.get("WHATSAPP_STITCH_MINUTES", "10"))
 CLOSE_KEYWORDS = {"done", "/done", "end", "/end"}
 
 
@@ -243,9 +242,9 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
         return {"ok": True, "appended_to": open_draft.id}
 
     # 3 / 4. No open draft — maybe classify, then create new story.
+    # Media-only messages skip the classifier (always news intent).
     needs_triage = False
-    if text and not media_url:
-        # Pure text: classify
+    if text:
         label = await classifier.classify(text)
         if label == "chitchat":
             db.commit()
@@ -255,18 +254,6 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
             )
             return {"ok": True, "skipped": "chitchat"}
         needs_triage = (label == "unclear")
-    elif text and media_url:
-        # Text + media: still classify the text portion
-        label = await classifier.classify(text)
-        if label == "chitchat":
-            db.commit()
-            await _send_gupshup_reply(
-                sender_raw,
-                "Got your message. To submit news, forward press releases or news text here.",
-            )
-            return {"ok": True, "skipped": "chitchat"}
-        needs_triage = (label == "unclear")
-    # else: media-only — skip classifier (always news intent).
 
     stored_media_url = None
     if media_url:
