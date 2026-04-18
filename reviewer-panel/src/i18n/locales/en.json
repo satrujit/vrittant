@@ -369,6 +369,8 @@
       "deleteUser": "Delete",
       "restoreUser": "Restore",
       "showDeleted": "Show deleted",
+      "searchPlaceholder": "Search users...",
+      "noMatches": "No users match your search.",
       "categories": "Categories (beats)",
       "regions": "Regions",
       "areaRequired": "Area is required for reporters",

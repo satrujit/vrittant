@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { UserPlus, MoreHorizontal, Users, Trash2, RotateCcw } from 'lucide-react';
+import { UserPlus, MoreHorizontal, Users, Trash2, RotateCcw, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import {
   Table, TableBody, TableCell, TableHead,
   TableHeader, TableRow,
@@ -44,6 +45,7 @@ function UsersTab() {
   const [editUser, setEditUser] = useState(null);
   const [entitlementsUser, setEntitlementsUser] = useState(null);
   const [showDeleted, setShowDeleted] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const loadUsers = useCallback(async () => {
     try {
@@ -87,6 +89,17 @@ function UsersTab() {
     await loadUsers();
   };
 
+  // Client-side filter — small dataset (typically <100 users), so no need
+  // for server-side search. Match name / phone / email / area, case-insensitive.
+  const q = searchQuery.trim().toLowerCase();
+  const filteredUsers = q
+    ? users.filter((u) =>
+        [u.name, u.phone, u.email, u.area_name]
+          .filter(Boolean)
+          .some((field) => String(field).toLowerCase().includes(q))
+      )
+    : users;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground">
@@ -98,11 +111,11 @@ function UsersTab() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
           <h2 className="text-lg font-semibold tracking-tight">{t('settings.users.title')}</h2>
           <Badge variant="secondary" className="text-xs">
-            {t('settings.users.userCount', { count: users.length })}
+            {t('settings.users.userCount', { count: filteredUsers.length })}
           </Badge>
           <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none ml-2">
             <Checkbox
@@ -112,10 +125,33 @@ function UsersTab() {
             {t('settings.users.showDeleted')}
           </label>
         </div>
-        <Button onClick={() => setShowAddModal(true)} size="sm">
-          <UserPlus className="w-4 h-4 mr-2" />
-          {t('settings.users.addUser')}
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Search — name / phone / email / area */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('settings.users.searchPlaceholder', 'Search users...')}
+              className="h-8 w-[220px] pl-8 pr-7 text-xs"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <Button onClick={() => setShowAddModal(true)} size="sm">
+            <UserPlus className="w-4 h-4 mr-2" />
+            {t('settings.users.addUser')}
+          </Button>
+        </div>
       </div>
 
       {/* Table or Empty State */}
@@ -131,6 +167,10 @@ function UsersTab() {
             {t('settings.users.addUser')}
           </Button>
         </div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 border rounded-lg border-dashed text-sm text-muted-foreground">
+          {t('settings.users.noMatches', 'No users match your search.')}
+        </div>
       ) : (
         <div className="border rounded-lg">
           <Table>
@@ -145,7 +185,7 @@ function UsersTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((u) => (
+              {filteredUsers.map((u) => (
                 <TableRow key={u.id} className={!u.is_active ? 'opacity-50' : ''}>
                   <TableCell>
                     <div className="flex items-center gap-3">
