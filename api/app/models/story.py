@@ -50,9 +50,12 @@ class Story(Base):
     search_text = Column(Text, default="", server_default="")  # denormalized text for trigram search
     reviewed_by = Column(String, ForeignKey("users.id"), nullable=True)
     reviewed_at = Column(DateTime, nullable=True)
+    assigned_to = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+    assigned_match_reason = Column(String, nullable=True)  # category | region | load_balance | manual
 
     reporter = relationship("User", foreign_keys=[reporter_id], back_populates="stories")
     reviewer = relationship("User", foreign_keys=[reviewed_by])
+    assignee = relationship("User", foreign_keys=[assigned_to])
     revision = relationship("StoryRevision", back_populates="story", uselist=False)
 
     def refresh_search_text(self):
