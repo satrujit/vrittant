@@ -22,16 +22,31 @@ from ._shared import StatsResponse
 
 @router.get("/stats", response_model=StatsResponse)
 def admin_stats(db: Session = Depends(get_db), user: User = Depends(require_reviewer), org_id: str = Depends(get_current_org_id)):
-    pending_review = db.query(Story).filter(Story.organization_id == org_id, Story.status == "submitted", Story.deleted_at.is_(None)).count()
+    # "Pending review" = stories assigned to the current user awaiting review.
+    # Org-wide visibility lives on the AllStories page (with its assignee
+    # filter); the dashboard is intentionally personal so it doesn't double-
+    # count work that's been delegated.
+    pending_review = (
+        db.query(Story)
+        .filter(
+            Story.organization_id == org_id,
+            Story.status == "submitted",
+            Story.assigned_to == user.id,
+            Story.deleted_at.is_(None),
+        )
+        .count()
+    )
 
     today_start = now_ist().replace(
         hour=0, minute=0, second=0, microsecond=0
     )
+    # "Reviewed today" = stories that I personally reviewed today.
     reviewed_today = (
         db.query(Story)
         .filter(
             Story.organization_id == org_id,
             Story.status.in_(["approved", "rejected", "published"]),
+            Story.reviewed_by == user.id,
             Story.updated_at >= today_start,
             Story.deleted_at.is_(None),
         )
