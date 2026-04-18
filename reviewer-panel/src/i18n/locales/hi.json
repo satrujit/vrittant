@@ -256,7 +256,9 @@
     "noMedia": "इस खबर के लिए कोई इमेज उपलब्ध नहीं।",
     "generate": "बनाएं",
     "generateAll": "सभी बनाएं",
-    "generating": "बना रहे हैं..."
+    "generating": "बना रहे हैं...",
+    "instructionsLabel": "निर्देश (वैकल्पिक)",
+    "instructionsPlaceholder": "जैसे, ओडिशा एंगल पर फ़ोकस करें, पेशेवर शैली, हैशटैग जोड़ें…"
   },
   "categories": {
     "politics": "राजनीति",

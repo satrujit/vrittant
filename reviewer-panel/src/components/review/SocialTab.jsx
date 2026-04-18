@@ -124,61 +124,90 @@ export default function SocialTab({ story, initialPosts, onPostsChange }) {
 
   const [generatingPlatform, setGeneratingPlatform] = useState(null);
   const [copiedPlatform, setCopiedPlatform] = useState(null);
+  const [instructions, setInstructions] = useState('');
 
-  // Notify parent whenever any text changes
-  const notifyChange = useCallback((twitter, facebook, instagram) => {
-    if (onPostsChange) {
-      const posts = {};
-      if (twitter) posts.twitter = twitter;
-      if (facebook) posts.facebook = facebook;
-      if (instagram) posts.instagram = instagram;
-      onPostsChange(Object.keys(posts).length > 0 ? posts : null);
-    }
+  // Notify parent with whatever current platform texts are. Reads from refs/args
+  // (not closure) so callers built from stale closures don't wipe sibling state.
+  const notifyFromTexts = useCallback((twitter, facebook, instagram) => {
+    if (!onPostsChange) return;
+    const posts = {};
+    if (twitter) posts.twitter = twitter;
+    if (facebook) posts.facebook = facebook;
+    if (instagram) posts.instagram = instagram;
+    onPostsChange(Object.keys(posts).length > 0 ? posts : null);
   }, [onPostsChange]);
 
   const handleTwitterChange = useCallback((val) => {
     setTwitterText(val);
-    notifyChange(val, facebookText, instagramText);
-  }, [facebookText, instagramText, notifyChange]);
+    notifyFromTexts(val, facebookText, instagramText);
+  }, [facebookText, instagramText, notifyFromTexts]);
 
   const handleFacebookChange = useCallback((val) => {
     setFacebookText(val);
-    notifyChange(twitterText, val, instagramText);
-  }, [twitterText, instagramText, notifyChange]);
+    notifyFromTexts(twitterText, val, instagramText);
+  }, [twitterText, instagramText, notifyFromTexts]);
 
   const handleInstagramChange = useCallback((val) => {
     setInstagramText(val);
-    notifyChange(twitterText, facebookText, val);
-  }, [twitterText, facebookText, notifyChange]);
+    notifyFromTexts(twitterText, facebookText, val);
+  }, [twitterText, facebookText, notifyFromTexts]);
 
   const articleContent = `Headline: ${story?.headline || ''}\n\n${(story?.paragraphs || []).map(p => p.text).filter(Boolean).join('\n\n')}`;
+
+  // Pure generator: calls LLM and returns the text. Does not touch state — that
+  // way the "generate all" loop can accumulate results locally and avoid the
+  // stale-closure bug where each iteration's notifyChange overwrote the
+  // previous iteration's result with empty strings.
+  const generateText = useCallback(async (platform, extraInstructions) => {
+    const systemPrompt = extraInstructions?.trim()
+      ? `${PLATFORM_PROMPTS[platform]}\n\nAdditional instructions from the user: ${extraInstructions.trim()}`
+      : PLATFORM_PROMPTS[platform];
+    const res = await llmChat([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: articleContent },
+    ]);
+    return res.choices[0].message.content.trim();
+  }, [articleContent]);
 
   const generateForPlatform = useCallback(async (platform) => {
     setGeneratingPlatform(platform);
     try {
-      const res = await llmChat(
-        [
-          { role: 'system', content: PLATFORM_PROMPTS[platform] },
-          { role: 'user', content: articleContent },
-        ]
-      );
-      const generated = res.choices[0].message.content.trim();
+      const generated = await generateText(platform, instructions);
       if (platform === 'twitter') {
         setTwitterText(generated);
-        notifyChange(generated, facebookText, instagramText);
+        notifyFromTexts(generated, facebookText, instagramText);
       } else if (platform === 'facebook') {
         setFacebookText(generated);
-        notifyChange(twitterText, generated, instagramText);
+        notifyFromTexts(twitterText, generated, instagramText);
       } else if (platform === 'instagram') {
         setInstagramText(generated);
-        notifyChange(twitterText, facebookText, generated);
+        notifyFromTexts(twitterText, facebookText, generated);
       }
     } catch (err) {
       console.error(`Failed to generate ${platform} post:`, err);
     } finally {
       setGeneratingPlatform(null);
     }
-  }, [articleContent, twitterText, facebookText, instagramText, notifyChange]);
+  }, [generateText, instructions, twitterText, facebookText, instagramText, notifyFromTexts]);
+
+  const generateAllPlatforms = useCallback(async () => {
+    // Seed local accumulator from current state so we never overwrite a
+    // platform that already had user-edited content with an empty string.
+    const results = { twitter: twitterText, facebook: facebookText, instagram: instagramText };
+    for (const platform of ['twitter', 'facebook', 'instagram']) {
+      setGeneratingPlatform(platform);
+      try {
+        results[platform] = await generateText(platform, instructions);
+      } catch (err) {
+        console.error(`Failed to generate ${platform} post:`, err);
+      }
+    }
+    setGeneratingPlatform(null);
+    setTwitterText(results.twitter);
+    setFacebookText(results.facebook);
+    setInstagramText(results.instagram);
+    notifyFromTexts(results.twitter, results.facebook, results.instagram);
+  }, [generateText, instructions, twitterText, facebookText, instagramText, notifyFromTexts]);
 
   const handleCopy = useCallback(async (platform, text) => {
     try {
@@ -199,16 +228,24 @@ export default function SocialTab({ story, initialPosts, onPostsChange }) {
 
   return (
     <div className="flex-1 overflow-y-auto p-5">
-      {/* Generate all button */}
-      <div className="mb-4 flex items-center justify-end">
+      {/* Instructions + Generate all */}
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
+        <div className="flex-1">
+          <label className="mb-1 block text-xs font-medium text-foreground">
+            {t('social.instructionsLabel')}
+          </label>
+          <Textarea
+            className="min-h-[44px] resize-y bg-background text-xs text-foreground"
+            placeholder={t('social.instructionsPlaceholder')}
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            disabled={!!generatingPlatform}
+          />
+        </div>
         <Button
           size="sm"
           className="gap-1.5"
-          onClick={async () => {
-            for (const p of ['twitter', 'facebook', 'instagram']) {
-              await generateForPlatform(p);
-            }
-          }}
+          onClick={generateAllPlatforms}
           disabled={!!generatingPlatform}
         >
           <Sparkles size={14} />

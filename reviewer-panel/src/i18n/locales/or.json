@@ -256,7 +256,9 @@
     "noMedia": "ଏହି ଖବର ପାଇଁ କୌଣସି ଇମେଜ ଉପଲବ୍ଧ ନାହିଁ।",
     "generate": "ତିଆରି",
     "generateAll": "ସବୁ ତିଆରି",
-    "generating": "ତିଆରି ହେଉଛି..."
+    "generating": "ତିଆରି ହେଉଛି...",
+    "instructionsLabel": "ନିର୍ଦ୍ଦେଶାବଳୀ (ଇଚ୍ଛାଧୀନ)",
+    "instructionsPlaceholder": "ଯଥା, ଓଡ଼ିଶା ଦୃଷ୍ଟିକୋଣ ଉପରେ ଧ୍ୟାନ ଦିଅନ୍ତୁ, ବୃତ୍ତିଗତ ଶୈଳୀ, ହ୍ୟାସଟ୍ୟାଗ ଯୋଡ଼ନ୍ତୁ…"
   },
   "categories": {
     "politics": "ରାଜନୀତି",

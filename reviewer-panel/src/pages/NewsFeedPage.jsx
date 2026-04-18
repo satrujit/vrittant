@@ -177,7 +177,7 @@ export default function NewsFeedPage() {
       if (previewData.body) {
         paragraphs.push({ text: previewData.body, type: 'text' });
       }
-      await confirmResearchedStory(previewArticleId, {
+      const result = await confirmResearchedStory(previewArticleId, {
         headline: previewData.headline,
         paragraphs,
         category: previewData.category,
@@ -186,6 +186,10 @@ export default function NewsFeedPage() {
       setCreatedIds((prev) => new Set(prev).add(previewArticleId));
       setPreviewData(null);
       setPreviewArticleId(null);
+      // Close modal and jump straight into reviewing the new story
+      if (result?.story_id) {
+        navigate(`/review/${result.story_id}`);
+      }
     } catch (err) {
       console.error('Failed to confirm story:', err);
     } finally {

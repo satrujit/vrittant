@@ -256,6 +256,8 @@
     "noMedia": "No images available for this story.",
     "generate": "Generate",
     "generateAll": "Generate All",
+    "instructionsLabel": "Instructions (optional)",
+    "instructionsPlaceholder": "e.g., Focus on Odisha angle, professional tone, include hashtags…",
     "generating": "Generating..."
   },
   "categories": {
