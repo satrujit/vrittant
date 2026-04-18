@@ -34,7 +34,7 @@ function ReviewPage() {
 
   if (s.loading) {
     return (
-      <div className="flex h-screen flex-col overflow-hidden">
+      <div className="flex h-full flex-col overflow-hidden">
         <div className="flex items-center gap-2 border-b border-border bg-card px-6 py-2">
           <Button variant="outline" size="icon" className="size-8" onClick={() => navigate(-1)}>
             <ArrowLeft size={16} />
@@ -49,7 +49,7 @@ function ReviewPage() {
 
   if (!s.story) {
     return (
-      <div className="flex h-screen flex-col overflow-hidden">
+      <div className="flex h-full flex-col overflow-hidden">
         <div className="flex items-center gap-2 border-b border-border bg-card px-6 py-2">
           <Button variant="outline" size="icon" className="size-8" onClick={() => navigate(-1)}>
             <ArrowLeft size={16} />
@@ -63,7 +63,7 @@ function ReviewPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       {/* ── Main column ── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <ReviewHeader

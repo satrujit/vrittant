@@ -59,8 +59,8 @@ function App() {
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/news-feed" element={<NewsFeedPage />} />
                 <Route path="/widgets" element={<WidgetsPage />} />
+                <Route path="/review/:id" element={<ReviewPage />} />
               </Route>
-              <Route path="/review/:id" element={<ReviewPage />} />
             </Route>
           </Routes>
         </BrowserRouter>
