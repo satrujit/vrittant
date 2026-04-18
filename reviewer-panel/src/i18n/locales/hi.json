@@ -448,7 +448,8 @@
       "category": "श्रेणी मेल",
       "region": "क्षेत्र मेल",
       "load_balance": "लोड-संतुलित",
-      "manual": "मैनुअल"
+      "manual": "मैनुअल",
+      "creator": "निर्माता"
     },
     "history": "नियुक्ति इतिहास",
     "historyEmpty": "अभी कोई नियुक्ति नहीं",
@@ -464,6 +465,7 @@
     "previousPage": "पिछला पृष्ठ",
     "nextPage": "अगला पृष्ठ",
     "toggleFilters": "फ़िल्टर टॉगल करें",
-    "storyNotFound": "खबर नहीं मिली।"
+    "storyNotFound": "खबर नहीं मिली।",
+    "search": "खोजें..."
   }
 }

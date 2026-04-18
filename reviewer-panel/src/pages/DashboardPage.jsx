@@ -8,6 +8,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
+import { useAuth } from '../contexts/AuthContext';
 import { fetchStats, fetchStories, fetchReporters, transformStory, reassignStory } from '../services/api';
 import { Avatar, StatusBadge, CategoryChip, SearchBar } from '../components/common';
 import { formatDate, formatTimeAgo } from '../utils/helpers';
@@ -28,6 +29,10 @@ function formatPublishedCount(n) {
 
 export default function DashboardPage() {
   const { t } = useI18n();
+  const { user } = useAuth();
+  // Org admins oversee everyone, so the dashboard queue is org-wide for them.
+  // Reviewers see only what's assigned to them (delegated work lives on All Stories).
+  const isOrgAdmin = user?.user_type === 'org_admin';
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -98,13 +103,14 @@ export default function DashboardPage() {
       const offset = (currentPage - 1) * PAGE_SIZE;
       const params = {
         status: 'submitted',
-        // Dashboard = personal queue. Stories the current user delegated to
-        // someone else should not show here — they live on the AllStories
-        // page, which has the org-wide assignee filter.
-        assigned_to: 'me',
         offset,
         limit: PAGE_SIZE,
       };
+      // Reviewers see only their own queue; org_admins see everyone's
+      // pending work (matches the stats card scoping in /admin/stats).
+      if (!isOrgAdmin) {
+        params.assigned_to = 'me';
+      }
       if (searchQuery.trim()) {
         params.search = searchQuery.trim();
       }
@@ -121,7 +127,7 @@ export default function DashboardPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [currentPage, searchQuery]);
+  }, [currentPage, searchQuery, isOrgAdmin]);
 
   useEffect(() => {
     loadStories(false);

@@ -18,16 +18,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, StatusBadge, CategoryChip, SearchBar } from '../components/common';
+import { Avatar, StatusBadge, CategoryChip, SearchBar, SearchableSelect } from '../components/common';
 import { formatDate, formatTimeAgo } from '../utils/helpers';
-import { cn } from '@/lib/utils';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -39,7 +31,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import ReassignPopover from '../components/assignment/ReassignPopover';
 
 const PAGE_SIZE = 10;
@@ -54,9 +45,16 @@ const ALL_STATUSES = [
 ];
 
 
-const ALL_SENTINEL = '__all__';
-const ASSIGNEE_ME = '__me__';
-const ASSIGNEE_ALL = '__all__';
+// Default date filter — last 1 day so the page opens on "today's" submissions.
+// Users can still widen by clearing the field.
+function getYesterdayISO() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 function getActionForStatus(status) {
   switch (status) {
@@ -81,11 +79,10 @@ export default function AllStoriesPage() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [reporterFilter, setReporterFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
+  // Default to yesterday so the page opens on "last 1 day" of submissions.
+  // Personal queue scoping moved to the Dashboard — All Stories is org-wide.
+  const [dateFrom, setDateFrom] = useState(getYesterdayISO);
   const [dateTo, setDateTo] = useState('');
-  // Assignee filter — defaults to "me" so a logged-in reviewer sees their queue.
-  // Stored as the raw select value: ASSIGNEE_ME, ASSIGNEE_ALL, or a user id string.
-  const [assigneeFilter, setAssigneeFilter] = useState(ASSIGNEE_ME);
   const [currentPage, setCurrentPage] = useState(1);
 
   // API data state
@@ -168,12 +165,6 @@ export default function AllStoriesPage() {
         if (locationFilter) params.location = locationFilter;
         if (dateFrom) params.date_from = dateFrom;
         if (dateTo) params.date_to = dateTo;
-        // Assignee filter — "all" omits the param.
-        if (assigneeFilter === ASSIGNEE_ME) {
-          params.assigned_to = 'me';
-        } else if (assigneeFilter !== ASSIGNEE_ALL) {
-          params.assigned_to = assigneeFilter;
-        }
 
         const data = await fetchStories(params);
         const transformed = (data.stories || []).map(transformStory);
@@ -188,7 +179,7 @@ export default function AllStoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, debouncedSearch, statusFilter, categoryFilter, reporterFilter, locationFilter, dateFrom, dateTo, assigneeFilter]);
+  }, [currentPage, debouncedSearch, statusFilter, categoryFilter, reporterFilter, locationFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     loadStories();
@@ -199,27 +190,22 @@ export default function AllStoriesPage() {
   const endIndex = Math.min(startIndex + PAGE_SIZE, totalStories);
 
   const handleStatusChange = (val) => {
-    setStatusFilter(val === ALL_SENTINEL ? '' : val);
+    setStatusFilter(val);
     setCurrentPage(1);
   };
 
   const handleCategoryChange = (val) => {
-    setCategoryFilter(val === ALL_SENTINEL ? '' : val);
+    setCategoryFilter(val);
     setCurrentPage(1);
   };
 
   const handleReporterChange = (val) => {
-    setReporterFilter(val === ALL_SENTINEL ? '' : val);
+    setReporterFilter(val);
     setCurrentPage(1);
   };
 
   const handleLocationChange = (val) => {
-    setLocationFilter(val === ALL_SENTINEL ? '' : val);
-    setCurrentPage(1);
-  };
-
-  const handleAssigneeFilterChange = (val) => {
-    setAssigneeFilter(val);
+    setLocationFilter(val);
     setCurrentPage(1);
   };
 
@@ -304,96 +290,67 @@ export default function AllStoriesPage() {
 
         {/* Filters Row — compact inline */}
         <div className="flex items-end gap-3 flex-wrap max-[900px]:flex-col max-[900px]:items-stretch">
-          <div className="flex flex-col gap-0.5 min-w-[130px] max-[900px]:min-w-0">
+          <div className="flex flex-col gap-0.5 max-[900px]:min-w-0">
             <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
               {t('allStories.filterByStatus')}
             </Label>
-            <Select value={statusFilter || ALL_SENTINEL} onValueChange={handleStatusChange}>
-              <SelectTrigger size="sm" className="min-w-[130px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_SENTINEL}>{t('allStories.all')}</SelectItem>
-                {ALL_STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {t(`status.${s === 'in_progress' ? 'inProgress' : s === 'submitted' ? 'submitted' : s}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              triggerClassName="min-w-[120px]"
+              value={statusFilter}
+              onChange={handleStatusChange}
+              placeholder={t('allStories.all')}
+              allLabel={t('allStories.all')}
+              options={ALL_STATUSES.map((s) => ({
+                value: s,
+                label: t(`status.${s === 'in_progress' ? 'inProgress' : s === 'submitted' ? 'submitted' : s}`),
+              }))}
+            />
           </div>
 
-          <div className="flex flex-col gap-0.5 min-w-[130px] max-[900px]:min-w-0">
+          <div className="flex flex-col gap-0.5 max-[900px]:min-w-0">
             <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
               {t('allStories.filterByCategory')}
             </Label>
-            <Select value={categoryFilter || ALL_SENTINEL} onValueChange={handleCategoryChange}>
-              <SelectTrigger size="sm" className="min-w-[130px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_SENTINEL}>{t('allStories.all')}</SelectItem>
-                {categoryList.map((c) => {
-                  const localized = t(`categories.${c}`);
-                  const label = localized !== `categories.${c}` ? localized : c.replace(/_/g, ' ');
-                  return (
-                    <SelectItem key={c} value={c}>{label}</SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              triggerClassName="min-w-[120px]"
+              value={categoryFilter}
+              onChange={handleCategoryChange}
+              placeholder={t('allStories.all')}
+              allLabel={t('allStories.all')}
+              options={categoryList.map((c) => {
+                const localized = t(`categories.${c}`);
+                const label = localized !== `categories.${c}` ? localized : c.replace(/_/g, ' ');
+                return { value: c, label };
+              })}
+            />
           </div>
 
-          <div className="flex flex-col gap-0.5 min-w-[130px] max-[900px]:min-w-0">
+          <div className="flex flex-col gap-0.5 max-[900px]:min-w-0">
             <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
               {t('allStories.filterByReporter')}
             </Label>
-            <Select value={reporterFilter || ALL_SENTINEL} onValueChange={handleReporterChange}>
-              <SelectTrigger size="sm" className="min-w-[130px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_SENTINEL}>{t('allStories.all')}</SelectItem>
-                {reporters.map((r) => (
-                  <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              triggerClassName="min-w-[140px]"
+              value={reporterFilter}
+              onChange={handleReporterChange}
+              placeholder={t('allStories.all')}
+              allLabel={t('allStories.all')}
+              options={reporters.map((r) => ({ value: String(r.id), label: r.name }))}
+            />
           </div>
 
-          <div className="flex flex-col gap-0.5 min-w-[130px] max-[900px]:min-w-0">
+          <div className="flex flex-col gap-0.5 max-[900px]:min-w-0">
             <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
               {t('allStories.filterByLocation')}
             </Label>
-            <Select value={locationFilter || ALL_SENTINEL} onValueChange={handleLocationChange}>
-              <SelectTrigger size="sm" className="min-w-[130px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_SENTINEL}>{t('allStories.all')}</SelectItem>
-                {uniqueLocations.map((loc) => (
-                  <SelectItem key={loc} value={loc}>{loc}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-0.5 min-w-[150px] max-[900px]:min-w-0">
-            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
-              {t('assignment.assigneeFilter')}
-            </Label>
-            <Select value={assigneeFilter} onValueChange={handleAssigneeFilterChange}>
-              <SelectTrigger size="sm" className="min-w-[150px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ASSIGNEE_ME}>{t('assignment.assignedToMe')}</SelectItem>
-                <SelectItem value={ASSIGNEE_ALL}>{t('assignment.allAssignees')}</SelectItem>
-                {reviewers.map((r) => (
-                  <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              triggerClassName="min-w-[120px]"
+              value={locationFilter}
+              onChange={handleLocationChange}
+              placeholder={t('allStories.all')}
+              allLabel={t('allStories.all')}
+              options={uniqueLocations.map((loc) => ({ value: loc, label: loc }))}
+            />
           </div>
 
           <div className="flex flex-col gap-0.5 min-w-[120px] max-[900px]:min-w-0">

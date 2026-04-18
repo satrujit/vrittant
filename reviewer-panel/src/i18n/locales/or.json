@@ -448,7 +448,8 @@
       "category": "ଶ୍ରେଣୀ ମେଳ",
       "region": "ଅଞ୍ଚଳ ମେଳ",
       "load_balance": "ଲୋଡ-ସନ୍ତୁଳିତ",
-      "manual": "ମାନୁଆଲ"
+      "manual": "ମାନୁଆଲ",
+      "creator": "ସୃଷ୍ଟିକର୍ତ୍ତା"
     },
     "history": "ନିୟୋଜନ ଇତିହାସ",
     "historyEmpty": "ଏପର୍ଯ୍ୟନ୍ତ କୌଣସି ନିୟୋଜନ ନାହିଁ",
@@ -464,6 +465,7 @@
     "previousPage": "ପୂର୍ବ ପୃଷ୍ଠା",
     "nextPage": "ପରବର୍ତ୍ତୀ ପୃଷ୍ଠା",
     "toggleFilters": "ଫିଲ୍ଟର ଟୋଗଲ",
-    "storyNotFound": "ଖବର ମିଳିଲା ନାହିଁ।"
+    "storyNotFound": "ଖବର ମିଳିଲା ନାହିଁ।",
+    "search": "ଖୋଜନ୍ତୁ..."
   }
 }

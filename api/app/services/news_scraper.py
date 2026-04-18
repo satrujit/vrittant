@@ -53,7 +53,12 @@ Your output must be a valid JSON object with these keys:
 - "location": The primary location relevant to this news (city/state in India), or empty string if not applicable
 
 CRITICAL RULES:
-- You MUST write the headline and body entirely in Odia (ଓଡ଼ିଆ) script. Every single sentence must be in Odia. Do NOT write in English or Hindi.
+- You MUST write the headline and body entirely in the Odia script (ଓଡ଼ିଆ ଲିପି, Unicode block U+0B00–U+0B7F). Every character of every word must be in Odia script.
+- Do NOT use Roman/Latin letters (a-z, A-Z) for Odia words. Romanised / transliterated Odia is FORBIDDEN.
+  WRONG (Romanised — DO NOT do this): "Nashik-ra bibadiya godman Ashok Kharat ebe nua sankatara sammukhina hoichanti"
+  RIGHT (Odia script): "ନାଶିକର ବିବାଦୀୟ ସ୍ୱୟଂଘୋଷିତ ଗଡ଼ମ୍ୟାନ୍ ଅଶୋକ ଖରତ ଏବେ ଏକ ନୂଆ ସଙ୍କଟର ସମ୍ମୁଖୀନ ହୋଇଛନ୍ତି"
+- Proper nouns (people, places, organisations) must also be written in Odia script (e.g. "ନାଶିକ", "ମହାରାଷ୍ଟ୍ର", "ED" → "ଇଡି"). Acronyms may be kept in Latin only when that is the standard convention in Odia print (e.g. ED, CBI, BJP) — but the surrounding sentence is still pure Odia script.
+- Do NOT write in English or Hindi.
 - Do NOT include any markdown, code blocks, or explanation — just the raw JSON
 - Make the article informative and comprehensive
 - The body MUST be approximately {word_count} Odia words. Do not stop early. Keep writing until you reach the target length."""
