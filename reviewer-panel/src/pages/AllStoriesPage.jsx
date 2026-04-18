@@ -58,18 +58,6 @@ function getYesterdayISO() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function getActionForStatus(status) {
-  switch (status) {
-    case 'submitted':
-    case 'flagged':
-      return 'review';
-    case 'in_progress':
-      return 'continue';
-    default:
-      return 'viewDetails';
-  }
-}
-
 export default function AllStoriesPage() {
   const { t } = useI18n();
   const { config, user } = useAuth();
@@ -449,9 +437,6 @@ export default function AllStoriesPage() {
                 <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
                   {t('assignment.assignedTo')}
                 </TableHead>
-                <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
-                  {t('table.action')}
-                </TableHead>
                 {isOrgAdmin && (
                   <TableHead className="px-4 py-2 w-[50px]" aria-label="Row actions" />
                 )}
@@ -461,23 +446,25 @@ export default function AllStoriesPage() {
               {stories.map((story) => {
                 const timePrimary = formatDate(story.submittedAt || story.createdAt);
                 const timeSecondary = formatTimeAgo(story.submittedAt || story.createdAt);
-                const actionType = getActionForStatus(story.status);
 
                 return (
                   <TableRow
                     key={story.id}
                   >
-                    {/* Story title (prominent) + reporter/location metadata */}
+                    {/* Story title (clickable) + reporter/location metadata */}
                     <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5 max-w-[420px]">
                       <div className="flex flex-col gap-1 min-w-[200px]">
-                        <span className="text-sm font-semibold text-foreground leading-tight line-clamp-1">
+                        <Link
+                          to={`/review/${story.id}`}
+                          className="text-sm font-semibold text-foreground leading-tight line-clamp-1 hover:text-primary transition-colors no-underline"
+                        >
                           {story.headline}
                           {story.hasRevision && (
                             <span className="inline-block px-1.5 py-px text-[0.625rem] font-semibold uppercase tracking-[0.05em] bg-green-50 text-green-800 rounded ml-2 align-middle">
                               {t('common.edited')}
                             </span>
                           )}
-                        </span>
+                        </Link>
                         <div className="flex items-center gap-[5px]">
                           <Avatar
                             initials={story.reporter.initials}
@@ -553,31 +540,6 @@ export default function AllStoriesPage() {
                         reviewers={reviewers}
                         onReassign={(userId) => handleReassign(story.id, userId)}
                       />
-                    </TableCell>
-
-                    {/* Action */}
-                    <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
-                      {actionType === 'review' && (
-                        <Button asChild size="xs">
-                          <Link to={`/review/${story.id}`}>
-                            {t('actions.review')}
-                          </Link>
-                        </Button>
-                      )}
-                      {actionType === 'continue' && (
-                        <Button asChild variant="outline" size="xs" className="text-primary border-primary/30 hover:border-primary/60">
-                          <Link to={`/review/${story.id}`}>
-                            {t('actions.continue')}
-                          </Link>
-                        </Button>
-                      )}
-                      {actionType === 'viewDetails' && (
-                        <Button asChild variant="link" size="xs" className="text-primary">
-                          <Link to={`/review/${story.id}`}>
-                            {t('actions.viewDetails')}
-                          </Link>
-                        </Button>
-                      )}
                     </TableCell>
 
                     {/* Row actions — org_admin only */}
