@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Archive, Users, Columns3, Newspaper, Trophy, LogOut, Settings, LayoutGrid } from 'lucide-react';
+import { LayoutDashboard, Archive, Users, Columns3, Newspaper, Trophy, LogOut, Settings, LayoutGrid, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { useAuth } from '../../contexts/AuthContext';
 import { getInitialsFromName, getMediaUrl } from '../../services/api';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { useSidebarCollapsed } from '../../hooks/useSidebarCollapsed';
 
 const NAV_ITEMS = [
   { key: 'dashboard',   path: '/',           icon: LayoutDashboard, labelKey: 'nav.dashboard',   entitlementKey: 'dashboard' },
@@ -44,6 +45,7 @@ function VrittantWordmark() {
 function Sidebar() {
   const { t } = useI18n();
   const { user, logout, hasEntitlement } = useAuth();
+  const [collapsed, setCollapsed] = useSidebarCollapsed();
 
   const visibleNavItems = NAV_ITEMS.filter((item) =>
     hasEntitlement(item.entitlementKey)
@@ -53,29 +55,53 @@ function Sidebar() {
   const initials = user?.name ? getInitialsFromName(user.name) : '?';
 
   return (
-    <aside className="fixed inset-y-0 left-0 w-[240px] h-screen flex flex-col bg-card border-r border-border py-3 z-[100]">
-      {/* Newspaper brand logo — dynamic from org */}
-      <div className="flex items-center justify-center px-5 py-2 mb-5">
-        {user?.org?.logo_url ? (
-          <img
-            src={getMediaUrl(user.org.logo_url)}
-            alt={user?.org?.name || 'Organization'}
-            className="max-w-[180px] h-auto object-contain"
-            onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling && (e.target.nextSibling.style.display = 'block'); }}
-          />
-        ) : null}
-        {!user?.org?.logo_url && (
-          <span className="text-xl font-bold text-foreground tracking-tight">{user?.org?.name || 'Vrittant'}</span>
+    <aside
+      className={cn(
+        'fixed inset-y-0 left-0 h-screen flex flex-col bg-card border-r border-border py-3 z-[100] transition-[width] duration-200',
+        collapsed ? 'w-[64px]' : 'w-[240px]'
+      )}
+    >
+      {/* Brand row — collapse toggle on the right (or stacked when collapsed) */}
+      <div
+        className={cn(
+          'flex items-center gap-2 px-3 mb-3',
+          collapsed ? 'flex-col' : 'justify-between'
         )}
+      >
+        <div className={cn('flex items-center justify-center min-w-0', collapsed ? 'w-full' : 'flex-1')}>
+          {user?.org?.logo_url ? (
+            <img
+              src={getMediaUrl(user.org.logo_url)}
+              alt={user?.org?.name || 'Organization'}
+              className={cn('h-auto object-contain', collapsed ? 'max-w-[36px]' : 'max-w-[160px]')}
+              onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling && (e.target.nextSibling.style.display = 'block'); }}
+            />
+          ) : (
+            <span className={cn('font-bold text-foreground tracking-tight truncate', collapsed ? 'text-base' : 'text-xl')}>
+              {collapsed ? (user?.org?.name?.[0] || 'V') : (user?.org?.name || 'Vrittant')}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setCollapsed(!collapsed)}
+          className="shrink-0 inline-flex items-center justify-center size-7 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+        </button>
       </div>
 
-      {/* Powered by Vrittant */}
-      <div className="flex items-center justify-end px-5 -mt-3 mb-3">
-        <div className="flex items-center gap-1 opacity-80">
-          <span className="text-[10px] text-muted-foreground">Powered by</span>
-          <VrittantWordmark />
+      {/* Powered by Vrittant — only when expanded */}
+      {!collapsed && (
+        <div className="flex items-center justify-end px-5 -mt-2 mb-3">
+          <div className="flex items-center gap-1 opacity-80">
+            <span className="text-[10px] text-muted-foreground">Powered by</span>
+            <VrittantWordmark />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex flex-col gap-1 px-2 flex-1">
@@ -87,11 +113,18 @@ function Sidebar() {
               to={item.path}
               end={item.path === '/'}
               className={({ isActive }) =>
-                cn(navItemBase, isActive ? navItemActive : navItemInactive)
+                cn(
+                  navItemBase,
+                  isActive ? navItemActive : navItemInactive,
+                  collapsed && 'justify-center px-0'
+                )
               }
+              title={collapsed ? t(item.labelKey) : undefined}
             >
               <Icon size={20} className="shrink-0" />
-              <span className="whitespace-nowrap overflow-hidden text-ellipsis">{t(item.labelKey)}</span>
+              {!collapsed && (
+                <span className="whitespace-nowrap overflow-hidden text-ellipsis">{t(item.labelKey)}</span>
+              )}
             </NavLink>
           );
         })}
@@ -103,11 +136,18 @@ function Sidebar() {
           <NavLink
             to="/settings"
             className={({ isActive }) =>
-              cn(navItemBase, isActive ? navItemActive : navItemInactive)
+              cn(
+                navItemBase,
+                isActive ? navItemActive : navItemInactive,
+                collapsed && 'justify-center px-0'
+              )
             }
+            title={collapsed ? t('nav.settings') : undefined}
           >
             <Settings size={20} className="shrink-0" />
-            <span className="whitespace-nowrap overflow-hidden text-ellipsis">{t('nav.settings')}</span>
+            {!collapsed && (
+              <span className="whitespace-nowrap overflow-hidden text-ellipsis">{t('nav.settings')}</span>
+            )}
           </NavLink>
         </div>
       )}
@@ -116,17 +156,25 @@ function Sidebar() {
       <div className="mt-auto border-t border-border pt-2 px-2 pb-3">
         <Popover>
           <PopoverTrigger asChild>
-            <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg hover:bg-accent transition-colors cursor-pointer bg-transparent border-none text-left">
+            <button
+              className={cn(
+                'flex items-center gap-2 w-full rounded-lg hover:bg-accent transition-colors cursor-pointer bg-transparent border-none text-left',
+                collapsed ? 'justify-center px-0 py-2' : 'px-3 py-2'
+              )}
+              title={collapsed ? user?.name : undefined}
+            >
               <div className="size-[28px] rounded-full bg-[#3D3B8E] text-white flex items-center justify-center text-[10px] font-semibold shrink-0">
                 {initials}
               </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-[11px] font-semibold text-foreground truncate">{user?.name || ''}</span>
-                <span className="text-[10px] text-muted-foreground truncate">{user?.user_type || ''}</span>
-              </div>
+              {!collapsed && (
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[11px] font-semibold text-foreground truncate">{user?.name || ''}</span>
+                  <span className="text-[10px] text-muted-foreground truncate">{user?.user_type || ''}</span>
+                </div>
+              )}
             </button>
           </PopoverTrigger>
-          <PopoverContent side="top" align="start" className="w-[200px] p-1 z-[200]">
+          <PopoverContent side={collapsed ? 'right' : 'top'} align="start" className="w-[200px] p-1 z-[200]">
             <button
               onClick={logout}
               className="flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm text-destructive hover:bg-destructive/10 transition-colors cursor-pointer bg-transparent border-none"
