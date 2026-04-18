@@ -191,21 +191,25 @@ export default function SocialTab({ story, initialPosts, onPostsChange }) {
   }, [generateText, instructions, twitterText, facebookText, instagramText, notifyFromTexts]);
 
   const generateAllPlatforms = useCallback(async () => {
-    // Seed local accumulator from current state so we never overwrite a
-    // platform that already had user-edited content with an empty string.
+    // Seed accumulator from current state so platforms with user-edited
+    // content survive a partial-failure run.
     const results = { twitter: twitterText, facebook: facebookText, instagram: instagramText };
+    const setters = { twitter: setTwitterText, facebook: setFacebookText, instagram: setInstagramText };
     for (const platform of ['twitter', 'facebook', 'instagram']) {
       setGeneratingPlatform(platform);
       try {
-        results[platform] = await generateText(platform, instructions);
+        const generated = await generateText(platform, instructions);
+        results[platform] = generated;
+        // Reveal each result to the user as soon as it lands — don't wait
+        // for the whole batch to finish. Parent (notifyChange) is still
+        // updated only ONCE at the end with the final accumulator, so we
+        // avoid the stale-closure sibling-wipe bug.
+        setters[platform](generated);
       } catch (err) {
         console.error(`Failed to generate ${platform} post:`, err);
       }
     }
     setGeneratingPlatform(null);
-    setTwitterText(results.twitter);
-    setFacebookText(results.facebook);
-    setInstagramText(results.instagram);
     notifyFromTexts(results.twitter, results.facebook, results.instagram);
   }, [generateText, instructions, twitterText, facebookText, instagramText, notifyFromTexts]);
 

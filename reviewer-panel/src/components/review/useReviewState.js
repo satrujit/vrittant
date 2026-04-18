@@ -679,6 +679,8 @@ export function useReviewState({ id, t }) {
   // We translate headline + body separately so the headline always survives
   // intact even if the body is large/chunked, then render headline as a
   // bold first line so it's clearly distinguished in the English view.
+  // After translation completes we auto-persist via updateStory so the user
+  // doesn't have to remember to hit Save.
   const handleTranslateToEnglish = useCallback(async () => {
     if (!story) return;
     setTranslating(true);
@@ -690,17 +692,24 @@ export function useReviewState({ id, t }) {
       ]);
       const combined = [translatedHeadline, translatedBody].filter(Boolean).join('\n\n');
       setEnglishTranslation(combined);
+      const headlineHtml = translatedHeadline ? `<p><strong>${translatedHeadline}</strong></p>` : '';
+      const bodyHtml = translatedBody.split('\n\n').filter(Boolean).map((p) => `<p>${p}</p>`).join('');
+      const englishHtml = headlineHtml + bodyHtml;
       if (englishEditor) {
-        const headlineHtml = translatedHeadline ? `<p><strong>${translatedHeadline}</strong></p>` : '';
-        const bodyHtml = translatedBody.split('\n\n').filter(Boolean).map((p) => `<p>${p}</p>`).join('');
-        englishEditor.commands.setContent(headlineHtml + bodyHtml);
+        englishEditor.commands.setContent(englishHtml);
+      }
+      // Auto-save the translation so refreshing or navigating away preserves it.
+      try {
+        await updateStory(id, { english_translation: englishHtml });
+      } catch (saveErr) {
+        console.error('Auto-save of translation failed:', saveErr);
       }
     } catch (err) {
       console.error('Translation failed:', err);
     } finally {
       setTranslating(false);
     }
-  }, [story, englishEditor]);
+  }, [id, story, englishEditor]);
 
   // Fetch draft editions for assignment
   useEffect(() => {
