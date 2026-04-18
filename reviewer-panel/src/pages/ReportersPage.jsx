@@ -8,7 +8,6 @@ import {
   fetchLeaderboard,
 } from '../services/api';
 import { Avatar, SearchBar } from '../components/common';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -77,7 +76,6 @@ function ReportersPage() {
   const [reportersList, setReportersList] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showDeleted, setShowDeleted] = useState(false);
   const [period, setPeriod] = useState('month');
   const [page, setPage] = useState(1);
 
@@ -85,7 +83,7 @@ function ReportersPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchReporters({ includeInactive: showDeleted })
+    fetchReporters({ includeInactive: false })
       .then((data) => {
         if (!cancelled) {
           setReportersList((data.reporters || []).map(transformReporter));
@@ -97,7 +95,7 @@ function ReportersPage() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [showDeleted]);
+  }, []);
 
   // Fetch leaderboard scores per period
   useEffect(() => {
@@ -120,7 +118,7 @@ function ReportersPage() {
   }, [period]);
 
   // Reset page when filters change so user isn't stranded on an empty page
-  useEffect(() => { setPage(1); }, [search, showDeleted, period]);
+  useEffect(() => { setPage(1); }, [search, period]);
 
   // Merge + filter to reporters only, sorted by points desc
   const reporters = useMemo(() => {
@@ -199,13 +197,6 @@ function ReportersPage() {
           ))}
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none whitespace-nowrap ml-auto">
-          <Checkbox
-            checked={showDeleted}
-            onCheckedChange={(v) => setShowDeleted(!!v)}
-          />
-          {t('settings.users.showDeleted')}
-        </label>
       </div>
 
       {/* Table */}
