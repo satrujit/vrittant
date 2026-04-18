@@ -8,6 +8,7 @@ import {
   ExternalLink,
   FileText,
   History,
+  Info,
   Loader2,
   MapPin,
   MessageSquare,
@@ -46,16 +47,26 @@ const PRIORITY_COLORS = {
 };
 
 /**
- * Compact section header for the side panel — small uppercase label.
+ * Card-style section wrapper. Groups related controls under a small
+ * uppercase header so the side panel reads as a stack of self-contained
+ * blocks rather than one continuous scroll.
  */
-function SectionLabel({ icon: Icon, children }) {
+function Section({ icon: Icon, title, children, className }) {
   return (
-    <div className="flex items-center gap-1.5 px-3 pt-3 pb-1.5">
-      {Icon && <Icon size={11} className="text-muted-foreground" />}
-      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-        {children}
-      </span>
-    </div>
+    <section
+      className={cn(
+        'rounded-lg border border-border bg-background/50 mx-3 mb-3 overflow-hidden',
+        className
+      )}
+    >
+      <header className="flex items-center gap-1.5 px-3 pt-2.5 pb-1.5">
+        {Icon && <Icon size={11} className="text-muted-foreground" />}
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+          {title}
+        </span>
+      </header>
+      <div className="pb-1.5">{children}</div>
+    </section>
   );
 }
 
@@ -219,10 +230,9 @@ export default function ReviewSidePanel({
   return (
     <aside className="flex h-full w-[320px] shrink-0 flex-col overflow-hidden border-l border-border bg-card">
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* ─────────── Settings ─────────── */}
-        <div className="overflow-y-auto border-b border-border">
-          <SectionLabel>{t('review.sidePanel.details', 'Details')}</SectionLabel>
-
+        {/* ─────────── Settings (scrolls) ─────────── */}
+        <div className="overflow-y-auto border-b border-border pt-3">
+          <Section icon={Info} title={t('review.sidePanel.details', 'Details')}>
           <Row label={t('table.status', 'Status')}>
             <StatusBadge status={status} size="sm" />
           </Row>
@@ -337,12 +347,11 @@ export default function ReviewSidePanel({
               )}
             </Row>
           )}
+          </Section>
 
           {/* ─────────── Edition assignment ─────────── */}
-          <SectionLabel icon={BookOpen}>
-            {t('review.assignEditionShort', 'Edition')}
-          </SectionLabel>
-          <div className="px-3 pb-3">
+          <Section icon={BookOpen} title={t('review.assignEditionShort', 'Edition')}>
+          <div className="px-3 pb-1">
             {editionAssignments.length > 0 && (
               <div className="mb-2 flex flex-col gap-1">
                 {editionAssignments.map((a, i) => (
@@ -400,13 +409,11 @@ export default function ReviewSidePanel({
               {assigningToEdition ? '...' : t('review.assignButton')}
             </Button>
           </div>
+          </Section>
 
           {/* ─────────── Assignment ─────────── */}
-          <div className="border-t border-border">
-            <SectionLabel icon={UserCircle2}>
-              {t('assignment.assignedTo', 'Assigned to')}
-            </SectionLabel>
-            <div className="flex items-center justify-between gap-2 px-3 pb-3">
+          <Section icon={UserCircle2} title={t('assignment.assignedTo', 'Assigned to')}>
+            <div className="flex items-center justify-between gap-2 px-3 pb-1">
               <ReassignPopover
                 assigneeId={currentAssigneeId}
                 assigneeName={story?.assignee_name}
@@ -484,19 +491,22 @@ export default function ReviewSidePanel({
                 </DialogContent>
               </Dialog>
             </div>
-          </div>
+          </Section>
         </div>
 
         {/* ─────────── Comments (fills remaining height) ─────────── */}
         <div className="flex min-h-0 flex-1 flex-col">
-          <SectionLabel icon={MessageSquare}>
-            {t('review.comments.title', 'Comments')}
-            {comments.length > 0 && (
-              <span className="ml-1 normal-case tracking-normal text-muted-foreground/60">
-                ({comments.length})
-              </span>
-            )}
-          </SectionLabel>
+          <div className="flex items-center gap-1.5 px-4 pt-3 pb-1.5">
+            <MessageSquare size={11} className="text-muted-foreground" />
+            <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+              {t('review.comments.title', 'Comments')}
+              {comments.length > 0 && (
+                <span className="ml-1 normal-case tracking-normal text-muted-foreground/60">
+                  ({comments.length})
+                </span>
+              )}
+            </span>
+          </div>
           <div className="flex-1 overflow-y-auto px-3 pb-2">
             {commentsLoading ? (
               <div className="flex items-center justify-center py-6">
