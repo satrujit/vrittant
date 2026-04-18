@@ -448,7 +448,8 @@
       "category": "Category match",
       "region": "Region match",
       "load_balance": "Load-balanced",
-      "manual": "Manual"
+      "manual": "Manual",
+      "creator": "Creator"
     },
     "history": "Assignment history",
     "historyEmpty": "No assignments yet",
@@ -464,6 +465,7 @@
     "previousPage": "Previous page",
     "nextPage": "Next page",
     "toggleFilters": "Toggle filters",
-    "storyNotFound": "Story not found."
+    "storyNotFound": "Story not found.",
+    "search": "Search..."
   }
 }

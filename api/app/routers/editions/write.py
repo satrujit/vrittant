@@ -7,6 +7,7 @@ from ...database import get_db
 from ...deps import require_reviewer, get_current_org_id
 from ...utils.tz import now_ist
 from ...models.edition import Edition, EditionPage, EditionPageStory
+from ...models.org_config import OrgConfig
 from ...models.story import Story
 from ...models.user import User
 from ...schemas.edition import (
@@ -37,6 +38,31 @@ def create_edition(body: EditionCreate, db: Session = Depends(get_db), user: Use
         organization_id=org_id,
     )
     db.add(edition)
+    db.flush()  # need edition.id before adding child pages
+
+    # For "daily" editions, auto-seed pages from the org's master
+    # page_suggestions preset so the reviewer doesn't have to add them
+    # manually for every day. Other paper types (weekend / evening /
+    # special) start blank — they're often custom layouts.
+    if body.paper_type == "daily":
+        cfg = (
+            db.query(OrgConfig)
+            .filter(OrgConfig.organization_id == org_id)
+            .first()
+        )
+        suggestions = (cfg.page_suggestions or []) if cfg else []
+        active = [s for s in suggestions if s.get("is_active", True)]
+        active.sort(key=lambda s: s.get("sort_order", 0))
+        for idx, s in enumerate(active, start=1):
+            db.add(
+                EditionPage(
+                    edition_id=edition.id,
+                    page_number=idx,
+                    page_name=s.get("name") or f"Page {idx}",
+                    sort_order=idx,
+                )
+            )
+
     db.commit()
     db.refresh(edition)
     return _edition_to_response(edition)

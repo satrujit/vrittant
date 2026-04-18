@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Calendar, Newspaper, Loader2, Trash2, FileText, BookOpen, Search, Pencil } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
-import { Modal } from '../components/common';
+import { Modal, SearchableSelect } from '../components/common';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -268,39 +268,32 @@ export default function BucketsListPage() {
           />
         </div>
 
-        <Select
-          value={filterPaperType || '__all__'}
-          onValueChange={(val) => setFilterPaperType(val === '__all__' ? '' : val)}
-        >
-          <SelectTrigger className="rounded-lg bg-card border-border text-foreground min-w-[160px]">
-            <SelectValue placeholder={t('buckets.filterByPaperType')} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">{t('buckets.filterByPaperType')}</SelectItem>
-            {pubTypes.map(pt => (
-              <SelectItem key={pt.key} value={pt.key}>
-                {t(`buckets.paperTypes.${pt.key}`) !== `buckets.paperTypes.${pt.key}`
-                  ? t(`buckets.paperTypes.${pt.key}`)
-                  : pt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          triggerClassName="min-w-[150px]"
+          value={filterPaperType}
+          onChange={setFilterPaperType}
+          placeholder={t('buckets.filterByPaperType')}
+          allLabel={t('buckets.filterByPaperType')}
+          options={pubTypes.map(pt => ({
+            value: pt.key,
+            label: t(`buckets.paperTypes.${pt.key}`) !== `buckets.paperTypes.${pt.key}`
+              ? t(`buckets.paperTypes.${pt.key}`)
+              : pt.label,
+          }))}
+        />
 
-        <Select
-          value={filterStatus || '__all__'}
-          onValueChange={(val) => setFilterStatus(val === '__all__' ? '' : val)}
-        >
-          <SelectTrigger className="rounded-lg bg-card border-border text-foreground min-w-[160px]">
-            <SelectValue placeholder={t('buckets.filterByStatus')} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">{t('buckets.filterByStatus')}</SelectItem>
-            <SelectItem value="draft">{t('buckets.editionStatus.draft')}</SelectItem>
-            <SelectItem value="finalized">{t('buckets.editionStatus.finalized')}</SelectItem>
-            <SelectItem value="published">{t('buckets.editionStatus.published')}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          triggerClassName="min-w-[150px]"
+          value={filterStatus}
+          onChange={setFilterStatus}
+          placeholder={t('buckets.filterByStatus')}
+          allLabel={t('buckets.filterByStatus')}
+          options={[
+            { value: 'draft', label: t('buckets.editionStatus.draft') },
+            { value: 'finalized', label: t('buckets.editionStatus.finalized') },
+            { value: 'published', label: t('buckets.editionStatus.published') },
+          ]}
+        />
       </div>
 
       {/* Content */}

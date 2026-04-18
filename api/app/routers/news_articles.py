@@ -433,6 +433,54 @@ async def research_story_from_article(
             gen_category = parsed.get("category", gen_category)
             location = parsed.get("location", location)
             gen_body = gen_body.replace('\\n', '\n').strip()
+
+            # Script sanity check — Sarvam occasionally ignores the
+            # "Odia script only" rule and returns Romanised Odia
+            # ("Nashik-ra bibadiya godman..."). Detect that by the
+            # ratio of Odia-block (U+0B00–U+0B7F) characters to total
+            # letters; retry once with a sharper instruction if low.
+            def _odia_ratio(text: str) -> float:
+                letters = [c for c in text if c.isalpha()]
+                if not letters:
+                    return 1.0
+                odia = sum(1 for c in letters if "\u0b00" <= c <= "\u0b7f")
+                return odia / len(letters)
+
+            ratio = _odia_ratio(gen_body)
+            if ratio < 0.6:
+                logger.warning(
+                    "Sarvam returned non-Odia-script body for article %s (odia_ratio=%.2f); retrying with stricter prompt",
+                    article_id,
+                    ratio,
+                )
+                retry_messages = [
+                    {
+                        "role": "system",
+                        "content": (
+                            system_prompt
+                            + "\n\nDo not output markdown formatting (no **, ##, -, etc). Return plain text only."
+                            + "\n\nYour previous attempt used Romanised Odia (Latin letters spelling Odia phonetically). That is INVALID."
+                            + " Rewrite headline AND body using ONLY characters in the Odia Unicode block (U+0B00–U+0B7F)."
+                            + " Every word — including names of people and places — must be in Odia script."
+                        ),
+                    },
+                    {"role": "user", "content": user_prompt},
+                ]
+                retry_payload = {**payload, "messages": retry_messages, "temperature": 0.4}
+                async with httpx.AsyncClient(timeout=180.0) as client:
+                    retry_resp = await client.post(url, json=retry_payload, headers=headers)
+                    retry_resp.raise_for_status()
+                    retry_raw = strip_think_tags(retry_resp.json()["choices"][0]["message"]["content"] or "")
+                retry_parsed = parse_sarvam_response(retry_raw)
+                if retry_parsed:
+                    retry_body = retry_parsed.get("body", "").replace('\\n', '\n').strip()
+                    if _odia_ratio(retry_body) > ratio:
+                        headline = retry_parsed.get("headline", headline)
+                        gen_body = retry_body
+                        gen_category = retry_parsed.get("category", gen_category)
+                        location = retry_parsed.get("location", location)
+                        logger.info("Sarvam retry produced valid Odia script for article %s", article_id)
+
             logger.info("Sarvam research completed for article %s (word_count=%d)", article_id, word_count)
         else:
             logger.warning("Sarvam returned non-JSON for article %s, raw[:500]: %s", article_id, raw[:500])
@@ -480,6 +528,9 @@ async def confirm_story_from_article(
         })
 
     now = now_ist()
+    # Auto-assign to the user who researched/created the story so it lands
+    # straight in their personal queue. They invoked the "generate from news"
+    # flow, so they own follow-through. Reviewers can still reassign later.
     story = Story(
         id=str(uuid.uuid4()),
         reporter_id=current_user.id,
@@ -493,6 +544,8 @@ async def confirm_story_from_article(
         submitted_at=now,
         created_at=now,
         updated_at=now,
+        assigned_to=current_user.id,
+        assigned_match_reason="creator",
     )
     story.refresh_search_text()
     db.add(story)

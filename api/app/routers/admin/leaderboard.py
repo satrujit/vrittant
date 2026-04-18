@@ -107,8 +107,12 @@ def leaderboard(
             Story.deleted_at.is_(None),
         )
     )
+    # Period bucketing uses created_at, not submitted_at. submitted_at can
+    # be rewritten when a story is re-saved/approved/republished, which
+    # caused stories to "leave" the month window even though they were
+    # clearly created within it (and showed up in the week tally).
     if period_start is not None:
-        period_q = period_q.filter(Story.submitted_at >= period_start)
+        period_q = period_q.filter(Story.created_at >= period_start)
     period_rows = period_q.group_by(Story.reporter_id).all()
     sub_map = {row.reporter_id: row.submissions for row in period_rows}
     apr_map = {row.reporter_id: row.approved for row in period_rows}
@@ -131,7 +135,7 @@ def leaderboard(
             .filter(
                 Story.organization_id == org_id,
                 Story.status.in_(SUBMITTED_STATUSES),
-                Story.submitted_at >= month_start,
+                Story.created_at >= month_start,
                 Story.deleted_at.is_(None),
             )
             .group_by(Story.reporter_id)
@@ -164,9 +168,9 @@ def leaderboard(
             db.query(
                 Story.reporter_id,
                 func.count(case((Story.status.in_(APPROVED_STATUSES), Story.id))).label("alltime_approved"),
-                func.count(case((Story.submitted_at >= month_start, Story.id))).label("month_submissions"),
+                func.count(case((Story.created_at >= month_start, Story.id))).label("month_submissions"),
                 func.count(case(
-                    (Story.status.in_(APPROVED_STATUSES) & (Story.submitted_at >= month_start), Story.id),
+                    (Story.status.in_(APPROVED_STATUSES) & (Story.created_at >= month_start), Story.id),
                 )).label("month_approved"),
             )
             .filter(
@@ -254,8 +258,11 @@ def leaderboard(
             location=reporter.area_name or "",
         ))
 
-    # sort by points desc, then by name for deterministic tie-breaking
-    entries.sort(key=lambda e: (-e.points, e.reporter_name))
+    # Sort: points desc, then more-active first (submissions, approved),
+    # then name asc. Without the activity tiebreakers a 0-point board
+    # falls back to DB scan order, which made unrelated reporters appear
+    # at the top of the podium for no visible reason.
+    entries.sort(key=lambda e: (-e.points, -e.submissions, -e.approved, e.reporter_name))
     for i, entry in enumerate(entries, start=1):
         entry.rank = i
 
