@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import uuid
+from datetime import timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, Request
@@ -28,10 +29,32 @@ from ..models.story import Story
 from ..models.user import User
 from ..models.webhook_dedup import WhatsappInboundDedup
 from ..services import storage
+from ..services import whatsapp_classifier as classifier
 from ..utils.tz import now_ist
 
 router = APIRouter(prefix="/webhooks/whatsapp", tags=["webhooks"])
 logger = logging.getLogger(__name__)
+
+STITCH_MINUTES = int(os.environ.get("WHATSAPP_STITCH_MINUTES", "10"))
+CLOSE_KEYWORDS = {"done", "/done", "end", "/end"}
+
+
+def _is_close_keyword(text: str) -> bool:
+    return text.strip().lower() in CLOSE_KEYWORDS
+
+
+def _find_open_draft(db, user_id: str):
+    return (
+        db.query(Story)
+        .filter(
+            Story.reporter_id == user_id,
+            Story.source == "whatsapp",
+            Story.whatsapp_session_open_until.isnot(None),
+            Story.whatsapp_session_open_until > now_ist(),
+        )
+        .order_by(Story.whatsapp_session_open_until.desc())
+        .first()
+    )
 
 # The Vrittant WABA number provisioned in Gupshup. Hard-coded because it
 # identifies the source of *outbound* replies; if the number ever changes
@@ -177,17 +200,69 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     inner_payload = payload.get("payload") or {}
     text, media_url = _extract_content(inner_type, inner_payload)
 
-    # Re-host any media on our own storage so the link doesn't expire when
-    # Gupshup garbage-collects it. Fall back to the original URL on failure
-    # so the reporter at least sees *something* and doesn't have to resend.
-    stored_media_url: str | None = None
+    # 1. Close keyword (only when no media — a photo with caption "done"
+    #    should append, not seal).
+    if text and not media_url and _is_close_keyword(text):
+        open_draft = _find_open_draft(db, user.id)
+        if open_draft is not None:
+            open_draft.whatsapp_session_open_until = None
+            n = len(open_draft.paragraphs or [])
+            db.commit()
+            await _send_gupshup_reply(
+                sender_raw,
+                f"Story #{open_draft.id[:8]} sealed with {n} items.",
+            )
+            return {"ok": True, "closed": open_draft.id}
+        db.commit()
+        await _send_gupshup_reply(sender_raw, "No open story to close.")
+        return {"ok": True, "skipped": "close-no-draft"}
+
+    # 2. Open draft → append.
+    open_draft = _find_open_draft(db, user.id)
+    if open_draft is not None:
+        stored_media_url: str | None = None
+        if media_url:
+            stored_media_url = await _persist_media(
+                media_url, inner_payload.get("contentType")
+            ) or media_url
+
+        paragraphs = list(open_draft.paragraphs or [])
+        if text:
+            paragraphs.append({"id": str(uuid.uuid4()), "text": text})
+        if stored_media_url:
+            paragraphs.append({
+                "id": str(uuid.uuid4()),
+                "text": f"[Attachment: {stored_media_url}]",
+                "media_url": stored_media_url,
+            })
+        open_draft.paragraphs = paragraphs
+        open_draft.whatsapp_session_open_until = now_ist() + timedelta(minutes=STITCH_MINUTES)
+        open_draft.refresh_search_text()
+        db.commit()
+        return {"ok": True, "appended_to": open_draft.id}
+
+    # 3 / 4. No open draft — maybe classify, then create new story.
+    # Media-only messages skip the classifier (always news intent).
+    needs_triage = False
+    if text:
+        label = await classifier.classify(text)
+        if label == "chitchat":
+            db.commit()
+            await _send_gupshup_reply(
+                sender_raw,
+                "Got your message. To submit news, forward press releases or news text here.",
+            )
+            return {"ok": True, "skipped": "chitchat"}
+        needs_triage = (label == "unclear")
+
+    stored_media_url = None
     if media_url:
         stored_media_url = await _persist_media(
             media_url, inner_payload.get("contentType")
         ) or media_url
 
     headline = (text.split("\n", 1)[0][:120] if text else "Forwarded from WhatsApp")
-    paragraphs: list[dict] = []
+    paragraphs = []
     if text:
         paragraphs.append({"id": str(uuid.uuid4()), "text": text})
     if stored_media_url:
@@ -207,6 +282,8 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
         status="submitted",
         submitted_at=now_ist(),
         source="whatsapp",
+        whatsapp_session_open_until=now_ist() + timedelta(minutes=STITCH_MINUTES),
+        needs_triage=needs_triage,
     )
     story.refresh_search_text()
     db.add(story)
@@ -214,6 +291,6 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
 
     await _send_gupshup_reply(
         sender_raw,
-        f"Saved as draft story #{story.id[:8]}. Open Vrittant to review and publish.",
+        f"Started story #{story.id[:8]}. Send more text or media; reply done or wait {STITCH_MINUTES} min to close.",
     )
     return {"ok": True, "story_id": story.id}

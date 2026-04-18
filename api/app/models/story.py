@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, String, Text, text as sql_text
 from sqlalchemy.orm import relationship
 
 from ..database import Base
@@ -52,6 +52,8 @@ class Story(Base):
     reviewed_at = Column(DateTime, nullable=True)
     assigned_to = Column(String, ForeignKey("users.id"), nullable=True, index=True)
     assigned_match_reason = Column(String, nullable=True)  # category | region | load_balance | manual
+    whatsapp_session_open_until = Column(DateTime, nullable=True)
+    needs_triage = Column(Boolean, nullable=False, default=False, server_default=sql_text("false"))
 
     reporter = relationship("User", foreign_keys=[reporter_id], back_populates="stories")
     reviewer = relationship("User", foreign_keys=[reviewed_by])
