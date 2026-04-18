@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Calendar, Newspaper, Loader2, Trash2, FileText, BookOpen, Search, Pencil, ChevronRight, ChevronDown } from 'lucide-react';
+import { Plus, Calendar, Newspaper, Loader2, Trash2, FileText, BookOpen, Search, Pencil, ChevronRight, ChevronDown, Columns3 } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/table';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
-import { Modal, SearchableSelect } from '../components/common';
+import { Modal, SearchableSelect, PageHeader } from '../components/common';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -378,27 +378,19 @@ export default function BucketsListPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1400px] mx-auto p-8 min-h-full md:p-4">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-5 max-md:flex-col max-md:gap-3">
-        <div className="flex flex-col gap-0.5">
-          <h1 className="text-2xl font-bold text-foreground leading-tight">
-            {t('buckets.title')}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {t('buckets.subtitle')}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <Button
-            className="px-5 font-semibold rounded-lg hover:-translate-y-px active:translate-y-0"
-            onClick={openCreateModal}
-          >
+    <div className="flex flex-col gap-5 max-w-[1400px] mx-auto p-6 lg:p-8 min-h-full">
+      <PageHeader
+        icon={Columns3}
+        title={t('buckets.title')}
+        subtitle={t('buckets.subtitle')}
+        actions={
+          <Button onClick={openCreateModal}>
             <Plus size={16} />
             {t('buckets.newEdition')}
           </Button>
-        </div>
-      </div>
+        }
+        className="mb-0"
+      />
 
       {/* Search & Filter bar */}
       <div className="flex items-center gap-3 flex-wrap max-md:flex-col max-md:items-stretch">

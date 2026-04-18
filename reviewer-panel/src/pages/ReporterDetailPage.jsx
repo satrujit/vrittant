@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { fetchReporterStories, transformStory, transformReporter, getInitialsFromName, getAvatarColor } from '../services/api';
-import { Avatar, StatusBadge, CategoryChip } from '../components/common';
+import { Avatar, StatusBadge, CategoryChip, PageHeader } from '../components/common';
 import { formatTimeAgo } from '../utils/helpers';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -94,20 +94,20 @@ function ReporterDetailPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-[1400px]">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <Button
-          variant="outline"
-          size="icon"
-          className="border-border bg-transparent text-muted-foreground shrink-0 hover:bg-accent hover:text-foreground hover:border-primary/40"
-          onClick={() => navigate('/reporters')}
-        >
-          <ArrowLeft size={20} />
-        </Button>
-        <h1 className="text-2xl font-bold text-foreground leading-tight">
-          {t('reporters.storiesBy', { name: reporter.name })}
-        </h1>
-      </div>
+      <PageHeader
+        title={t('reporters.storiesBy', { name: reporter.name })}
+        leading={
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-10 shrink-0"
+            onClick={() => navigate('/reporters')}
+            aria-label="Back"
+          >
+            <ArrowLeft size={18} />
+          </Button>
+        }
+      />
 
       {/* Reporter info card */}
       <div className="flex items-center gap-4 p-5 bg-card border border-border rounded-xl mb-6">

@@ -10,6 +10,7 @@ import {
   Trash2,
   Clock,
   X,
+  Archive,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,7 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, StatusBadge, CategoryChip, SearchBar, SearchableSelect } from '../components/common';
+import { Avatar, StatusBadge, CategoryChip, SearchBar, SearchableSelect, PageHeader } from '../components/common';
 import { formatDate, formatTimeAgo } from '../utils/helpers';
 import {
   Table,
@@ -275,32 +276,28 @@ export default function AllStoriesPage() {
   };
 
   return (
-    <div className="flex flex-col gap-4 max-w-7xl mx-auto py-6 px-8 max-sm:px-4">
-      {/* Compact Header + Search + Filters */}
+    <div className="flex flex-col gap-5 max-w-[1400px] mx-auto p-6 lg:p-8">
+      <PageHeader
+        icon={Archive}
+        title={t('allStories.title')}
+        subtitle={t('allStories.subtitle')}
+        className="mb-0"
+      />
+
       <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-6 max-[900px]:flex-col max-[900px]:items-stretch">
-          <div className="flex flex-col shrink-0">
-            <h1 className="text-xl font-bold text-foreground leading-tight m-0">
-              {t('allStories.title')}
-            </h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {t('allStories.subtitle')}
-            </p>
-          </div>
-          <div className="flex-1 max-w-[420px] max-[900px]:max-w-none relative">
-            <SearchBar
-              value={searchQuery}
-              onChange={handleSearch}
-              placeholder={t('allStories.searchPlaceholder')}
-              icon={Sparkles}
-            />
-            {semanticLoading && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-primary">
-                <Sparkles size={14} className="animate-pulse" />
-                <span className="text-[11px] font-medium">AI searching...</span>
-              </div>
-            )}
-          </div>
+        <div className="relative max-w-[420px]">
+          <SearchBar
+            value={searchQuery}
+            onChange={handleSearch}
+            placeholder={t('allStories.searchPlaceholder')}
+            icon={Sparkles}
+          />
+          {semanticLoading && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-primary">
+              <Sparkles size={14} className="animate-pulse" />
+              <span className="text-[11px] font-medium">AI searching...</span>
+            </div>
+          )}
         </div>
 
         {/* Filters Row — compact inline */}

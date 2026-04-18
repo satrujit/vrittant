@@ -6,7 +6,23 @@ import { fetchStory, transformStory } from '../services/api';
 import { generateSocialPost } from '../utils/helpers';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '../components/common';
 import { cn } from '@/lib/utils';
+
+/* Shared back button for the page header */
+function BackButton({ onClick }) {
+  return (
+    <Button
+      variant="outline"
+      size="icon"
+      className="size-10 shrink-0"
+      onClick={onClick}
+      aria-label="Back"
+    >
+      <ArrowLeft size={18} />
+    </Button>
+  );
+}
 
 /* ----------------------------------------
    Platform card sub-component
@@ -168,20 +184,11 @@ export default function SocialExportPage() {
   // Loading state
   if (loading) {
     return (
-      <div className="mx-auto max-w-[1400px] p-8">
-        <div className="mb-6 flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="icon"
-            className="size-9 shrink-0 border-border bg-card text-foreground hover:border-primary/40 hover:bg-accent hover:text-primary"
-            onClick={() => navigate(-1)}
-          >
-            <ArrowLeft size={18} />
-          </Button>
-          <div className="flex flex-col gap-0.5">
-            <h1 className="text-2xl font-bold leading-tight text-foreground">{t('social.title')}</h1>
-          </div>
-        </div>
+      <div className="mx-auto max-w-[1400px] p-6 lg:p-8">
+        <PageHeader
+          title={t('social.title')}
+          leading={<BackButton onClick={() => navigate(-1)} />}
+        />
         <div className="flex items-center justify-center p-16">
           <Loader2 size={24} className="animate-spin text-muted-foreground" />
         </div>
@@ -192,42 +199,23 @@ export default function SocialExportPage() {
   // Not found guard
   if (!story) {
     return (
-      <div className="mx-auto max-w-[1400px] p-8">
-        <div className="mb-6 flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="icon"
-            className="size-9 shrink-0 border-border bg-card text-foreground hover:border-primary/40 hover:bg-accent hover:text-primary"
-            onClick={() => navigate(-1)}
-          >
-            <ArrowLeft size={18} />
-          </Button>
-          <div className="flex flex-col gap-0.5">
-            <h1 className="text-2xl font-bold leading-tight text-foreground">{t('social.title')}</h1>
-          </div>
-        </div>
+      <div className="mx-auto max-w-[1400px] p-6 lg:p-8">
+        <PageHeader
+          title={t('social.title')}
+          leading={<BackButton onClick={() => navigate(-1)} />}
+        />
         <p className="text-muted-foreground">{t('common.storyNotFound')}</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-[1400px] p-8">
-      {/* Header */}
-      <div className="mb-6 flex items-center gap-3">
-        <Button
-          variant="outline"
-          size="icon"
-          className="size-9 shrink-0 border-border bg-card text-foreground hover:border-primary/40 hover:bg-accent hover:text-primary"
-          onClick={() => navigate(-1)}
-        >
-          <ArrowLeft size={18} />
-        </Button>
-        <div className="flex flex-col gap-0.5">
-          <h1 className="text-2xl font-bold leading-tight text-foreground">{t('social.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('social.subtitle')}</p>
-        </div>
-      </div>
+    <div className="mx-auto max-w-[1400px] p-6 lg:p-8">
+      <PageHeader
+        title={t('social.title')}
+        subtitle={t('social.subtitle')}
+        leading={<BackButton onClick={() => navigate(-1)} />}
+      />
 
       {/* Story reference */}
       <div className="mb-8 rounded-lg border border-border bg-accent px-5 py-4">

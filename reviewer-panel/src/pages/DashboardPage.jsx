@@ -11,7 +11,8 @@ import {
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchStats, fetchStories, fetchReporters, transformStory, reassignStory } from '../services/api';
-import { Avatar, StatusBadge, CategoryChip, SearchBar } from '../components/common';
+import { Avatar, StatusBadge, CategoryChip, SearchBar, PageHeader } from '../components/common';
+import { LayoutDashboard } from 'lucide-react';
 import { formatDate, formatTimeAgo } from '../utils/helpers';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -178,21 +179,12 @@ export default function DashboardPage() {
     : [];
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1400px] mx-auto p-8 max-sm:p-4">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground leading-tight">
-            {t('dashboard.title')}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {t('dashboard.subtitle')}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {refreshing && (
-            <RefreshCw size={14} className="animate-spin text-muted-foreground" />
-          )}
+    <div className="flex flex-col gap-6 max-w-[1400px] mx-auto p-6 lg:p-8">
+      <PageHeader
+        icon={LayoutDashboard}
+        title={t('dashboard.title')}
+        subtitle={t('dashboard.subtitle')}
+        actions={
           <Button
             variant="outline"
             size="sm"
@@ -203,13 +195,13 @@ export default function DashboardPage() {
               );
             }}
             disabled={refreshing}
-            className="text-xs"
           >
             <RefreshCw size={14} className={cn('mr-1.5', refreshing && 'animate-spin')} />
             {t('dashboard.refresh') || 'Refresh'}
           </Button>
-        </div>
-      </div>
+        }
+        className="mb-0"
+      />
 
       {/* Stats Bar */}
       <div className="grid grid-cols-4 gap-4 max-[900px]:grid-cols-2 max-sm:grid-cols-1">
