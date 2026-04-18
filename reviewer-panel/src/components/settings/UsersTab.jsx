@@ -65,6 +65,8 @@ function UsersTab() {
       name: form.name,
       email: form.email,
       area_name: form.area_name,
+      categories: form.categories,
+      regions: form.regions,
     });
     setEditUser(null);
     await loadUsers();
