@@ -41,6 +41,22 @@ def no_send(monkeypatch):
     return sent
 
 
+@pytest.fixture()
+def fake_persist(monkeypatch):
+    """Stub media download/upload — record the URL it was asked to persist
+    and return a fake GCS URL so the test can assert what got stored."""
+    persisted: list[str] = []
+
+    async def fake(url: str, content_type: str | None = None) -> str | None:
+        persisted.append(url)
+        return f"https://storage.googleapis.com/test-bucket/whatsapp/fake-{len(persisted)}.bin"
+
+    from app.routers import webhooks_whatsapp
+
+    monkeypatch.setattr(webhooks_whatsapp, "_persist_media", fake)
+    return persisted
+
+
 def _text_payload(sender: str, msg_id: str, text: str) -> dict:
     return {
         "app": "Vrittant",
@@ -111,7 +127,10 @@ def test_inactive_user_treated_as_unregistered(client, db, gupshup_reporter, no_
     assert db.query(Story).count() == 0
 
 
-def test_image_message_records_caption_and_media_url(client, db, gupshup_reporter, no_send):
+def test_image_message_persists_media_to_gcs(client, db, gupshup_reporter, no_send, fake_persist):
+    """Image messages should be downloaded from Gupshup and re-hosted on our
+    own storage — Gupshup media URLs expire, and we want the photo, not a
+    soon-dead link."""
     body = {
         "app": "Vrittant",
         "type": "message",
@@ -130,14 +149,54 @@ def test_image_message_records_caption_and_media_url(client, db, gupshup_reporte
     r = client.post("/webhooks/whatsapp/gupshup", json=body)
     assert r.status_code == 200
 
+    # The original Gupshup URL was handed to _persist_media…
+    assert fake_persist == ["https://gupshup-media.example/abc.jpg"]
+
     stories = db.query(Story).filter_by(reporter_id=gupshup_reporter.id).all()
     assert len(stories) == 1
-    flat_text = " ".join(p.get("text", "") for p in (stories[0].paragraphs or []) if isinstance(p, dict))
+    paragraphs = stories[0].paragraphs or []
+    media_paras = [p for p in paragraphs if isinstance(p, dict) and p.get("media_url")]
+    assert media_paras, "expected a paragraph carrying media_url"
+    # …and the stored media_url is OUR GCS URL, not Gupshup's transient one
+    assert media_paras[0]["media_url"].startswith("https://storage.googleapis.com/")
+    assert "gupshup-media.example" not in media_paras[0]["media_url"]
+    # Caption is still preserved
+    flat_text = " ".join(p.get("text", "") for p in paragraphs if isinstance(p, dict))
     assert "press conference" in (stories[0].headline + flat_text).lower()
-    assert "https://gupshup-media.example/abc.jpg" in flat_text or any(
-        p.get("media_url") == "https://gupshup-media.example/abc.jpg"
-        for p in (stories[0].paragraphs or []) if isinstance(p, dict)
-    )
+
+
+def test_image_message_falls_back_to_link_if_persist_fails(client, db, gupshup_reporter, no_send, monkeypatch):
+    """If we can't fetch/upload the media (network blip, expired URL, etc.)
+    we still want the story created — fall back to recording the Gupshup URL
+    so the reporter doesn't have to resend."""
+    async def failing_persist(url, content_type=None):
+        return None
+
+    from app.routers import webhooks_whatsapp
+    monkeypatch.setattr(webhooks_whatsapp, "_persist_media", failing_persist)
+
+    body = {
+        "app": "Vrittant",
+        "type": "message",
+        "payload": {
+            "id": "wamid.img-fail",
+            "source": "919876543210",
+            "type": "image",
+            "payload": {
+                "url": "https://gupshup-media.example/fail.jpg",
+                "caption": "lost",
+                "contentType": "image/jpeg",
+            },
+            "sender": {"phone": "919876543210", "name": "WA Reporter"},
+        },
+    }
+    r = client.post("/webhooks/whatsapp/gupshup", json=body)
+    assert r.status_code == 200
+    stories = db.query(Story).filter_by(reporter_id=gupshup_reporter.id).all()
+    assert len(stories) == 1
+    paragraphs = stories[0].paragraphs or []
+    media_paras = [p for p in paragraphs if isinstance(p, dict) and p.get("media_url")]
+    assert media_paras and media_paras[0]["media_url"] == "https://gupshup-media.example/fail.jpg"
 
 
 def test_missing_message_id_is_ignored_safely(client, db, gupshup_reporter, no_send):
