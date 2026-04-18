@@ -234,6 +234,7 @@
     "dateFrom": "From",
     "dateTo": "To",
     "all": "All",
+    "clearFilters": "Clear filters",
     "noResults": "No stories match your search.",
     "semanticHint": "Try searching with natural language for better results",
     "edited": "Edited"

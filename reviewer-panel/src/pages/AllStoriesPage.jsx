@@ -9,6 +9,7 @@ import {
   MoreHorizontal,
   Trash2,
   Clock,
+  X,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
@@ -246,6 +247,30 @@ export default function AllStoriesPage() {
     setCurrentPage(1);
   };
 
+  // True when any filter (or search) is narrowing the default view.
+  // Default dateFrom is yesterday's ISO — anything else counts as "set".
+  const hasActiveFilters = !!(
+    statusFilter ||
+    categoryFilter ||
+    reporterFilter ||
+    locationFilter ||
+    dateTo ||
+    dateFrom !== getYesterdayISO() ||
+    searchQuery
+  );
+
+  const handleClearFilters = () => {
+    setStatusFilter('');
+    setCategoryFilter('');
+    setReporterFilter('');
+    setLocationFilter('');
+    setDateFrom(getYesterdayISO());
+    setDateTo('');
+    setSearchQuery('');
+    setDebouncedSearch('');
+    setCurrentPage(1);
+  };
+
   // Derive unique locations from reporters
   const uniqueLocations = [...new Set(reporters.map((r) => r.area_name).filter(Boolean))];
 
@@ -377,6 +402,18 @@ export default function AllStoriesPage() {
               onChange={handleDateToChange}
             />
           </div>
+
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={handleClearFilters}
+              className="h-8 text-muted-foreground hover:text-foreground"
+            >
+              <X size={12} />
+              {t('allStories.clearFilters')}
+            </Button>
+          )}
         </div>
       </div>
 
