@@ -98,6 +98,10 @@ export default function DashboardPage() {
       const offset = (currentPage - 1) * PAGE_SIZE;
       const params = {
         status: 'submitted',
+        // Dashboard = personal queue. Stories the current user delegated to
+        // someone else should not show here — they live on the AllStories
+        // page, which has the org-wide assignee filter.
+        assigned_to: 'me',
         offset,
         limit: PAGE_SIZE,
       };
