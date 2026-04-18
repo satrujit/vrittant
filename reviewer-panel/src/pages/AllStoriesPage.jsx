@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchStories, fetchReporters, transformStory, semanticSearchStories, adminDeleteStory } from '../services/api';
+import { fetchStories, fetchReporters, transformStory, semanticSearchStories, adminDeleteStory, reassignStory } from '../services/api';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +39,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 const PAGE_SIZE = 10;
 
@@ -53,6 +59,8 @@ const ALL_STATUSES = [
 
 
 const ALL_SENTINEL = '__all__';
+const ASSIGNEE_ME = '__me__';
+const ASSIGNEE_ALL = '__all__';
 
 function getActionForStatus(status) {
   switch (status) {
@@ -79,6 +87,9 @@ export default function AllStoriesPage() {
   const [locationFilter, setLocationFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  // Assignee filter — defaults to "me" so a logged-in reviewer sees their queue.
+  // Stored as the raw select value: ASSIGNEE_ME, ASSIGNEE_ALL, or a user id string.
+  const [assigneeFilter, setAssigneeFilter] = useState(ASSIGNEE_ME);
   const [currentPage, setCurrentPage] = useState(1);
 
   // API data state
@@ -87,12 +98,23 @@ export default function AllStoriesPage() {
   const [loading, setLoading] = useState(true);
   const [semanticLoading, setSemanticLoading] = useState(false);
 
-  // Reporters list for filter dropdown
+  // Reporters list for filter dropdown — also source of reviewers for the
+  // assignee filter and inline reassign dropdown (single fetch, two derivations).
   const [reporters, setReporters] = useState([]);
+  const [reviewers, setReviewers] = useState([]);
   useEffect(() => {
     fetchReporters()
-      .then((data) => setReporters(data.reporters || []))
-      .catch(() => setReporters([]));
+      .then((data) => {
+        const list = data.reporters || [];
+        setReporters(list);
+        setReviewers(
+          list.filter((u) => u.user_type === 'reviewer' && (u.is_active ?? true))
+        );
+      })
+      .catch(() => {
+        setReporters([]);
+        setReviewers([]);
+      });
   }, []);
 
   // Debounce search input (300ms)
@@ -150,6 +172,12 @@ export default function AllStoriesPage() {
         if (locationFilter) params.location = locationFilter;
         if (dateFrom) params.date_from = dateFrom;
         if (dateTo) params.date_to = dateTo;
+        // Assignee filter — "all" omits the param.
+        if (assigneeFilter === ASSIGNEE_ME) {
+          params.assigned_to = 'me';
+        } else if (assigneeFilter !== ASSIGNEE_ALL) {
+          params.assigned_to = assigneeFilter;
+        }
 
         const data = await fetchStories(params);
         const transformed = (data.stories || []).map(transformStory);
@@ -164,7 +192,7 @@ export default function AllStoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, debouncedSearch, statusFilter, categoryFilter, reporterFilter, locationFilter, dateFrom, dateTo]);
+  }, [currentPage, debouncedSearch, statusFilter, categoryFilter, reporterFilter, locationFilter, dateFrom, dateTo, assigneeFilter]);
 
   useEffect(() => {
     loadStories();
@@ -192,6 +220,37 @@ export default function AllStoriesPage() {
   const handleLocationChange = (val) => {
     setLocationFilter(val === ALL_SENTINEL ? '' : val);
     setCurrentPage(1);
+  };
+
+  const handleAssigneeFilterChange = (val) => {
+    setAssigneeFilter(val);
+    setCurrentPage(1);
+  };
+
+  const handleReassign = async (storyId, userId) => {
+    // Optimistic update — patch the row, then refetch in background to
+    // pull the canonical assignee_name + assigned_match_reason.
+    const reviewer = reviewers.find((r) => String(r.id) === String(userId));
+    setStories((prev) =>
+      prev.map((s) =>
+        s.id === storyId
+          ? {
+              ...s,
+              assignee_id: userId,
+              assignee_name: reviewer?.name || s.assignee_name,
+              assigned_match_reason: 'manual',
+            }
+          : s
+      )
+    );
+    try {
+      await reassignStory(storyId, userId);
+      await loadStories();
+    } catch (err) {
+      console.error('Failed to reassign story:', err);
+      // On failure, refetch to revert the optimistic patch.
+      await loadStories();
+    }
   };
 
   const handleDateFromChange = (e) => {
@@ -323,6 +382,24 @@ export default function AllStoriesPage() {
             </Select>
           </div>
 
+          <div className="flex flex-col gap-0.5 min-w-[150px] max-[900px]:min-w-0">
+            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
+              {t('assignment.assigneeFilter')}
+            </Label>
+            <Select value={assigneeFilter} onValueChange={handleAssigneeFilterChange}>
+              <SelectTrigger size="sm" className="min-w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ASSIGNEE_ME}>{t('assignment.assignedToMe')}</SelectItem>
+                <SelectItem value={ASSIGNEE_ALL}>{t('assignment.allAssignees')}</SelectItem>
+                {reviewers.map((r) => (
+                  <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="flex flex-col gap-0.5 min-w-[120px] max-[900px]:min-w-0">
             <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
               {t('allStories.dateFrom')}
@@ -377,6 +454,9 @@ export default function AllStoriesPage() {
                 </TableHead>
                 <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
                   {t('stories.reviewedBy')}
+                </TableHead>
+                <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
+                  {t('assignment.assignedTo')}
                 </TableHead>
                 <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
                   {t('table.action')}
@@ -467,6 +547,70 @@ export default function AllStoriesPage() {
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
+                    </TableCell>
+
+                    {/* Assigned to — inline reassign popover */}
+                    <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="flex flex-col items-start gap-0.5 text-left hover:bg-accent/40 rounded px-1.5 py-1 -mx-1.5 -my-1 transition-colors min-w-[120px]"
+                          >
+                            {story.assignee_name ? (
+                              <>
+                                <span className="text-xs text-foreground whitespace-nowrap">
+                                  {story.assignee_name}
+                                </span>
+                                {story.assigned_match_reason && (
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-[10px] px-1.5 py-0 h-4 font-normal"
+                                  >
+                                    {t(`assignment.matchReason.${story.assigned_match_reason}`)}
+                                  </Badge>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                {t('assignment.unassigned')}
+                              </span>
+                            )}
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-56 p-1">
+                          {reviewers.length === 0 ? (
+                            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                              {t('assignment.noReviewersAvailable')}
+                            </div>
+                          ) : (
+                            <>
+                              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                {t('assignment.reassignTo')}
+                              </div>
+                              <div className="flex flex-col">
+                                {reviewers.map((r) => {
+                                  const isCurrent = String(r.id) === String(story.assignee_id);
+                                  return (
+                                    <button
+                                      key={r.id}
+                                      type="button"
+                                      disabled={isCurrent}
+                                      onClick={() => handleReassign(story.id, r.id)}
+                                      className={cn(
+                                        'text-left px-2 py-1.5 text-xs rounded hover:bg-accent transition-colors',
+                                        isCurrent && 'bg-accent/60 text-muted-foreground cursor-default'
+                                      )}
+                                    >
+                                      {r.name}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          )}
+                        </PopoverContent>
+                      </Popover>
                     </TableCell>
 
                     {/* Action */}
