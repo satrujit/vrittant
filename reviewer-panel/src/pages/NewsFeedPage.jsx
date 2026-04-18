@@ -153,12 +153,12 @@ export default function NewsFeedPage() {
     setGenerating(true);
     setPreviewData(null);
     try {
-      // Primary article is the lead; additional are the rest
-      const additionalIds = (articleIds || []).filter((id) => id !== previewArticleId);
+      // Pass the full selection — backend uses it as-is so the user can
+      // deselect the route's primary and pick any other articles as sources.
       const preview = await researchStoryFromArticle(previewArticleId, {
         instructions,
         wordCount,
-        additionalArticleIds: additionalIds,
+        sourceArticleIds: articleIds || [],
       });
       setPreviewData(preview);
     } catch (err) {

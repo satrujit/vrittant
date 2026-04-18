@@ -100,7 +100,13 @@ class NewsArticleListResponse(BaseModel):
 class ResearchStoryRequest(BaseModel):
     instructions: Optional[str] = Field(None, max_length=500)
     word_count: int = Field(400, ge=100, le=2000)
-    additional_article_ids: list[str] = Field(default_factory=list, max_length=2)  # max 2 extra = 3 total with primary
+    # Legacy field — kept for backward compat. Frontend should prefer
+    # `source_article_ids` which lets the user explicitly pick any subset
+    # of source articles (including deselecting the route's primary).
+    additional_article_ids: list[str] = Field(default_factory=list, max_length=3)
+    # Explicit list of source articles to feed the LLM. Takes precedence
+    # over the legacy primary+additionals composition when provided.
+    source_article_ids: Optional[list[str]] = Field(None, max_length=4)
 
 
 class ResearchStoryResponse(BaseModel):
@@ -343,16 +349,30 @@ async def research_story_from_article(
 
     instructions = body.instructions if body else None
     word_count = body.word_count if body else 400
-    extra_ids = (body.additional_article_ids if body else [])[:2]
+    explicit_source_ids = (body.source_article_ids if body else None)
+    extra_ids = (body.additional_article_ids if body else [])[:3]
 
     system_prompt = build_research_prompt(word_count, instructions)
 
-    # Gather all source articles (max 3) and scrape concurrently
-    all_articles = [article]
-    if extra_ids:
-        all_articles.extend(
-            db.query(NewsArticle).filter(NewsArticle.id.in_(extra_ids)).all()
-        )
+    # Pick the source-article list. New flow: frontend sends the full
+    # `source_article_ids` (whatever the user selected, primary included or
+    # not). Legacy flow: route's primary article + up to 3 additionals.
+    if explicit_source_ids:
+        # Preserve the user's selection order. Look up in one query, then
+        # reorder to match the requested list.
+        rows = db.query(NewsArticle).filter(NewsArticle.id.in_(explicit_source_ids)).all()
+        by_id = {a.id: a for a in rows}
+        all_articles = [by_id[sid] for sid in explicit_source_ids if sid in by_id]
+        # If none of the requested sources resolved, fall back to the
+        # route's primary so we never call the LLM with zero content.
+        if not all_articles:
+            all_articles = [article]
+    else:
+        all_articles = [article]
+        if extra_ids:
+            all_articles.extend(
+                db.query(NewsArticle).filter(NewsArticle.id.in_(extra_ids)).all()
+            )
     scraped_contents = await asyncio.gather(*(fetch_article_content(a.url) for a in all_articles))
     for i, (a, sc) in enumerate(zip(all_articles, scraped_contents)):
         logger.info("Source %d [%s]: scraped %d chars", i + 1, a.source or 'unknown', len(sc) if sc else 0)
