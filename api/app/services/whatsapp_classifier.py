@@ -5,6 +5,7 @@ Used to keep small-talk out of the reviewer queue without dropping
 anything ambiguous (those get flagged for triage instead).
 """
 import logging
+import re
 
 import httpx
 
@@ -16,6 +17,7 @@ _VALID = {"news", "chitchat", "unclear"}
 
 _SYSTEM = (
     "You classify a WhatsApp message a reporter forwarded to a newsroom. "
+    "The message may be in Odia, Hindi, or English. "
     "Reply with exactly one word: news, chitchat, or unclear. "
     "news = press release, news report, factual report of an event, "
     "official statement, or anything a reporter would file. "
@@ -56,5 +58,7 @@ async def classify(text: str) -> str:
     except Exception:
         logger.warning("WhatsApp classifier call failed; defaulting to unclear", exc_info=True)
         return "unclear"
-    label = raw.split()[0] if raw else ""
+    # Strip surrounding whitespace/punctuation so 'news.' or 'news,' still classifies.
+    parts = re.split(r"[^a-z]+", raw)
+    label = next((p for p in parts if p), "")
     return label if label in _VALID else "unclear"

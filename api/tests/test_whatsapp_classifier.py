@@ -39,3 +39,20 @@ async def test_empty_text_returns_unclear():
     # Should not even attempt the call for blank input
     assert await wc.classify("") == "unclear"
     assert await wc.classify("   ") == "unclear"
+
+
+@pytest.mark.asyncio
+async def test_timeout_falls_back_to_unclear(monkeypatch):
+    import httpx
+    async def timeout(prompt):
+        raise httpx.TimeoutException("sarvam slow")
+    monkeypatch.setattr(wc, "_sarvam_call", timeout)
+    assert await wc.classify("anything") == "unclear"
+
+
+@pytest.mark.asyncio
+async def test_label_with_trailing_punctuation_is_accepted(monkeypatch):
+    async def fake(prompt):
+        return "news."
+    monkeypatch.setattr(wc, "_sarvam_call", fake)
+    assert await wc.classify("anything") == "news"
