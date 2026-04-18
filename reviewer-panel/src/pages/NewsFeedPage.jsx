@@ -9,7 +9,6 @@ import {
   ChevronDown,
   Newspaper,
   CheckCircle2,
-  Plus,
   Sparkles,
   Image as ImageIcon,
   Layers,
@@ -19,7 +18,6 @@ import {
   fetchNewsArticles,
   researchStoryFromArticle,
   confirmResearchedStory,
-  createBlankStory,
 } from '../services/api';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -105,9 +103,6 @@ export default function NewsFeedPage() {
   const [confirming, setConfirming] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [createdIds, setCreatedIds] = useState(new Set());
-
-  // New story creation
-  const [creatingBlank, setCreatingBlank] = useState(false);
 
   const loadArticles = useCallback(async () => {
     setLoading(true);
@@ -197,21 +192,6 @@ export default function NewsFeedPage() {
     }
   };
 
-  // New blank story
-  const handleNewStory = async () => {
-    setCreatingBlank(true);
-    try {
-      const result = await createBlankStory();
-      if (result?.story_id) {
-        navigate(`/review/${result.story_id}`);
-      }
-    } catch (err) {
-      console.error('Failed to create blank story:', err);
-    } finally {
-      setCreatingBlank(false);
-    }
-  };
-
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   const categories = [
@@ -231,15 +211,9 @@ export default function NewsFeedPage() {
   return (
     <div className="flex flex-col gap-4 p-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{t('newsFeed.title', 'News Feed')}</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">{t('newsFeed.subtitle', 'Latest news articles — create stories from any article.')}</p>
-        </div>
-        <Button onClick={handleNewStory} disabled={creatingBlank} className="gap-1.5">
-          {creatingBlank ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-          {t('newsFeed.newStory', '+ New Story')}
-        </Button>
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">{t('newsFeed.title', 'News Feed')}</h1>
+        <p className="mt-0.5 text-sm text-muted-foreground">{t('newsFeed.subtitle', 'Latest news articles — create stories from any article.')}</p>
       </div>
 
       {/* Filters */}

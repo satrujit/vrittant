@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { UserPlus, MoreHorizontal, Users, Trash2, RotateCcw, Search, X } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { UserPlus, MoreHorizontal, Users, Trash2, RotateCcw, Search, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -32,6 +32,15 @@ const ROLE_LABELS = {
   org_admin: 'Org Admin',
 };
 
+const ROLE_FILTERS = [
+  { value: 'all', label: 'All Roles' },
+  { value: 'reporter', label: 'Reporters' },
+  { value: 'reviewer', label: 'Reviewers' },
+  { value: 'org_admin', label: 'Org Admins' },
+];
+
+const PAGE_SIZE = 20;
+
 function getInitials(name) {
   if (!name) return '?';
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -46,6 +55,8 @@ function UsersTab() {
   const [entitlementsUser, setEntitlementsUser] = useState(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [page, setPage] = useState(1);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -91,14 +102,23 @@ function UsersTab() {
 
   // Client-side filter — small dataset (typically <100 users), so no need
   // for server-side search. Match name / phone / email / area, case-insensitive.
-  const q = searchQuery.trim().toLowerCase();
-  const filteredUsers = q
-    ? users.filter((u) =>
-        [u.name, u.phone, u.email, u.area_name]
-          .filter(Boolean)
-          .some((field) => String(field).toLowerCase().includes(q))
-      )
-    : users;
+  const filteredUsers = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return users.filter((u) => {
+      if (roleFilter !== 'all' && u.user_type !== roleFilter) return false;
+      if (!q) return true;
+      return [u.name, u.phone, u.email, u.area_name]
+        .filter(Boolean)
+        .some((field) => String(field).toLowerCase().includes(q));
+    });
+  }, [users, searchQuery, roleFilter]);
+
+  // Reset to first page when filters change so user isn't stranded on an empty page.
+  useEffect(() => { setPage(1); }, [searchQuery, roleFilter, showDeleted]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+  const pagedUsers = filteredUsers.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
 
   if (loading) {
     return (
@@ -117,41 +137,53 @@ function UsersTab() {
           <Badge variant="secondary" className="text-xs">
             {t('settings.users.userCount', { count: filteredUsers.length })}
           </Badge>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none ml-2">
-            <Checkbox
-              checked={showDeleted}
-              onCheckedChange={(v) => setShowDeleted(!!v)}
-            />
-            {t('settings.users.showDeleted')}
-          </label>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Search — name / phone / email / area */}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-            <Input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t('settings.users.searchPlaceholder', 'Search users...')}
-              className="h-8 w-[220px] pl-8 pr-7 text-xs"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                aria-label="Clear search"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-          <Button onClick={() => setShowAddModal(true)} size="sm">
-            <UserPlus className="w-4 h-4 mr-2" />
-            {t('settings.users.addUser')}
-          </Button>
+        <Button onClick={() => setShowAddModal(true)} size="sm">
+          <UserPlus className="w-4 h-4 mr-2" />
+          {t('settings.users.addUser')}
+        </Button>
+      </div>
+
+      {/* Filters toolbar — search · role · show deleted */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('settings.users.searchPlaceholder', 'Search users...')}
+            className="h-8 w-[260px] pl-8 pr-7 text-xs"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
+
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+          className="h-8 rounded-md border border-input bg-background px-2.5 text-xs text-foreground outline-none focus:border-primary"
+        >
+          {ROLE_FILTERS.map((r) => (
+            <option key={r.value} value={r.value}>{r.label}</option>
+          ))}
+        </select>
+
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none ml-auto">
+          <Checkbox
+            checked={showDeleted}
+            onCheckedChange={(v) => setShowDeleted(!!v)}
+          />
+          {t('settings.users.showDeleted')}
+        </label>
       </div>
 
       {/* Table or Empty State */}
@@ -185,7 +217,7 @@ function UsersTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredUsers.map((u) => (
+              {pagedUsers.map((u) => (
                 <TableRow key={u.id} className={!u.is_active ? 'opacity-50' : ''}>
                   <TableCell>
                     <div className="flex items-center gap-3">
@@ -260,6 +292,33 @@ function UsersTab() {
               ))}
             </TableBody>
           </Table>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
+              <span className="text-xs text-muted-foreground tabular-nums">
+                Page {pageSafe} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setPage(Math.max(1, pageSafe - 1))}
+                disabled={pageSafe === 1}
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setPage(Math.min(totalPages, pageSafe + 1))}
+                disabled={pageSafe === totalPages}
+                aria-label="Next page"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

@@ -1,8 +1,9 @@
-import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Archive, Users, Columns3, Newspaper, LogOut, Settings, LayoutGrid, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { useState } from 'react';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, Archive, Users, Columns3, Newspaper, LogOut, Settings, LayoutGrid, ChevronsLeft, ChevronsRight, Plus, Loader2 } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { useAuth } from '../../contexts/AuthContext';
-import { getInitialsFromName, getMediaUrl } from '../../services/api';
+import { getInitialsFromName, getMediaUrl, createBlankStory } from '../../services/api';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { useSidebarCollapsed } from '../../hooks/useSidebarCollapsed';
@@ -43,8 +44,23 @@ function VrittantWordmark() {
 
 function Sidebar() {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const { user, logout, hasEntitlement } = useAuth();
   const [collapsed, setCollapsed] = useSidebarCollapsed();
+  const [creatingStory, setCreatingStory] = useState(false);
+
+  const handleNewStory = async () => {
+    if (creatingStory) return;
+    setCreatingStory(true);
+    try {
+      const result = await createBlankStory();
+      if (result?.story_id) navigate(`/review/${result.story_id}`);
+    } catch (err) {
+      console.error('Failed to create blank story:', err);
+    } finally {
+      setCreatingStory(false);
+    }
+  };
 
   const visibleNavItems = NAV_ITEMS.filter((item) =>
     hasEntitlement(item.entitlementKey)
@@ -101,6 +117,31 @@ function Sidebar() {
           </div>
         </div>
       )}
+
+      {/* New Story action — primary CTA, separated from navigation */}
+      <div className="px-2 mb-2">
+        <button
+          type="button"
+          onClick={handleNewStory}
+          disabled={creatingStory}
+          title={collapsed ? t('newsFeed.newStory', '+ New Story') : undefined}
+          className={cn(
+            'flex items-center gap-2 w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer border-none text-[0.8125rem] font-semibold disabled:opacity-60 disabled:cursor-not-allowed',
+            collapsed ? 'justify-center px-0 py-2' : 'px-3 py-2'
+          )}
+        >
+          {creatingStory ? (
+            <Loader2 size={collapsed ? 18 : 16} className="animate-spin shrink-0" />
+          ) : (
+            <Plus size={collapsed ? 18 : 16} className="shrink-0" />
+          )}
+          {!collapsed && (
+            <span className="whitespace-nowrap overflow-hidden text-ellipsis">
+              {t('newsFeed.newStory', '+ New Story')}
+            </span>
+          )}
+        </button>
+      </div>
 
       {/* Navigation */}
       <nav className="flex flex-col gap-1 px-2 flex-1">
