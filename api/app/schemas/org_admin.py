@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── User management ──
@@ -10,6 +10,14 @@ class CreateUserRequest(BaseModel):
     email: Optional[str] = None
     area_name: str = ""
     user_type: str = Field(default="reporter", pattern=r'^(reporter|reviewer)$')
+    categories: list[str] = []
+    regions: list[str] = []
+
+    @model_validator(mode="after")
+    def _reporter_requires_area(self):
+        if self.user_type == "reporter" and not (self.area_name and self.area_name.strip()):
+            raise ValueError("area_name is required for reporters")
+        return self
 
 
 class UpdateUserRequest(BaseModel):
@@ -17,6 +25,8 @@ class UpdateUserRequest(BaseModel):
     email: Optional[str] = None
     area_name: Optional[str] = None
     is_active: Optional[bool] = None
+    categories: Optional[list[str]] = None
+    regions: Optional[list[str]] = None
 
 
 class UpdateUserRoleRequest(BaseModel):
@@ -36,6 +46,8 @@ class UserManagementResponse(BaseModel):
     area_name: str
     is_active: bool
     entitlements: list[str] = []
+    categories: list[str] = []
+    regions: list[str] = []
 
     model_config = {"from_attributes": True}
 

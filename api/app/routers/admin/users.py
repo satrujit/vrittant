@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from ...database import get_db
 from ...deps import get_current_org_id, require_org_admin
+from ...models.org_config import OrgConfig
 from ...models.organization import Organization
 from ...models.user import Entitlement, User
 from ...schemas.org_admin import (
@@ -15,6 +16,34 @@ from ...schemas.org_admin import (
 )
 from ...utils.scope import get_owned_or_404
 from . import router
+
+
+def _user_response(user: User) -> UserManagementResponse:
+    return UserManagementResponse(
+        id=user.id, name=user.name, phone=user.phone, email=user.email,
+        user_type=user.user_type, area_name=user.area_name, is_active=user.is_active,
+        entitlements=[e.page_key for e in user.entitlements],
+        categories=list(user.categories or []),
+        regions=list(user.regions or []),
+    )
+
+
+def _validate_categories(db: Session, org_id: str, categories: list[str]) -> None:
+    if not categories:
+        return
+    cfg = db.query(OrgConfig).filter(OrgConfig.organization_id == org_id).first()
+    allowed: set[str] = set()
+    if cfg and cfg.categories:
+        for item in cfg.categories:
+            key = item.get("key") if isinstance(item, dict) else None
+            if key:
+                allowed.add(key)
+    for cat in categories:
+        if cat not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown category: {cat}",
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -30,19 +59,17 @@ def create_user(
     existing = db.query(User).filter(User.phone == body.phone).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Phone number already registered")
+    _validate_categories(db, org_id, body.categories)
     org = db.query(Organization).filter(Organization.id == org_id).first()
     user = User(
         name=body.name, phone=body.phone, email=body.email, area_name=body.area_name,
         user_type=body.user_type, organization=org.name if org else "", organization_id=org_id,
+        categories=list(body.categories), regions=list(body.regions),
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    return UserManagementResponse(
-        id=user.id, name=user.name, phone=user.phone, email=user.email,
-        user_type=user.user_type, area_name=user.area_name, is_active=user.is_active,
-        entitlements=[e.page_key for e in user.entitlements],
-    )
+    return _user_response(user)
 
 
 # ---------------------------------------------------------------------------
@@ -59,13 +86,14 @@ def update_user(
     if body.email is not None: user.email = body.email
     if body.area_name is not None: user.area_name = body.area_name
     if body.is_active is not None: user.is_active = body.is_active
+    if body.categories is not None:
+        _validate_categories(db, org_id, body.categories)
+        user.categories = list(body.categories)
+    if body.regions is not None:
+        user.regions = list(body.regions)
     db.commit()
     db.refresh(user)
-    return UserManagementResponse(
-        id=user.id, name=user.name, phone=user.phone, email=user.email,
-        user_type=user.user_type, area_name=user.area_name, is_active=user.is_active,
-        entitlements=[e.page_key for e in user.entitlements],
-    )
+    return _user_response(user)
 
 
 # ---------------------------------------------------------------------------
@@ -81,11 +109,7 @@ def update_user_role(
     user.user_type = body.user_type
     db.commit()
     db.refresh(user)
-    return UserManagementResponse(
-        id=user.id, name=user.name, phone=user.phone, email=user.email,
-        user_type=user.user_type, area_name=user.area_name, is_active=user.is_active,
-        entitlements=[e.page_key for e in user.entitlements],
-    )
+    return _user_response(user)
 
 
 # ---------------------------------------------------------------------------
@@ -103,8 +127,4 @@ def update_user_entitlements(
         db.add(Entitlement(user_id=user_id, page_key=key))
     db.commit()
     db.refresh(user)
-    return UserManagementResponse(
-        id=user.id, name=user.name, phone=user.phone, email=user.email,
-        user_type=user.user_type, area_name=user.area_name, is_active=user.is_active,
-        entitlements=[e.page_key for e in user.entitlements],
-    )
+    return _user_response(user)

@@ -27,10 +27,10 @@ class TestCreateUser:
 
     def test_duplicate_phone_rejected(self, client, db, org_admin, org_admin_header):
         client.post("/admin/users", json={
-            "name": "First", "phone": "+914444444444", "user_type": "reporter",
+            "name": "First", "phone": "+914444444444", "area_name": "Delhi", "user_type": "reporter",
         }, headers=org_admin_header)
         resp = client.post("/admin/users", json={
-            "name": "Second", "phone": "+914444444444", "user_type": "reporter",
+            "name": "Second", "phone": "+914444444444", "area_name": "Delhi", "user_type": "reporter",
         }, headers=org_admin_header)
         assert resp.status_code == 409
 
