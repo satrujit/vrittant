@@ -238,8 +238,6 @@ async def llm_chat(
     payload = {
         "model": model,
         "messages": messages,
-        # Disable reasoning/thinking — these are simple generation tasks
-        "reasoning_effort": None,
     }
     if body.temperature is not None:
         payload["temperature"] = body.temperature
@@ -269,6 +267,14 @@ async def llm_chat(
         except httpx.HTTPStatusError as exc:
             from fastapi.responses import JSONResponse
 
+            # Log upstream error so we can diagnose 4xx/5xx from Sarvam.
+            # Truncate to keep logs readable; full body still goes to client.
+            body_preview = exc.response.text[:500]
+            logger.warning(
+                "Sarvam /v1/chat/completions returned %s (model=%s, max_tokens=%s, msgs=%d): %s",
+                exc.response.status_code, model, body.max_tokens,
+                len(messages), body_preview,
+            )
             return JSONResponse(
                 status_code=exc.response.status_code,
                 content=exc.response.json()
