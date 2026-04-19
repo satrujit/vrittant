@@ -82,7 +82,10 @@ export async function uploadOrgLogo(file) {
 }
 
 export async function fetchOrgConfig() {
-  return apiGet('/admin/config');
+  // /config/me is readable by any authed user; /admin/config requires
+  // org_admin and 403s for reviewers/reporters — which silently emptied
+  // dropdowns sourced from config (e.g. paper types in Create Edition).
+  return apiGet('/config/me');
 }
 
 export async function updateOrgConfig(data) {
