@@ -1,9 +1,12 @@
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
 from ..deps import create_access_token, get_current_user
+from ..models.otp_send_log import OtpSendLog
 from ..models.user import User
 from ..schemas.auth import (
     MSG91LoginRequest,
@@ -19,8 +22,84 @@ from ..services.otp_provider import (
     verify_otp as otp_verify,
     resend_otp as otp_resend,
 )
+from ..utils.tz import now_ist
 
 router = APIRouter()
+
+
+# ── OTP rate limit ─────────────────────────────────────────────────────────
+# Each provider call costs real money (~₹0.20 MSG91, ~₹4 Twilio Verify, more
+# without DLT). We cap per-phone send frequency so a buggy client, double-tap,
+# or attacker can't burn the budget. Limits chosen to be invisible to a real
+# reporter typing in their phone but visible to anything looping.
+#
+# - Min gap between sends: 60s  (covers double-tap and rage-clicks)
+# - Max sends per hour:    5   (covers genuine OTP-not-arrived retries with
+#                                 voice/SMS while still capping daily damage)
+#
+# Rationale for using DB rather than in-memory: Cloud Run autoscales; an
+# in-memory dict on each instance would let a user send N×instance_count
+# OTPs before any single instance noticed.
+_OTP_MIN_GAP_SECONDS = 60
+_OTP_MAX_PER_HOUR = 5
+
+
+def _enforce_otp_rate_limit(db: Session, phone: str) -> None:
+    """Raise 429 if the phone has hit either limit. Fail-open if the table
+    isn't migrated yet so a missed migration can't take auth offline."""
+    try:
+        now = now_ist()
+        hour_ago = now - timedelta(hours=1)
+        recent = (
+            db.query(OtpSendLog)
+            .filter(OtpSendLog.phone == phone, OtpSendLog.sent_at >= hour_ago)
+            .order_by(OtpSendLog.sent_at.desc())
+            .all()
+        )
+    except Exception as exc:
+        # Most likely cause: migration hasn't been applied. Logging loudly
+        # so it's caught in Cloud Run logs, but we don't block users.
+        import logging as _logging
+        _logging.getLogger("auth.otp").warning(
+            "otp rate-limit query failed (table missing?): %s", exc
+        )
+        return
+
+    if recent:
+        last_gap = (now - recent[0].sent_at).total_seconds()
+        if last_gap < _OTP_MIN_GAP_SECONDS:
+            retry_after = int(_OTP_MIN_GAP_SECONDS - last_gap) + 1
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Please wait {retry_after}s before requesting another OTP",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+    if len(recent) >= _OTP_MAX_PER_HOUR:
+        # Tell the client when the oldest in-window send falls out so the
+        # Retry-After header is accurate.
+        oldest = recent[-1].sent_at
+        retry_after = int((oldest + timedelta(hours=1) - now).total_seconds()) + 1
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Hourly OTP limit reached. Try again later.",
+            headers={"Retry-After": str(max(retry_after, 60))},
+        )
+
+
+def _record_otp_send(db: Session, phone: str) -> None:
+    """Record a successful provider call. Best-effort — a failure here
+    means the next request from this phone won't see this send in its
+    rate-limit query, which is preferable to 500'ing a successful OTP."""
+    try:
+        db.add(OtpSendLog(phone=phone))
+        db.commit()
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger("auth.otp").warning(
+            "otp send-log insert failed: %s", exc
+        )
+        db.rollback()
 
 
 # ── Phone check ──
@@ -53,6 +132,9 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
 
+    # Cap per-phone send rate before hitting the paid provider.
+    _enforce_otp_rate_limit(db, body.phone)
+
     import logging as _logging
     _log = _logging.getLogger("auth.otp")
     try:
@@ -61,6 +143,7 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
         _log.warning("send_otp failed: %s", exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to send OTP")
 
+    _record_otp_send(db, body.phone)
     req_id = data.get("reqId") or data.get("request_id") or ""
     return {"message": "OTP sent", "phone": body.phone, "req_id": req_id}
 
@@ -100,6 +183,11 @@ async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
 
+    # Resend is a paid send too — same caps apply. (For Twilio Verify the
+    # underlying call is literally another `Verifications` POST; for MSG91
+    # it's `retryOtp` which still bills.)
+    _enforce_otp_rate_limit(db, body.phone)
+
     import logging as _logging
     _log = _logging.getLogger("auth.otp")
     try:
@@ -108,6 +196,7 @@ async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
         _log.warning("resend_otp failed: %s", exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to resend OTP")
 
+    _record_otp_send(db, body.phone)
     return {"message": "OTP resent", "phone": body.phone}
 
 
