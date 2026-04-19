@@ -90,6 +90,18 @@ def _extract_content(inner_type: str, inner_payload: dict) -> tuple[str, str | N
     return ("", None)
 
 
+def _media_type_for(inner_type: str) -> str:
+    """Map Gupshup inbound type → the `media_type` value the panel groups by.
+
+    The reviewer panel filters paragraphs into image / audio / generic media
+    rails based on this field (see helpers.js → transformStory)."""
+    if inner_type == "image":
+        return "photo"
+    if inner_type in ("video", "audio"):
+        return inner_type
+    return "file"
+
+
 # Map common Gupshup contentType values → file extension for the GCS object.
 _CONTENT_TYPE_EXT = {
     "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
@@ -230,10 +242,13 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
         if text:
             paragraphs.append({"id": str(uuid.uuid4()), "text": text})
         if stored_media_url:
+            # Empty `text` so the editor body doesn't show the URL inline —
+            # the panel reads `media_path` to build the Attachments rail.
             paragraphs.append({
                 "id": str(uuid.uuid4()),
-                "text": f"[Attachment: {stored_media_url}]",
-                "media_url": stored_media_url,
+                "text": "",
+                "media_path": stored_media_url,
+                "media_type": _media_type_for(inner_type),
             })
         open_draft.paragraphs = paragraphs
         open_draft.whatsapp_session_open_until = now_ist() + timedelta(minutes=STITCH_MINUTES)
@@ -268,8 +283,9 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     if stored_media_url:
         paragraphs.append({
             "id": str(uuid.uuid4()),
-            "text": f"[Attachment: {stored_media_url}]",
-            "media_url": stored_media_url,
+            "text": "",
+            "media_path": stored_media_url,
+            "media_type": _media_type_for(inner_type),
         })
 
     story = Story(
