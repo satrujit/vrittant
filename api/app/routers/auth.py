@@ -27,6 +27,29 @@ from ..utils.tz import now_ist
 router = APIRouter()
 
 
+# ── Test bypass ────────────────────────────────────────────────────────────
+# In dev and UAT we accept a hardcoded OTP and skip the paid SMS provider
+# entirely. This is so QA / emulator runs don't burn Twilio (~₹14/OTP) credits
+# every time someone taps "Send OTP". Production (`ENV=production`) ignores
+# this branch — real OTP, real spend.
+#
+# Codes:
+#   dev:  000000  (existing)
+#   uat:  000111  (new — keeps prod-like flow but free)
+_TEST_OTP_CODES = {
+    "dev": "000000",
+    "uat": "000111",
+}
+
+
+def _is_test_env() -> bool:
+    return settings.ENV in _TEST_OTP_CODES
+
+
+def _expected_test_otp() -> str:
+    return _TEST_OTP_CODES.get(settings.ENV, "")
+
+
 # ── OTP rate limit ─────────────────────────────────────────────────────────
 # Each provider call costs real money (~₹0.20 MSG91, ~₹4 Twilio Verify, more
 # without DLT). We cap per-phone send frequency so a buggy client, double-tap,
@@ -132,6 +155,11 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
 
+    # Test-env short-circuit: skip the paid provider entirely. Verify-otp
+    # accepts the corresponding hardcoded code below.
+    if _is_test_env():
+        return {"message": "OTP sent (test)", "phone": body.phone, "req_id": "test"}
+
     # Cap per-phone send rate before hitting the paid provider.
     _enforce_otp_rate_limit(db, body.phone)
 
@@ -157,8 +185,8 @@ async def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
 
-    # Dev bypass
-    if settings.ENV == "dev" and body.otp == "000000":
+    # Test-env bypass — see _TEST_OTP_CODES at top of file.
+    if _is_test_env() and body.otp == _expected_test_otp():
         token = create_access_token(user.id, user.user_type)
         return Token(access_token=token)
 
@@ -182,6 +210,10 @@ async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
+
+    # Test-env short-circuit (same as request-otp).
+    if _is_test_env():
+        return {"message": "OTP resent (test)", "phone": body.phone}
 
     # Resend is a paid send too — same caps apply. (For Twilio Verify the
     # underlying call is literally another `Verifications` POST; for MSG91
