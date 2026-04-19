@@ -5,19 +5,23 @@
 import { generateICML as icmlExport } from './icml';
 
 /**
- * Parse a date string as IST (UTC+5:30).
- * The backend stores timestamps in IST via now_ist(), but without timezone
- * info in the ISO string, so the browser wrongly treats them as UTC.
+ * Parse a backend timestamp into a Date representing the correct moment.
+ *
+ * Backend behaviour today:
+ *   - Story endpoints serialize with an explicit `+00:00` (UTC) suffix —
+ *     handled fine by `new Date()` directly.
+ *   - Other endpoints emit naive ISO strings (no timezone suffix). Per the
+ *     ECMAScript spec, browsers parse those as **local** time, which is
+ *     wrong because the values on disk are UTC. We force-append `Z` so the
+ *     browser interprets them as UTC.
  */
 function parseIST(isoDate) {
-  const d = new Date(isoDate);
-  // If the ISO string has no timezone suffix, it was parsed as UTC.
-  // Subtract 5:30 so that when the browser converts to IST for display,
-  // the result matches the original IST value stored in the DB.
-  if (typeof isoDate === 'string' && !isoDate.match(/[Zz+\-]\d/)) {
-    d.setMinutes(d.getMinutes() - 330); // 5h30m = 330 min
-  }
-  return d;
+  if (isoDate instanceof Date) return isoDate;
+  if (typeof isoDate !== 'string') return new Date(isoDate);
+  // Has a timezone designator (`Z`, `+05:30`, `-04:00`)? Trust as-is.
+  if (/[Zz]$|[+\-]\d{2}:?\d{2}$/.test(isoDate)) return new Date(isoDate);
+  // Naked datetime — backend emits UTC wall-clock. Tag as UTC.
+  return new Date(`${isoDate}Z`);
 }
 
 /**

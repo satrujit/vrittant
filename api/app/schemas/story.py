@@ -1,9 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, field_serializer
-
-from ..utils.tz import IST
 
 class ParagraphSchema(BaseModel):
     id: str
@@ -45,12 +43,15 @@ class StoryResponse(BaseModel):
 
     @field_serializer("created_at", "updated_at", "submitted_at")
     @classmethod
-    def serialize_ist(cls, v: datetime | None) -> str | None:
+    def serialize_utc(cls, v: datetime | None) -> str | None:
         if v is None:
             return None
-        # DB stores naive IST values; tag with +05:30 so clients parse correctly
+        # DB columns are naive `DateTime`. now_ist() returns tz-aware IST,
+        # but psycopg2 converts tz-aware → UTC and strips the tz when writing
+        # to a naive column, so what's actually on disk is UTC wall-clock.
+        # Tag as UTC (not IST) so clients parse to the correct moment.
         if v.tzinfo is None:
-            v = v.replace(tzinfo=IST)
+            v = v.replace(tzinfo=timezone.utc)
         return v.isoformat()
 
 class RevisionResponse(BaseModel):
@@ -66,9 +67,10 @@ class RevisionResponse(BaseModel):
 
     @field_serializer("created_at", "updated_at")
     @classmethod
-    def serialize_ist(cls, v: datetime | None) -> str | None:
+    def serialize_utc(cls, v: datetime | None) -> str | None:
         if v is None:
             return None
+        # See StoryResponse.serialize_utc — DB stores naive UTC values.
         if v.tzinfo is None:
-            v = v.replace(tzinfo=IST)
+            v = v.replace(tzinfo=timezone.utc)
         return v.isoformat()
