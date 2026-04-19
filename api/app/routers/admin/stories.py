@@ -397,9 +397,12 @@ async def upload_story_image(
 
     media_url = save_file(contents, file.filename or "image.jpg", subfolder="story-images")
 
-    # Append as a new paragraph with media_path
+    # Append as a new paragraph with media_path. Generate an `id` so the
+    # reviewer-panel attachment-delete UI can target this paragraph
+    # (otherwise the X button is suppressed for lack of an identifier).
     paragraphs = list(story.paragraphs or [])
     paragraphs.append({
+        "id": str(uuid_mod.uuid4()),
         "text": "",
         "type": "media",
         "media_path": media_url,

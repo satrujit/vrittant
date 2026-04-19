@@ -53,6 +53,18 @@ export function transformStory(story) {
     }
   }
 
+  // Backfill missing paragraph ids on read. Older stories (and a stretch
+  // of reviewer image uploads) didn't include `id`, which broke the
+  // attachment-delete UI because we identify paragraphs by id. The synthetic
+  // id sticks the moment the story is next saved.
+  paragraphs = paragraphs.map((p) => (
+    p && typeof p === 'object' && !p.id
+      ? { ...p, id: (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `p-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}` }
+      : p
+  ));
+
   // Build bodyText from paragraph texts
   const bodyText = paragraphs
     .map((p) => p.text || '')
