@@ -3,8 +3,12 @@ MSG91 OTP service — Widget API.
 - Mobile: backend calls Widget API endpoints (sendOtp / verifyOtp / retryOtp).
 - Web: client-side widget, backend verifies access token.
 
-Cloud Run egress goes through Cloud NAT (static IP 34.93.149.224)
-to avoid shared-IP blocking by MSG91.
+MSG91 IP Security is OFF on the Vrittant authkey — the authkey itself
+(stored in Secret Manager) is the only credential. Cloud Run uses
+`vpc-egress=private-ranges-only`, so requests exit via Google's
+auto-allocated outbound pool (random IP per request). This avoids the
+IP-whitelist trap where MSG91 would silently blocklist a single
+shared egress IP and leave us unable to send OTPs.
 """
 
 import logging

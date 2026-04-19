@@ -36,8 +36,8 @@ jobs:
             --project vrittant-f5ef2 \
             --allow-unauthenticated \
             --add-cloudsql-instances=vrittant-f5ef2:asia-south1:vrittant-db \
-            --set-secrets="DATABASE_URL=DATABASE_URL:latest,SECRET_KEY=SECRET_KEY:latest,SARVAM_API_KEY=SARVAM_API_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,MSG91_AUTHKEY=MSG91_AUTHKEY:latest,GUPSHUP_API_KEY=GUPSHUP_API_KEY:latest" \
-            --update-env-vars="^||^ENV=prod||FIREBASE_PROJECT_ID=vrittant-f5ef2||STORAGE_BACKEND=gcs||GCS_BUCKET=${{ secrets.GCS_BUCKET }}||CORS_ORIGINS=https://vrittant.in,https://vrittant-f5ef2.web.app||SARVAM_BASE_URL=https://api.sarvam.ai||MSG91_WIDGET_ID=${{ secrets.MSG91_WIDGET_ID }}||MSG91_TOKEN_AUTH=${{ secrets.MSG91_TOKEN_AUTH }}"
+            --set-secrets="DATABASE_URL=DATABASE_URL:latest,SECRET_KEY=SECRET_KEY:latest,SARVAM_API_KEY=SARVAM_API_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,MSG91_AUTHKEY=MSG91_AUTHKEY:latest,GUPSHUP_API_KEY=GUPSHUP_API_KEY:latest,TWILIO_ACCOUNT_SID=TWILIO_ACCOUNT_SID:latest,TWILIO_AUTH_TOKEN=TWILIO_AUTH_TOKEN:latest,TWILIO_VERIFY_SERVICE_SID=TWILIO_VERIFY_SERVICE_SID:latest" \
+            --update-env-vars="^||^ENV=prod||FIREBASE_PROJECT_ID=vrittant-f5ef2||STORAGE_BACKEND=gcs||GCS_BUCKET=${{ secrets.GCS_BUCKET }}||CORS_ORIGINS=https://vrittant.in,https://vrittant-f5ef2.web.app||SARVAM_BASE_URL=https://api.sarvam.ai||MSG91_WIDGET_ID=${{ secrets.MSG91_WIDGET_ID }}||MSG91_TOKEN_AUTH=${{ secrets.MSG91_TOKEN_AUTH }}||OTP_PROVIDER=twilio"
 
   # ─── Deploy Frontend to Firebase (Production) ───
   deploy-panel:

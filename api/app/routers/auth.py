@@ -13,11 +13,11 @@ from ..schemas.auth import (
     Token,
     UserResponse,
 )
-from ..services.msg91 import (
-    verify_access_token,
-    send_otp as msg91_send,
-    verify_otp as msg91_verify,
-    resend_otp as msg91_resend,
+from ..services.msg91 import verify_access_token
+from ..services.otp_provider import (
+    send_otp as otp_send,
+    verify_otp as otp_verify,
+    resend_otp as otp_resend,
 )
 
 router = APIRouter()
@@ -46,7 +46,7 @@ def check_phone(body: OTPRequest, db: Session = Depends(get_db)):
 
 @router.post("/request-otp")
 async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
-    """Send OTP via MSG91 (for mobile clients). Returns reqId for verify/resend."""
+    """Send OTP for mobile clients. Provider chosen via OTP_PROVIDER env."""
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
@@ -54,11 +54,11 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
 
     import logging as _logging
-    _log = _logging.getLogger("auth.msg91")
+    _log = _logging.getLogger("auth.otp")
     try:
-        data = await msg91_send(body.phone)
+        data = await otp_send(body.phone)
     except Exception as exc:
-        _log.warning("MSG91 send_otp failed: %s", exc)
+        _log.warning("send_otp failed: %s", exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to send OTP")
 
     req_id = data.get("reqId") or data.get("request_id") or ""
@@ -80,11 +80,11 @@ async def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
         return Token(access_token=token)
 
     import logging as _logging
-    _log = _logging.getLogger("auth.msg91")
+    _log = _logging.getLogger("auth.otp")
     try:
-        await msg91_verify(body.phone, body.otp, req_id=body.req_id)
+        await otp_verify(body.phone, body.otp, req_id=body.req_id)
     except Exception as exc:
-        _log.warning("MSG91 verify_otp failed: %s", exc)
+        _log.warning("verify_otp failed: %s", exc)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP verification failed")
 
     token = create_access_token(user.id, user.user_type)
@@ -101,11 +101,11 @@ async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
 
     import logging as _logging
-    _log = _logging.getLogger("auth.msg91")
+    _log = _logging.getLogger("auth.otp")
     try:
-        await msg91_resend(body.phone, req_id=body.req_id)
+        await otp_resend(body.phone, req_id=body.req_id)
     except Exception as exc:
-        _log.warning("MSG91 resend_otp failed: %s", exc)
+        _log.warning("resend_otp failed: %s", exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to resend OTP")
 
     return {"message": "OTP resent", "phone": body.phone}
