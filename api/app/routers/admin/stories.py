@@ -238,6 +238,48 @@ def admin_get_story(story_id: str, db: Session = Depends(get_db), user: User = D
 TERMINAL_STATUSES = {"approved", "rejected", "published"}
 
 
+def _cleanup_transcription_audio(story: Story) -> None:
+    """Delete non-attachment audio files referenced by ``transcription_audio_path``.
+
+    Called when a story transitions to ``published``. The "silent backup"
+    audio (uploaded by the always-upload pipeline so we can re-transcribe
+    if the live WS produced nothing) has done its job once a published
+    transcript exists. Audio that the reporter explicitly attached
+    (long-press, where ``media_path == transcription_audio_path``) is
+    preserved — it's part of the published story.
+
+    Mutates ``story.paragraphs`` in place; caller is responsible for
+    committing. Best-effort: a failed delete is logged but doesn't block
+    publish.
+    """
+    import logging
+    from sqlalchemy.orm.attributes import flag_modified
+    from ...services.storage import delete_file
+
+    log = logging.getLogger(__name__)
+    paragraphs = list(story.paragraphs or [])
+    changed = False
+    for i, p in enumerate(paragraphs):
+        if not isinstance(p, dict):
+            continue
+        audio_path = p.get("transcription_audio_path")
+        if not audio_path:
+            continue
+        # Keep when the audio is also the visible attachment.
+        if audio_path == p.get("media_path"):
+            continue
+        delete_file(audio_path)
+        new_p = dict(p)
+        new_p.pop("transcription_audio_path", None)
+        # Keep status/attempts as historical record — only the file is gone.
+        paragraphs[i] = new_p
+        changed = True
+        log.info("publish-cleanup: dropped backup audio for story=%s para=%s", story.id, p.get("id"))
+    if changed:
+        story.paragraphs = paragraphs
+        flag_modified(story, "paragraphs")
+
+
 @router.put("/stories/{story_id}/status", response_model=AdminStoryResponse)
 def admin_update_story_status(
     story_id: str,
@@ -273,6 +315,14 @@ def admin_update_story_status(
         story.reviewed_by = None
         story.reviewed_at = None
     story.updated_at = now_ist()
+
+    # Publish-time cleanup: drop the silent backup audio (always-upload
+    # pipeline) once the story is published. Audio explicitly attached by
+    # the reporter (long-press → media_path == transcription_audio_path)
+    # is left alone because it's part of the published story.
+    if body.status == "published":
+        _cleanup_transcription_audio(story)
+
     db.commit()
     db.refresh(story)
     resp = AdminStoryResponse.model_validate(story)

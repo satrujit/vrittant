@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     STORAGE_BACKEND: str = "local"
     GCS_BUCKET: str = ""
 
+    # Shared secret for /internal/* endpoints. Set in Cloud Run; Cloud
+    # Scheduler jobs send it via the X-Internal-Token header. Empty by
+    # default so dev environments without it fall back to "any caller wins"
+    # (you don't want to ship a real value here).
+    INTERNAL_TOKEN: str = ""
+
     @property
     def cors_origin_list(self) -> list[str]:
         if self.CORS_ORIGINS == "*":
