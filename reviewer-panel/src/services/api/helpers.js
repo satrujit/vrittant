@@ -68,10 +68,13 @@ export function transformStory(story) {
     color: getAvatarColor(reporterName),
   };
 
-  // Build media files from paragraphs that have media_path
+  // Build media files from paragraphs that have media_path. Carry the
+  // paragraph id so the UI can delete by id (paragraphs reorder when other
+  // paragraphs are removed, so positional indices aren't safe).
   const mediaFiles = paragraphs
     .filter((p) => p.media_path || p.photo_path)
     .map((p) => ({
+      paragraphId: p.id,
       type: p.media_type || 'photo',
       url: getMediaUrl(p.media_path || p.photo_path),
       name: p.media_name || 'media',

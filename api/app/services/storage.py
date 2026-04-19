@@ -1,14 +1,31 @@
 """Unified file storage — local filesystem or Google Cloud Storage."""
 
+import logging
 import os
 import uuid
 
 from ..config import settings
 
+logger = logging.getLogger(__name__)
+
 # ── Local paths ──────────────────────────────────────────────────────────────
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 UPLOAD_DIR = os.path.join(_PROJECT_ROOT, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Loud warning if the deploy env asked for GCS but didn't supply a bucket.
+# Without this the code silently fell back to the local filesystem branch
+# and wrote to Cloud Run's ephemeral disk — uploaded photos then appeared
+# "corrupted" once the container recycled. We don't crash because dev /
+# tests deliberately run with STORAGE_BACKEND=local; we just make the
+# misconfiguration impossible to miss in Cloud Run logs.
+_GCS_MISCONFIGURED = settings.STORAGE_BACKEND == "gcs" and not settings.GCS_BUCKET
+if _GCS_MISCONFIGURED:
+    logger.critical(
+        "STORAGE_BACKEND=gcs but GCS_BUCKET is empty — uploads will be "
+        "written to ephemeral local disk and disappear when the container "
+        "recycles. Set the GCS_BUCKET env var/secret and redeploy."
+    )
 
 # ── GCS client (lazy) ───────────────────────────────────────────────────────
 _gcs_client = None

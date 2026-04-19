@@ -11,6 +11,7 @@ import {
   Languages,
   SendHorizonal,
   Download,
+  X,
 } from 'lucide-react';
 import { EditorContent } from '@tiptap/react';
 import { useI18n } from '../../i18n';
@@ -53,6 +54,7 @@ export default function ReviewEditor({
   imageInputRef,
   uploadingImage,
   handleImageUpload,
+  handleAttachmentDelete,
   playingAudio,
   toggleAudioPlay,
   // banner / errors
@@ -151,8 +153,23 @@ export default function ReviewEditor({
           {imageFiles.length > 0 && (
             <div className="mb-2 grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2">
               {imageFiles.map((img, i) => (
-                <div key={i} className="group relative aspect-[4/3] overflow-hidden rounded-md border border-border bg-background">
+                <div key={img.paragraphId || i} className="group relative aspect-[4/3] overflow-hidden rounded-md border border-border bg-background">
                   <img src={img.url} alt={img.name || `Image ${i + 1}`} className="size-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+                  {handleAttachmentDelete && img.paragraphId && (
+                    <button
+                      type="button"
+                      title={t('review.removeAttachment', 'Remove')}
+                      aria-label={t('review.removeAttachment', 'Remove')}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleAttachmentDelete(img.paragraphId);
+                      }}
+                      className="absolute right-1 top-1 z-10 inline-flex size-5 items-center justify-center rounded-full border border-white/40 bg-black/60 text-white opacity-0 transition-opacity hover:bg-red-500 group-hover:opacity-100"
+                    >
+                      <X size={11} />
+                    </button>
+                  )}
                   <a
                     href={img.url}
                     download={img.name || `image-${i + 1}`}
@@ -186,12 +203,23 @@ export default function ReviewEditor({
           {audioFiles.length > 0 && (
             <div className="flex flex-col gap-1">
               {audioFiles.map((audio, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5">
+                <div key={audio.paragraphId || i} className="group flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5">
                   <button className="flex size-6 shrink-0 items-center justify-center rounded-full border-none bg-primary text-primary-foreground transition-colors hover:bg-primary/80" onClick={() => toggleAudioPlay(audio.url)}>
                     {playingAudio === audio.url ? <Pause size={12} /> : <Play size={12} />}
                   </button>
                   <Volume2 size={12} className="shrink-0 text-muted-foreground" />
                   <span className="truncate text-xs text-foreground">{audio.name || `Audio ${i + 1}`}</span>
+                  {handleAttachmentDelete && audio.paragraphId && (
+                    <button
+                      type="button"
+                      title={t('review.removeAttachment', 'Remove')}
+                      aria-label={t('review.removeAttachment', 'Remove')}
+                      onClick={() => handleAttachmentDelete(audio.paragraphId)}
+                      className="ml-auto inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-500 group-hover:opacity-100"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
