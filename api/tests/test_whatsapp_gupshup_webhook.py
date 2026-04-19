@@ -155,11 +155,11 @@ def test_image_message_persists_media_to_gcs(client, db, gupshup_reporter, no_se
     stories = db.query(Story).filter_by(reporter_id=gupshup_reporter.id).all()
     assert len(stories) == 1
     paragraphs = stories[0].paragraphs or []
-    media_paras = [p for p in paragraphs if isinstance(p, dict) and p.get("media_url")]
-    assert media_paras, "expected a paragraph carrying media_url"
-    # …and the stored media_url is OUR GCS URL, not Gupshup's transient one
-    assert media_paras[0]["media_url"].startswith("https://storage.googleapis.com/")
-    assert "gupshup-media.example" not in media_paras[0]["media_url"]
+    media_paras = [p for p in paragraphs if isinstance(p, dict) and p.get("media_path")]
+    assert media_paras, "expected a paragraph carrying media_path"
+    # …and the stored media_path is OUR GCS URL, not Gupshup's transient one
+    assert media_paras[0]["media_path"].startswith("https://storage.googleapis.com/")
+    assert "gupshup-media.example" not in media_paras[0]["media_path"]
     # Caption is still preserved
     flat_text = " ".join(p.get("text", "") for p in paragraphs if isinstance(p, dict))
     assert "press conference" in (stories[0].headline + flat_text).lower()
@@ -195,8 +195,8 @@ def test_image_message_falls_back_to_link_if_persist_fails(client, db, gupshup_r
     stories = db.query(Story).filter_by(reporter_id=gupshup_reporter.id).all()
     assert len(stories) == 1
     paragraphs = stories[0].paragraphs or []
-    media_paras = [p for p in paragraphs if isinstance(p, dict) and p.get("media_url")]
-    assert media_paras and media_paras[0]["media_url"] == "https://gupshup-media.example/fail.jpg"
+    media_paras = [p for p in paragraphs if isinstance(p, dict) and p.get("media_path")]
+    assert media_paras and media_paras[0]["media_path"] == "https://gupshup-media.example/fail.jpg"
 
 
 def test_missing_message_id_is_ignored_safely(client, db, gupshup_reporter, no_send):
