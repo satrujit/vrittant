@@ -8,7 +8,10 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '../../i18n';
 
-const ALL_PAGE_KEYS = ['dashboard', 'stories', 'review', 'editions', 'reporters', 'social_export'];
+// Keep in sync with the sidebar entitlementKey values (Sidebar.jsx). Adding
+// a new page = add it here so org_admins can grant it. New keys also need
+// a backfill migration for existing users created before the page existed.
+const ALL_PAGE_KEYS = ['dashboard', 'stories', 'review', 'editions', 'reporters', 'social_export', 'news_feed'];
 
 function EntitlementsModal({ isOpen, onClose, onSubmit, userName, currentEntitlements }) {
   const { t } = useI18n();
