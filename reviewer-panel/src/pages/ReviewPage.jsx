@@ -116,6 +116,7 @@ function ReviewPage() {
               imageInputRef={s.imageInputRef}
               uploadingImage={s.uploadingImage}
               handleImageUpload={s.handleImageUpload}
+              handleAttachmentDelete={s.handleAttachmentDelete}
               playingAudio={s.playingAudio}
               toggleAudioPlay={s.toggleAudioPlay}
               sparkleError={s.sparkleError}

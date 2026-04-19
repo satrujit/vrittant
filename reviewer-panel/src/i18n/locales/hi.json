@@ -119,6 +119,7 @@
     "changesPlaceholder": "बताएं कि संवाददाता को क्या बदलाव करने चाहिए...",
     "attachments": "संलग्नक ({count})",
     "uploadImage": "इमेज अपलोड",
+    "removeAttachment": "हटाएं",
     "voiceRecording": "रिकॉर्डिंग... हिंदी में बोलें",
     "editorPlaceholder": "लिखना शुरू करें...",
     "insertTable": "तालिका डालें",

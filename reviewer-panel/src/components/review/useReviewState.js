@@ -808,6 +808,22 @@ export function useReviewState({ id, t }) {
     }
   }, [id]);
 
+  // Remove an attachment by paragraph id. Strips the entire paragraph
+  // (these are media-only paragraphs created by upload + the WhatsApp
+  // ingestion path, where text is empty). Persists via the standard
+  // story PUT and refreshes from the server so cache stays consistent.
+  const handleAttachmentDelete = useCallback(async (paragraphId) => {
+    if (!id || !story?.paragraphs || !paragraphId) return;
+    const next = story.paragraphs.filter((p) => p.id !== paragraphId);
+    try {
+      await updateStory(id, { paragraphs: next });
+      const fresh = await fetchStory(id);
+      setStory(transformStory(fresh));
+    } catch (err) {
+      console.error('Attachment delete failed:', err);
+    }
+  }, [id, story]);
+
   return {
     // editors
     editor,
@@ -908,5 +924,6 @@ export function useReviewState({ id, t }) {
     handleRemoveFromEdition,
     toggleAudioPlay,
     handleImageUpload,
+    handleAttachmentDelete,
   };
 }
