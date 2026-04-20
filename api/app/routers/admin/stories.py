@@ -192,7 +192,11 @@ def create_blank_story(
         organization_id=org_id,
         headline="",
         paragraphs=[],
-        status="draft",
+        # Editor-created stories start in "in_progress" (not "draft") so they
+        # appear in the default admin list views, which filter drafts out.
+        # Without this, the editor saves content successfully but the story
+        # never surfaces anywhere in the UI — it looks "unsaved".
+        status="in_progress",
         source="Editor Created",
         # Auto-assign to creator — they're the one writing it, so the story
         # shouldn't sit in an "Unassigned" state in the side panel.
