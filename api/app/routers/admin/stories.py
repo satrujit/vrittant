@@ -311,29 +311,50 @@ def admin_update_story(
         else None
     )
 
-    # Upsert: update existing revision or create new one
+    # Editor-created stories have no upstream reporter original to preserve,
+    # so the Story row itself is the canonical content. Mirror headline/
+    # paragraphs onto the Story directly so the list view (which reads
+    # Story.headline / Story.paragraphs) reflects saved edits. Ancillary
+    # fields (english_translation, social_posts) still live on the revision.
+    is_editor_created = (story.source == "Editor Created")
+    if is_editor_created:
+        if body.headline is not None:
+            story.headline = body.headline
+        if rev_paragraphs is not None:
+            story.paragraphs = rev_paragraphs
+
+    # Upsert: update existing revision or create new one.
+    # For editor-created stories, only touch the revision for fields that
+    # don't have a corresponding Story column (translation, social_posts);
+    # headline/paragraphs are already on Story above.
     existing_rev = story.revision
     if existing_rev:
-        # Only overwrite fields that were explicitly provided
-        if body.headline is not None:
-            existing_rev.headline = body.headline
-        if rev_paragraphs is not None:
-            existing_rev.paragraphs = rev_paragraphs
+        if not is_editor_created:
+            if body.headline is not None:
+                existing_rev.headline = body.headline
+            if rev_paragraphs is not None:
+                existing_rev.paragraphs = rev_paragraphs
         if body.english_translation is not None:
             existing_rev.english_translation = body.english_translation
         if body.social_posts is not None:
             existing_rev.social_posts = body.social_posts
         existing_rev.updated_at = now_ist()
     else:
-        new_rev = StoryRevision(
-            story_id=story.id,
-            editor_id=current_user.id,
-            headline=body.headline or story.headline,
-            paragraphs=rev_paragraphs or story.paragraphs,
-            english_translation=body.english_translation,
-            social_posts=body.social_posts,
+        needs_revision_row = (
+            (not is_editor_created)
+            or body.english_translation is not None
+            or body.social_posts is not None
         )
-        db.add(new_rev)
+        if needs_revision_row:
+            new_rev = StoryRevision(
+                story_id=story.id,
+                editor_id=current_user.id,
+                headline=body.headline or story.headline,
+                paragraphs=rev_paragraphs or story.paragraphs,
+                english_translation=body.english_translation,
+                social_posts=body.social_posts,
+            )
+            db.add(new_rev)
 
     # Update category on the story if provided (category is story-level, not content)
     if body.category is not None:
