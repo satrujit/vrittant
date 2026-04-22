@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vrittant-web",
+      "runtimeExecutable": "flutter",
+      "runtimeArgs": ["run", "-d", "chrome", "--web-port", "8080"],
+      "port": 8080
+    },
+    {
+      "name": "vrittant-macos",
+      "runtimeExecutable": "flutter",
+      "runtimeArgs": ["run", "-d", "macos"],
+      "port": 0
+    },
+    {
+      "name": "reviewer-panel",
+      "runtimeExecutable": "/Users/admin/Desktop/newsflow/reviewer-panel/node_modules/.bin/vite",
+      "runtimeArgs": ["--port", "5175", "--host"],
+      "port": 5175
+    },
+    {
+      "name": "vrittant-api",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--app-dir", "/Users/admin/Desktop/newsflow-api"],
+      "port": 8000
+    }
+  ]
+}
