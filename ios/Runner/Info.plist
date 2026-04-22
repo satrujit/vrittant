@@ -8,6 +8,8 @@
 	<string>Vrittant needs access to your photo library to attach images to your news stories.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Vrittant needs camera access to capture scene photos for your news stories.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Vrittant uses speech recognition to transcribe your dictated news stories in Odia, Hindi, and English.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
