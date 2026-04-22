@@ -12,6 +12,14 @@ class ParagraphSchema(BaseModel):
     media_name: Optional[str] = None
     table_data: Optional[list[list[str]]] = None  # 2D array for table paragraphs
     created_at: Optional[str] = None
+    # Always-upload audio pipeline (additive — old clients that don't send
+    # these still validate; the fields just stay None). Server populates
+    # them when /api/stt/upload-audio is called; the client must round-trip
+    # them on save so the background STT result isn't clobbered.
+    transcription_audio_path: Optional[str] = None
+    transcription_status: Optional[str] = None  # pending | pending_retry | ok | failed
+    transcription_attempts: Optional[int] = None
+    transcription_language: Optional[str] = None
 
 class StoryCreate(BaseModel):
     headline: str = ""

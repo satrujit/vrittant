@@ -10,7 +10,15 @@ from typing import Optional
 import certifi
 import httpx
 import websockets.exceptions
-from fastapi import APIRouter, Depends, UploadFile, File as FastAPIFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile, File as FastAPIFile, WebSocket, WebSocketDisconnect, status as http_status
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..deps import get_current_org_id
+from ..models.story import Story
+from ..services import stt as stt_service
+from ..services.storage import save_file
+from ..utils.tz import now_ist
 
 # Use the legacy connect API (compatible with how Sarvam SDK connects)
 try:
@@ -184,6 +192,315 @@ async def websocket_stt_proxy(
             await ws.close(code=1011, reason="Upstream STT service unavailable")
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Always-upload audio pipeline
+#
+# Every recording (tap or long-press) is uploaded here. Tap-recordings keep
+# the audio invisibly on the paragraph (transcription_audio_path) for silent
+# reprocessing; long-press recordings additionally surface the audio as a
+# playable attachment block (media_path / media_type='audio').
+#
+# The endpoint is fire-and-forget friendly: client uploads from a background
+# queue, server stores the audio, runs STT inline, and returns the transcript.
+# If STT fails transiently, the paragraph is marked pending_retry and the
+# background sweep will retry — the client never has to care.
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/stt/upload-audio")
+async def upload_audio(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = FastAPIFile(...),
+    story_id: str = Form(...),
+    paragraph_id: str = Form(...),
+    is_attachment: bool = Form(False),
+    language_code: str = Form("od-IN"),
+    user: User = Depends(get_current_user),
+    org_id: str = Depends(get_current_org_id),
+    db: Session = Depends(get_db),
+):
+    """Persist an audio recording and queue background STT.
+
+    Returns as soon as the audio is saved and the paragraph is updated with
+    the audio URL — STT runs as a background task so a slow Sarvam call
+    never blocks the client. The realtime transcript the user sees comes
+    from the live WS proxy (``/ws/stt``); this endpoint is purely the
+    safety-net path that gives us audio-on-file and a server-side transcript
+    we can use to silently fix bad/empty live results.
+
+    Behaviour:
+      * Audio bytes are written to GCS (or local in dev) under ``audio/``.
+      * The paragraph identified by ``paragraph_id`` inside ``story_id`` gets
+        ``transcription_audio_path`` populated (always) and, when
+        ``is_attachment=True``, also ``media_path`` / ``media_type='audio'``
+        so the editor renders a playable audio block.
+      * STT runs after the response. On success the paragraph's text is
+        overwritten only if (a) STT returned non-empty AND (b) the existing
+        text is empty — we never clobber a transcript the user can already
+        see from the live WS path.
+    """
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Empty audio file",
+        )
+    if len(contents) > 25 * 1024 * 1024:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Audio file too large (max 25 MB)",
+        )
+
+    story = (
+        db.query(Story)
+        .filter(
+            Story.id == story_id,
+            Story.organization_id == org_id,
+            Story.reporter_id == user.id,
+            Story.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if story is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Story not found",
+        )
+
+    paragraphs = list(story.paragraphs or [])
+    target_idx = next(
+        (i for i, p in enumerate(paragraphs) if isinstance(p, dict) and p.get("id") == paragraph_id),
+        None,
+    )
+    if target_idx is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Paragraph {paragraph_id} not found in story",
+        )
+
+    # 1. Persist audio
+    filename = file.filename or "audio.m4a"
+    audio_url = save_file(contents, filename, subfolder="audio")
+
+    # 2. Update paragraph fields that don't depend on STT (audio path,
+    #    optional attachment, "pending" status). Commit immediately so the
+    #    response can return without blocking on Sarvam.
+    from sqlalchemy.orm.attributes import flag_modified
+
+    paragraph = dict(paragraphs[target_idx])
+    paragraph["transcription_audio_path"] = audio_url
+    paragraph["transcription_status"] = "pending"
+    paragraph["transcription_language"] = language_code
+    if is_attachment:
+        paragraph["media_path"] = audio_url
+        paragraph["media_type"] = "audio"
+        paragraph["media_name"] = filename
+    paragraphs[target_idx] = paragraph
+
+    story.paragraphs = paragraphs
+    story.updated_at = now_ist()
+    story.refresh_search_text()
+    flag_modified(story, "paragraphs")
+    db.commit()
+
+    # 3. Queue STT for after-response. The task opens its own DB session,
+    #    re-reads the paragraph, and writes the transcript only if safe.
+    background_tasks.add_task(
+        _run_stt_in_background,
+        story_id=story_id,
+        paragraph_id=paragraph_id,
+        audio_bytes=contents,
+        filename=filename,
+        language_code=language_code,
+    )
+
+    return {
+        "transcription_status": "pending",
+        "audio_url": audio_url,
+        "is_attachment": is_attachment,
+    }
+
+
+def _run_stt_in_background(
+    story_id: str,
+    paragraph_id: str,
+    audio_bytes: bytes,
+    filename: str,
+    language_code: str,
+) -> None:
+    """Background task: run STT and update paragraph in a fresh DB session."""
+    import asyncio as _asyncio
+    from ..database import SessionLocal
+
+    transcript = ""
+    new_status = "ok"
+    try:
+        transcript = _asyncio.run(stt_service.transcribe_audio(
+            audio_bytes,
+            filename=filename,
+            language_code=language_code,
+        ))
+    except stt_service.SttRetryable as exc:
+        logger.warning(
+            "Background STT transient failure (paragraph=%s story=%s): %s — pending_retry",
+            paragraph_id, story_id, exc,
+        )
+        new_status = "pending_retry"
+    except stt_service.SttError as exc:
+        logger.error(
+            "Background STT permanent failure (paragraph=%s story=%s): %s",
+            paragraph_id, story_id, exc,
+        )
+        new_status = "failed"
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Background STT unexpected error: %s", exc)
+        new_status = "pending_retry"
+
+    db = SessionLocal()
+    try:
+        story = db.query(Story).filter(Story.id == story_id).first()
+        if story is None:
+            logger.warning("Background STT: story %s gone", story_id)
+            return
+        paragraphs = list(story.paragraphs or [])
+        idx = next(
+            (i for i, p in enumerate(paragraphs) if isinstance(p, dict) and p.get("id") == paragraph_id),
+            None,
+        )
+        if idx is None:
+            logger.info("Background STT: paragraph %s removed before STT finished", paragraph_id)
+            return
+        paragraph = dict(paragraphs[idx])
+        paragraph["transcription_status"] = new_status
+        paragraph["transcription_attempts"] = (paragraph.get("transcription_attempts") or 0) + 1
+        # Only fill in text when (a) STT succeeded and (b) the user's live
+        # transcript path didn't already populate it. Never clobber what
+        # the user can already see in the editor.
+        if transcript and not (paragraph.get("text") or "").strip():
+            paragraph["text"] = transcript
+        paragraphs[idx] = paragraph
+
+        story.paragraphs = paragraphs
+        story.updated_at = now_ist()
+        story.refresh_search_text()
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(story, "paragraphs")
+        db.commit()
+    finally:
+        db.close()
+
+
+@router.post("/api/stt/retranscribe")
+async def retranscribe_paragraph(
+    story_id: str = Form(...),
+    paragraph_id: str = Form(...),
+    language_code: str = Form("od-IN"),
+    user: User = Depends(get_current_user),
+    org_id: str = Depends(get_current_org_id),
+    db: Session = Depends(get_db),
+):
+    """Re-run STT against a paragraph's stored audio.
+
+    The reporter taps "Retranscribe" when the live transcript came back wrong
+    or empty. We pull the audio from ``transcription_audio_path`` (set by the
+    upload endpoint), re-run Sarvam, and overwrite the paragraph text.
+    """
+    story = (
+        db.query(Story)
+        .filter(
+            Story.id == story_id,
+            Story.organization_id == org_id,
+            Story.reporter_id == user.id,
+            Story.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if story is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Story not found")
+
+    paragraphs = list(story.paragraphs or [])
+    target_idx = next(
+        (i for i, p in enumerate(paragraphs) if isinstance(p, dict) and p.get("id") == paragraph_id),
+        None,
+    )
+    if target_idx is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Paragraph {paragraph_id} not found in story",
+        )
+
+    paragraph = dict(paragraphs[target_idx])
+    audio_url = paragraph.get("transcription_audio_path") or paragraph.get("media_path")
+    if not audio_url:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="No audio available for this paragraph",
+        )
+
+    audio_bytes = await _fetch_audio_bytes(audio_url)
+    if not audio_bytes:
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail="Could not load saved audio",
+        )
+
+    try:
+        transcript = await stt_service.transcribe_audio(
+            audio_bytes,
+            filename=os.path.basename(audio_url) or "audio.m4a",
+            language_code=language_code,
+        )
+    except stt_service.SttRetryable as exc:
+        logger.warning("Retranscribe transient failure: %s", exc)
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Transcription service temporarily unavailable — please try again",
+        )
+    except stt_service.SttError as exc:
+        logger.error("Retranscribe permanent failure: %s", exc)
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail=f"Transcription failed: {exc}",
+        )
+
+    paragraph["text"] = transcript
+    paragraph["transcription_status"] = "ok"
+    paragraph["transcription_attempts"] = (paragraph.get("transcription_attempts") or 0) + 1
+    paragraphs[target_idx] = paragraph
+
+    story.paragraphs = paragraphs
+    story.updated_at = now_ist()
+    story.refresh_search_text()
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(story, "paragraphs")
+    db.commit()
+
+    return {"transcript": transcript, "transcription_status": "ok"}
+
+
+async def _fetch_audio_bytes(audio_url: str) -> bytes:
+    """Pull audio bytes back from wherever ``save_file`` parked them.
+
+    GCS URLs are public-readable in our setup; local /uploads paths are
+    relative to UPLOAD_DIR.
+    """
+    if audio_url.startswith("http://") or audio_url.startswith("https://"):
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(audio_url)
+            if resp.status_code != 200:
+                logger.warning("Audio fetch %d for %s", resp.status_code, audio_url)
+                return b""
+            return resp.content
+    # Local: strip leading /uploads/ and resolve relative to UPLOAD_DIR
+    from ..services.storage import UPLOAD_DIR
+    rel = audio_url.lstrip("/").removeprefix("uploads/")
+    path = os.path.join(UPLOAD_DIR, rel)
+    if not os.path.exists(path):
+        return b""
+    with open(path, "rb") as f:
+        return f.read()
 
 
 # ---------------------------------------------------------------------------

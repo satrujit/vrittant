@@ -100,6 +100,41 @@ def save_logo(contents: bytes, slug: str, ext: str) -> str:
         return f"/uploads/org-logos/{filename}"
 
 
+def delete_file(public_url: str) -> bool:
+    """Best-effort delete by the public URL ``save_file`` returned.
+
+    Returns True on success or "already gone"; False on a real error so
+    callers can decide whether to log loudly. Never raises — used in
+    fire-and-forget cleanup paths.
+    """
+    if not public_url:
+        return True
+    try:
+        if public_url.startswith("https://storage.googleapis.com/"):
+            # Strip the bucket prefix to get the GCS object key
+            prefix = f"https://storage.googleapis.com/{settings.GCS_BUCKET}/"
+            if not public_url.startswith(prefix):
+                logger.warning("delete_file: URL %s not in expected bucket %s",
+                               public_url, settings.GCS_BUCKET)
+                return False
+            key = public_url[len(prefix):]
+            bucket = _get_bucket()
+            bucket.blob(key).delete()
+            return True
+        if public_url.startswith("/uploads/"):
+            rel = public_url[len("/uploads/"):]
+            path = os.path.join(UPLOAD_DIR, rel)
+            if os.path.exists(path):
+                os.remove(path)
+            return True
+        # Unknown URL shape — nothing safe to do.
+        logger.warning("delete_file: unrecognized URL shape %s", public_url)
+        return False
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("delete_file failed for %s: %s", public_url, exc)
+        return False
+
+
 def _content_type_for_ext(ext: str) -> str:
     ext = ext.lower().lstrip(".")
     mapping = {

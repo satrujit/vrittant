@@ -192,7 +192,11 @@ def create_blank_story(
         organization_id=org_id,
         headline="",
         paragraphs=[],
-        status="draft",
+        # Editor-created stories start in "in_progress" (not "draft") so they
+        # appear in the default admin list views, which filter drafts out.
+        # Without this, the editor saves content successfully but the story
+        # never surfaces anywhere in the UI — it looks "unsaved".
+        status="in_progress",
         source="Editor Created",
         # Auto-assign to creator — they're the one writing it, so the story
         # shouldn't sit in an "Unassigned" state in the side panel.
@@ -238,6 +242,48 @@ def admin_get_story(story_id: str, db: Session = Depends(get_db), user: User = D
 TERMINAL_STATUSES = {"approved", "rejected", "published"}
 
 
+def _cleanup_transcription_audio(story: Story) -> None:
+    """Delete non-attachment audio files referenced by ``transcription_audio_path``.
+
+    Called when a story transitions to ``published``. The "silent backup"
+    audio (uploaded by the always-upload pipeline so we can re-transcribe
+    if the live WS produced nothing) has done its job once a published
+    transcript exists. Audio that the reporter explicitly attached
+    (long-press, where ``media_path == transcription_audio_path``) is
+    preserved — it's part of the published story.
+
+    Mutates ``story.paragraphs`` in place; caller is responsible for
+    committing. Best-effort: a failed delete is logged but doesn't block
+    publish.
+    """
+    import logging
+    from sqlalchemy.orm.attributes import flag_modified
+    from ...services.storage import delete_file
+
+    log = logging.getLogger(__name__)
+    paragraphs = list(story.paragraphs or [])
+    changed = False
+    for i, p in enumerate(paragraphs):
+        if not isinstance(p, dict):
+            continue
+        audio_path = p.get("transcription_audio_path")
+        if not audio_path:
+            continue
+        # Keep when the audio is also the visible attachment.
+        if audio_path == p.get("media_path"):
+            continue
+        delete_file(audio_path)
+        new_p = dict(p)
+        new_p.pop("transcription_audio_path", None)
+        # Keep status/attempts as historical record — only the file is gone.
+        paragraphs[i] = new_p
+        changed = True
+        log.info("publish-cleanup: dropped backup audio for story=%s para=%s", story.id, p.get("id"))
+    if changed:
+        story.paragraphs = paragraphs
+        flag_modified(story, "paragraphs")
+
+
 @router.put("/stories/{story_id}/status", response_model=AdminStoryResponse)
 def admin_update_story_status(
     story_id: str,
@@ -273,6 +319,14 @@ def admin_update_story_status(
         story.reviewed_by = None
         story.reviewed_at = None
     story.updated_at = now_ist()
+
+    # Publish-time cleanup: drop the silent backup audio (always-upload
+    # pipeline) once the story is published. Audio explicitly attached by
+    # the reporter (long-press → media_path == transcription_audio_path)
+    # is left alone because it's part of the published story.
+    if body.status == "published":
+        _cleanup_transcription_audio(story)
+
     db.commit()
     db.refresh(story)
     resp = AdminStoryResponse.model_validate(story)
@@ -311,29 +365,50 @@ def admin_update_story(
         else None
     )
 
-    # Upsert: update existing revision or create new one
+    # Editor-created stories have no upstream reporter original to preserve,
+    # so the Story row itself is the canonical content. Mirror headline/
+    # paragraphs onto the Story directly so the list view (which reads
+    # Story.headline / Story.paragraphs) reflects saved edits. Ancillary
+    # fields (english_translation, social_posts) still live on the revision.
+    is_editor_created = (story.source == "Editor Created")
+    if is_editor_created:
+        if body.headline is not None:
+            story.headline = body.headline
+        if rev_paragraphs is not None:
+            story.paragraphs = rev_paragraphs
+
+    # Upsert: update existing revision or create new one.
+    # For editor-created stories, only touch the revision for fields that
+    # don't have a corresponding Story column (translation, social_posts);
+    # headline/paragraphs are already on Story above.
     existing_rev = story.revision
     if existing_rev:
-        # Only overwrite fields that were explicitly provided
-        if body.headline is not None:
-            existing_rev.headline = body.headline
-        if rev_paragraphs is not None:
-            existing_rev.paragraphs = rev_paragraphs
+        if not is_editor_created:
+            if body.headline is not None:
+                existing_rev.headline = body.headline
+            if rev_paragraphs is not None:
+                existing_rev.paragraphs = rev_paragraphs
         if body.english_translation is not None:
             existing_rev.english_translation = body.english_translation
         if body.social_posts is not None:
             existing_rev.social_posts = body.social_posts
         existing_rev.updated_at = now_ist()
     else:
-        new_rev = StoryRevision(
-            story_id=story.id,
-            editor_id=current_user.id,
-            headline=body.headline or story.headline,
-            paragraphs=rev_paragraphs or story.paragraphs,
-            english_translation=body.english_translation,
-            social_posts=body.social_posts,
+        needs_revision_row = (
+            (not is_editor_created)
+            or body.english_translation is not None
+            or body.social_posts is not None
         )
-        db.add(new_rev)
+        if needs_revision_row:
+            new_rev = StoryRevision(
+                story_id=story.id,
+                editor_id=current_user.id,
+                headline=body.headline or story.headline,
+                paragraphs=rev_paragraphs or story.paragraphs,
+                english_translation=body.english_translation,
+                social_posts=body.social_posts,
+            )
+            db.add(new_rev)
 
     # Update category on the story if provided (category is story-level, not content)
     if body.category is not None:

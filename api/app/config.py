@@ -43,6 +43,38 @@ class Settings(BaseSettings):
     STORAGE_BACKEND: str = "local"
     GCS_BUCKET: str = ""
 
+    # Shared secret for /internal/* endpoints. Set in Cloud Run; Cloud
+    # Scheduler jobs send it via the X-Internal-Token header. Empty by
+    # default so dev environments without it fall back to "any caller wins"
+    # (you don't want to ship a real value here).
+    INTERNAL_TOKEN: str = ""
+
+    # ── Mobile force-update gate ─────────────────────────────────────────
+    # The mobile app fetches /version/min-supported on cold start. If its
+    # current version is below `min`, the app blocks with an "Update required"
+    # screen. Bumping these env vars rolls out a forced update to all
+    # installed clients without an app rebuild.
+    #
+    # `latest` is informational ("there's a newer version available, here's
+    # the link") — non-blocking. Use it for soft prompts.
+    #
+    # Use semver (MAJOR.MINOR.PATCH). Empty string disables the gate for
+    # that platform, which is the default so dev/UAT never accidentally
+    # forces upgrades.
+    MIN_VERSION_IOS: str = ""
+    MIN_VERSION_ANDROID: str = ""
+    LATEST_VERSION_IOS: str = ""
+    LATEST_VERSION_ANDROID: str = ""
+
+    # Store URLs returned to the client so the "Update Now" button can deep-
+    # link out. Provided by config (not hardcoded in the app) because the
+    # iOS App Store ID is not known until first TestFlight build, and we
+    # don't want to ship a follow-up release just to fix a broken link.
+    APP_STORE_URL_IOS: str = ""
+    APP_STORE_URL_ANDROID: str = (
+        "https://play.google.com/store/apps/details?id=com.attentionstack.vrittant"
+    )
+
     @property
     def cors_origin_list(self) -> list[str]:
         if self.CORS_ORIGINS == "*":

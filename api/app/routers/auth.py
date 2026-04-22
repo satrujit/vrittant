@@ -1,9 +1,12 @@
+from datetime import date, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
 from ..deps import create_access_token, get_current_user
+from ..models.otp_send_log import OtpSendLog
 from ..models.user import User
 from ..schemas.auth import (
     MSG91LoginRequest,
@@ -19,8 +22,154 @@ from ..services.otp_provider import (
     verify_otp as otp_verify,
     resend_otp as otp_resend,
 )
+from ..utils.tz import now_ist
 
 router = APIRouter()
+
+
+# ── Test bypass ────────────────────────────────────────────────────────────
+# In dev and UAT we accept a hardcoded OTP and skip the paid SMS provider
+# entirely. This is so QA / emulator runs don't burn Twilio (~₹14/OTP) credits
+# every time someone taps "Send OTP". Production (`ENV=production`) ignores
+# this branch — real OTP, real spend.
+#
+# Codes:
+#   dev:  000000  (existing)
+#   uat:  000111  (new — keeps prod-like flow but free)
+_TEST_OTP_CODES = {
+    "dev": "000000",
+    "uat": "000111",
+}
+
+
+def _is_test_env() -> bool:
+    return settings.ENV in _TEST_OTP_CODES
+
+
+def _expected_test_otp() -> str:
+    return _TEST_OTP_CODES.get(settings.ENV, "")
+
+
+# ── Store-reviewer bypass (TEMPORARY, prod-safe) ──────────────────────────
+# Apple App Store and Google Play reviewers need a way to log in without
+# receiving a real SMS. We can't ship them a SIM, so we hard-code one
+# phone+OTP pair that short-circuits the MSG91 path even in production.
+#
+# Hard expiry kills the bypass automatically after the review window. After
+# the date below, this branch becomes a no-op and the reviewer account falls
+# back to normal MSG91 OTP flow (which won't work for them — by design).
+#
+# REMOVE THIS BLOCK once the apps are approved and live in both stores.
+_REVIEWER_PHONE = "+917362837632"
+_REVIEWER_OTP = "736826"
+_REVIEWER_BYPASS_UNTIL = date(2026, 5, 7)  # 15 days from 2026-04-22
+
+
+def _is_reviewer_bypass(phone: str) -> bool:
+    """True iff the request is for the store-reviewer phone AND the bypass
+    window is still open. Single check used by request/verify/resend."""
+    if phone != _REVIEWER_PHONE:
+        return False
+    return date.today() <= _REVIEWER_BYPASS_UNTIL
+
+
+def _ensure_reviewer_user(db: Session) -> User:
+    """Lazily create the reviewer user on first verify so we don't have to
+    ship a separate migration. Safe under concurrent calls — the unique
+    constraint on phone serialises any race."""
+    user = db.query(User).filter(User.phone == _REVIEWER_PHONE).first()
+    if user is not None:
+        # Reactivate if a previous bypass run was deactivated by tests.
+        if not user.is_active or user.deleted_at is not None:
+            user.is_active = True
+            user.deleted_at = None
+            db.commit()
+        return user
+    user = User(
+        phone=_REVIEWER_PHONE,
+        name="Store Reviewer",
+        user_type="reporter",
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+# ── OTP rate limit ─────────────────────────────────────────────────────────
+# Each provider call costs real money (~₹0.20 MSG91, ~₹4 Twilio Verify, more
+# without DLT). We cap per-phone send frequency so a buggy client, double-tap,
+# or attacker can't burn the budget. Limits chosen to be invisible to a real
+# reporter typing in their phone but visible to anything looping.
+#
+# - Min gap between sends: 60s  (covers double-tap and rage-clicks)
+# - Max sends per hour:    5   (covers genuine OTP-not-arrived retries with
+#                                 voice/SMS while still capping daily damage)
+#
+# Rationale for using DB rather than in-memory: Cloud Run autoscales; an
+# in-memory dict on each instance would let a user send N×instance_count
+# OTPs before any single instance noticed.
+_OTP_MIN_GAP_SECONDS = 60
+_OTP_MAX_PER_HOUR = 5
+
+
+def _enforce_otp_rate_limit(db: Session, phone: str) -> None:
+    """Raise 429 if the phone has hit either limit. Fail-open if the table
+    isn't migrated yet so a missed migration can't take auth offline."""
+    try:
+        now = now_ist()
+        hour_ago = now - timedelta(hours=1)
+        recent = (
+            db.query(OtpSendLog)
+            .filter(OtpSendLog.phone == phone, OtpSendLog.sent_at >= hour_ago)
+            .order_by(OtpSendLog.sent_at.desc())
+            .all()
+        )
+    except Exception as exc:
+        # Most likely cause: migration hasn't been applied. Logging loudly
+        # so it's caught in Cloud Run logs, but we don't block users.
+        import logging as _logging
+        _logging.getLogger("auth.otp").warning(
+            "otp rate-limit query failed (table missing?): %s", exc
+        )
+        return
+
+    if recent:
+        last_gap = (now - recent[0].sent_at).total_seconds()
+        if last_gap < _OTP_MIN_GAP_SECONDS:
+            retry_after = int(_OTP_MIN_GAP_SECONDS - last_gap) + 1
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Please wait {retry_after}s before requesting another OTP",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+    if len(recent) >= _OTP_MAX_PER_HOUR:
+        # Tell the client when the oldest in-window send falls out so the
+        # Retry-After header is accurate.
+        oldest = recent[-1].sent_at
+        retry_after = int((oldest + timedelta(hours=1) - now).total_seconds()) + 1
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Hourly OTP limit reached. Try again later.",
+            headers={"Retry-After": str(max(retry_after, 60))},
+        )
+
+
+def _record_otp_send(db: Session, phone: str) -> None:
+    """Record a successful provider call. Best-effort — a failure here
+    means the next request from this phone won't see this send in its
+    rate-limit query, which is preferable to 500'ing a successful OTP."""
+    try:
+        db.add(OtpSendLog(phone=phone))
+        db.commit()
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger("auth.otp").warning(
+            "otp send-log insert failed: %s", exc
+        )
+        db.rollback()
 
 
 # ── Phone check ──
@@ -28,6 +177,17 @@ router = APIRouter()
 @router.post("/check-phone")
 def check_phone(body: OTPRequest, db: Session = Depends(get_db)):
     """Check if a phone number is registered. Returns widget config on success."""
+    # Store-reviewer bypass — provision on first contact and report registered.
+    if _is_reviewer_bypass(body.phone):
+        _ensure_reviewer_user(db)
+        return {
+            "registered": True,
+            "widget": {
+                "widgetId": settings.MSG91_WIDGET_ID,
+                "tokenAuth": settings.MSG91_TOKEN_AUTH,
+            },
+        }
+
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
@@ -47,11 +207,26 @@ def check_phone(body: OTPRequest, db: Session = Depends(get_db)):
 @router.post("/request-otp")
 async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     """Send OTP for mobile clients. Provider chosen via OTP_PROVIDER env."""
+    # Store-reviewer bypass — must run BEFORE the user lookup so the reviewer
+    # account doesn't need to pre-exist. See _is_reviewer_bypass for the
+    # phone/expiry constants.
+    if _is_reviewer_bypass(body.phone):
+        _ensure_reviewer_user(db)
+        return {"message": "OTP sent (reviewer)", "phone": body.phone, "req_id": "reviewer"}
+
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
+
+    # Test-env short-circuit: skip the paid provider entirely. Verify-otp
+    # accepts the corresponding hardcoded code below.
+    if _is_test_env():
+        return {"message": "OTP sent (test)", "phone": body.phone, "req_id": "test"}
+
+    # Cap per-phone send rate before hitting the paid provider.
+    _enforce_otp_rate_limit(db, body.phone)
 
     import logging as _logging
     _log = _logging.getLogger("auth.otp")
@@ -61,6 +236,7 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
         _log.warning("send_otp failed: %s", exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to send OTP")
 
+    _record_otp_send(db, body.phone)
     req_id = data.get("reqId") or data.get("request_id") or ""
     return {"message": "OTP sent", "phone": body.phone, "req_id": req_id}
 
@@ -68,14 +244,27 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
 @router.post("/verify-otp", response_model=Token)
 async def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
     """Verify OTP via MSG91 and issue JWT (for mobile clients)."""
+    # Store-reviewer bypass — runs before the user lookup so the account is
+    # provisioned on first use. Wrong OTP for the reviewer phone falls
+    # through to a 401 below (without contacting MSG91).
+    if _is_reviewer_bypass(body.phone):
+        if body.otp != _REVIEWER_OTP:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="OTP verification failed",
+            )
+        user = _ensure_reviewer_user(db)
+        token = create_access_token(user.id, user.user_type)
+        return Token(access_token=token)
+
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
 
-    # Dev bypass
-    if settings.ENV == "dev" and body.otp == "000000":
+    # Test-env bypass — see _TEST_OTP_CODES at top of file.
+    if _is_test_env() and body.otp == _expected_test_otp():
         token = create_access_token(user.id, user.user_type)
         return Token(access_token=token)
 
@@ -94,11 +283,24 @@ async def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
 @router.post("/resend-otp")
 async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
     """Resend OTP via MSG91 (for mobile clients)."""
+    # Store-reviewer bypass — never re-send via MSG91 for the reviewer phone.
+    if _is_reviewer_bypass(body.phone):
+        return {"message": "OTP resent (reviewer)", "phone": body.phone}
+
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
+
+    # Test-env short-circuit (same as request-otp).
+    if _is_test_env():
+        return {"message": "OTP resent (test)", "phone": body.phone}
+
+    # Resend is a paid send too — same caps apply. (For Twilio Verify the
+    # underlying call is literally another `Verifications` POST; for MSG91
+    # it's `retryOtp` which still bills.)
+    _enforce_otp_rate_limit(db, body.phone)
 
     import logging as _logging
     _log = _logging.getLogger("auth.otp")
@@ -108,6 +310,7 @@ async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
         _log.warning("resend_otp failed: %s", exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to resend OTP")
 
+    _record_otp_send(db, body.phone)
     return {"message": "OTP resent", "phone": body.phone}
 
 
@@ -195,3 +398,32 @@ async def msg91_login(body: MSG91LoginRequest, db: Session = Depends(get_db)):
 def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     db.refresh(user, ["org", "entitlements"])
     return user
+
+
+# ── Account deletion (store-compliance) ──
+# App Store and Play Store both require an in-app path to delete an account.
+# We don't hard-delete because published stories stay attributed to a byline —
+# hard-deleting a reporter would orphan or falsify historical journalism.
+#
+# Instead we deactivate:
+#   - anonymise PII (name → "Former Reporter", phone → tombstone, email → null)
+#   - is_active = False, deleted_at = now
+#   - get_current_user filters on both, so the user's token is now unusable
+#   - stories and bylines remain, but now attribute to "Former Reporter"
+#
+# The phone is tombstoned (not nulled) so the unique index still holds; a future
+# signup with the same number gets a fresh user record. The tombstone format
+# `_deleted_<uuid>` can never collide with a real E.164 number.
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    import uuid as _uuid
+
+    tombstone = f"_deleted_{_uuid.uuid4().hex}"
+    user.name = "Former Reporter"
+    user.phone = tombstone
+    user.email = None
+    user.area_name = ""
+    user.is_active = False
+    user.deleted_at = now_ist()
+    db.commit()
+    return None
