@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NewsFlow Design System v2 — Multi-Hue + Odia Heritage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Anek+Odia:wdth,wght@100,400;100,600;100,700;100,800;125,400;125,600;125,700;125,800&family=Noto+Sans+Oriya:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* ===== BRAND COLORS ===== */
+    /* Primary — Deep Indigo (from Sambalpuri ikat) */
+    --indigo-50: #EEF2FF;
+    --indigo-100: #E0E7FF;
+    --indigo-200: #C7D2FE;
+    --indigo-300: #A5B4FC;
+    --indigo-400: #818CF8;
+    --indigo-500: #6366F1;
+    --indigo-600: #4F46E5;
+    --indigo-700: #4338CA;
+    --indigo-800: #1E1B4B;
+    --indigo-900: #0F0A2E;
+
+    /* Teal — Kashmir */
+    --teal-50: #F0FDFA;
+    --teal-100: #CCFBF1;
+    --teal-200: #99F6E4;
+    --teal-300: #5EEAD4;
+    --teal-400: #2DD4BF;
+    --teal-500: #14B8A6;
+    --teal-600: #0D9488;
+    --teal-700: #004B3D;
+
+    /* Coral — Sunrise/Electric */
+    --coral-50: #FFF5F2;
+    --coral-100: #FFE4DE;
+    --coral-200: #FFBFB0;
+    --coral-300: #FF9A85;
+    --coral-400: #FF7A5C;
+    --coral-500: #FF5733;
+    --coral-600: #E0421F;
+
+    /* Gold — Rich Gold */
+    --gold-50: #FFFBEB;
+    --gold-100: #FEF3C7;
+    --gold-200: #FDE68A;
+    --gold-300: #FCD34D;
+    --gold-400: #FBBF24;
+    --gold-500: #F59E0B;
+    --gold-600: #D97706;
+
+    /* Pink — Petal/Peony */
+    --pink-50: #FFF1F2;
+    --pink-100: #FFE4E6;
+    --pink-200: #FECDD3;
+    --pink-300: #FDA4AF;
+    --pink-400: #FB7185;
+    --pink-500: #F43F5E;
+    --pink-600: #E11D48;
+
+    /* Lavender */
+    --lavender-50: #FAF5FF;
+    --lavender-100: #F3E8FF;
+    --lavender-200: #E9D5FF;
+    --lavender-300: #D8B4FE;
+    --lavender-400: #C084FC;
+    --lavender-500: #A855F7;
+    --lavender-600: #7C3AED;
+
+    /* Lime — Fresh green accents */
+    --lime-50: #F7FEE7;
+    --lime-100: #ECFCCB;
+    --lime-200: #D9F99D;
+    --lime-300: #BEF264;
+    --lime-400: #A3E635;
+    --lime-500: #84CC16;
+
+    /* Neutral — Warm Stone */
+    --neutral-0: #FFFFFF;
+    --neutral-50: #FAFAF9;
+    --neutral-100: #F5F5F4;
+    --neutral-200: #E7E5E4;
+    --neutral-300: #D6D3D1;
+    --neutral-400: #A8A29E;
+    --neutral-500: #78716C;
+    --neutral-600: #57534E;
+    --neutral-700: #44403C;
+    --neutral-800: #292524;
+    --neutral-900: #1C1917;
+
+    /* Semantic */
+    --success: #22C55E;
+    --warning: #F59E0B;
+    --error: #EF4444;
+    --info: #3B82F6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: var(--neutral-50); color: var(--neutral-800); line-height: 1.6; }
+
+  /* ===== IKAT PATTERN (SVG) ===== */
+  .ikat-pattern {
+    background-color: var(--indigo-800);
+    background-image: url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='1' opacity='0.12'%3E%3Crect x='4' y='4' width='16' height='32' rx='1'/%3E%3Crect x='24' y='4' width='32' height='16' rx='1'/%3E%3Crect x='60' y='4' width='16' height='32' rx='1'/%3E%3Crect x='4' y='40' width='32' height='16' rx='1'/%3E%3Crect x='24' y='60' width='16' height='16' rx='1'/%3E%3Crect x='44' y='24' width='16' height='16' rx='1'/%3E%3Crect x='44' y='44' width='32' height='16' rx='1'/%3E%3Crect x='60' y='60' width='16' height='16' rx='1'/%3E%3Cline x1='8' y1='10' x2='16' y2='10'/%3E%3Cline x1='8' y1='16' x2='16' y2='16'/%3E%3Cline x1='8' y1='22' x2='16' y2='22'/%3E%3Cline x1='64' y1='10' x2='72' y2='10'/%3E%3Cline x1='64' y1='16' x2='72' y2='16'/%3E%3Cline x1='30' y1='8' x2='30' y2='16'/%3E%3Cline x1='36' y1='8' x2='36' y2='16'/%3E%3Cline x1='42' y1='8' x2='42' y2='16'/%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  /* ===== HERO ===== */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    padding: 80px 40px;
+    text-align: center;
+    background: linear-gradient(135deg, #1E1B4B 0%, #312E81 30%, #4338CA 60%, #0D9488 100%);
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='1' opacity='0.06'%3E%3Crect x='4' y='4' width='16' height='32' rx='1'/%3E%3Crect x='24' y='4' width='32' height='16' rx='1'/%3E%3Crect x='60' y='4' width='16' height='32' rx='1'/%3E%3Crect x='4' y='40' width='32' height='16' rx='1'/%3E%3Crect x='24' y='60' width='16' height='16' rx='1'/%3E%3Crect x='44' y='24' width='16' height='16' rx='1'/%3E%3Crect x='44' y='44' width='32' height='16' rx='1'/%3E%3Crect x='60' y='60' width='16' height='16' rx='1'/%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  .hero::after {
+    content: '';
+    position: absolute;
+    top: -30%;
+    right: -20%;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(20,184,166,0.25) 0%, transparent 60%);
+    animation: heroGlow 8s ease-in-out infinite;
+  }
+
+  @keyframes heroGlow {
+    0%, 100% { transform: translate(0, 0); opacity: 0.6; }
+    50% { transform: translate(-40px, 30px); opacity: 1; }
+  }
+
+  .hero h1 { font-size: 52px; font-weight: 800; color: white; position: relative; z-index: 1; letter-spacing: -1.5px; }
+  .hero h1 span { background: linear-gradient(135deg, #5EEAD4, #BEF264); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .hero p { font-size: 18px; color: rgba(255,255,255,0.7); margin-top: 12px; position: relative; z-index: 1; }
+  .hero .odia-title { font-family: 'Anek Odia'; font-size: 24px; font-weight: 700; color: rgba(255,255,255,0.9); margin-top: 8px; position: relative; z-index: 1; }
+  .hero .badge { display: inline-block; background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; padding: 6px 18px; font-size: 13px; color: rgba(255,255,255,0.8); margin-top: 20px; position: relative; z-index: 1; }
+
+  /* ===== CONTAINER ===== */
+  .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+  .section { padding: 64px 0; }
+  .section-title { font-size: 30px; font-weight: 800; color: var(--neutral-800); margin-bottom: 4px; letter-spacing: -0.5px; }
+  .section-subtitle { font-size: 15px; color: var(--neutral-500); margin-bottom: 40px; }
+  .group-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: var(--neutral-400); margin-bottom: 14px; }
+
+  /* ===== COLOR SWATCHES ===== */
+  .color-groups { display: flex; flex-direction: column; gap: 28px; }
+  .color-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .swatch {
+    width: 72px; height: 72px; border-radius: 14px;
+    display: flex; flex-direction: column; justify-content: flex-end; padding: 5px 6px;
+    font-size: 9px; font-weight: 500;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    cursor: default;
+  }
+  .swatch:hover { transform: scale(1.1) translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
+  .swatch .lbl { opacity: 0.7; }
+  .swatch .hex { font-weight: 600; }
+
+  /* ===== GRADIENT CARDS ===== */
+  .grad-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; }
+  .grad-card {
+    height: 220px; border-radius: 24px; padding: 24px;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    position: relative; overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+  .grad-card:hover { transform: translateY(-6px) scale(1.02); box-shadow: 0 16px 48px rgba(0,0,0,0.2); }
+  .grad-card h3 { color: white; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; text-shadow: 0 2px 12px rgba(0,0,0,0.2); }
+  .grad-card p { color: rgba(255,255,255,0.8); font-size: 12px; margin-top: 2px; }
+  .grad-card.dark-text h3, .grad-card.dark-text p { color: var(--neutral-800); text-shadow: none; }
+  .grad-card.dark-text p { color: var(--neutral-600); }
+
+  /* Ikat overlay */
+  .grad-card.with-ikat::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='0.8' opacity='0.1'%3E%3Crect x='2' y='2' width='12' height='24' rx='1'/%3E%3Crect x='18' y='2' width='24' height='12' rx='1'/%3E%3Crect x='46' y='2' width='12' height='24' rx='1'/%3E%3Crect x='2' y='30' width='24' height='12' rx='1'/%3E%3Crect x='30' y='18' width='12' height='12' rx='1'/%3E%3Crect x='30' y='34' width='24' height='12' rx='1'/%3E%3Crect x='18' y='46' width='12' height='12' rx='1'/%3E%3Crect x='46' y='46' width='12' height='12' rx='1'/%3E%3C/g%3E%3C/svg%3E");
+    border-radius: 24px;
+  }
+
+  /* ===== GLASS CARDS ===== */
+  .glass-container {
+    border-radius: 28px; padding: 48px;
+    display: flex; gap: 24px; flex-wrap: wrap; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  .glass-card {
+    background: rgba(255,255,255,0.55); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255,255,255,0.35); border-radius: 20px;
+    padding: 24px; width: 280px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+  .glass-card:hover { transform: translateY(-6px); box-shadow: 0 12px 40px rgba(0,0,0,0.12); }
+  .glass-card h3 { font-size: 17px; font-weight: 700; color: var(--neutral-800); margin-bottom: 6px; }
+  .glass-card p { font-size: 14px; color: var(--neutral-600); line-height: 1.5; }
+
+  /* ===== TYPOGRAPHY ===== */
+  .type-specimen { background: white; border-radius: 20px; padding: 36px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+  .type-row { display: flex; align-items: baseline; gap: 24px; padding: 14px 0; border-bottom: 1px solid var(--neutral-100); }
+  .type-row:last-child { border-bottom: none; }
+  .type-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--neutral-400); width: 130px; flex-shrink: 0; }
+
+  .odia-showcase {
+    border-radius: 20px; padding: 36px; margin-top: 24px; position: relative; overflow: hidden;
+    background: linear-gradient(135deg, #1E1B4B 0%, #312E81 50%, #004B3D 100%);
+  }
+  .odia-showcase::before {
+    content: ''; position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='0.8' opacity='0.06'%3E%3Crect x='2' y='2' width='12' height='24' rx='1'/%3E%3Crect x='18' y='2' width='24' height='12' rx='1'/%3E%3Crect x='46' y='2' width='12' height='24' rx='1'/%3E%3Crect x='2' y='30' width='24' height='12' rx='1'/%3E%3Crect x='30' y='34' width='24' height='12' rx='1'/%3E%3Crect x='18' y='46' width='12' height='12' rx='1'/%3E%3Crect x='46' y='46' width='12' height='12' rx='1'/%3E%3C/g%3E%3C/svg%3E");
+  }
+  .odia-showcase * { position: relative; z-index: 1; }
+  .odia-showcase h3 { font-family: 'Anek Odia'; font-size: 32px; font-weight: 800; background: linear-gradient(135deg, #5EEAD4, #BEF264); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .odia-showcase .sub { font-family: 'Anek Odia'; font-size: 20px; font-weight: 600; color: rgba(255,255,255,0.75); margin-top: 4px; }
+  .odia-showcase .body { font-family: 'Noto Sans Oriya'; font-size: 17px; color: rgba(255,255,255,0.8); line-height: 1.7; margin-top: 16px; }
+  .odia-showcase .meta { font-family: 'Noto Sans Oriya'; font-size: 13px; color: rgba(255,255,255,0.5); margin-top: 16px; }
+  .odia-divider { height: 1px; background: rgba(255,255,255,0.1); margin: 16px 0; }
+
+  /* ===== COMPONENTS ===== */
+  .comp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 24px; }
+  .comp-card { background: white; border-radius: 20px; padding: 28px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+  .comp-card h4 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--neutral-400); margin-bottom: 20px; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: none; cursor: pointer;
+    font-family: 'Inter'; font-size: 14px; font-weight: 600;
+    transition: all 0.2s ease;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--indigo-600) 0%, var(--teal-500) 100%);
+    color: white; padding: 14px 28px; border-radius: 14px;
+    box-shadow: 0 4px 20px rgba(99,102,241,0.3);
+  }
+  .btn-primary:hover { box-shadow: 0 8px 30px rgba(99,102,241,0.45); transform: translateY(-2px); }
+  .btn-primary:active { transform: scale(0.97); }
+
+  .btn-coral {
+    background: linear-gradient(135deg, var(--coral-500) 0%, var(--pink-500) 100%);
+    color: white; padding: 14px 28px; border-radius: 14px;
+    box-shadow: 0 4px 20px rgba(255,87,51,0.3);
+  }
+  .btn-coral:hover { box-shadow: 0 8px 30px rgba(255,87,51,0.45); transform: translateY(-2px); }
+
+  .btn-gold {
+    background: linear-gradient(135deg, var(--gold-400) 0%, var(--coral-400) 100%);
+    color: white; padding: 14px 28px; border-radius: 14px;
+    box-shadow: 0 4px 20px rgba(251,191,36,0.3);
+  }
+
+  .btn-outline {
+    background: transparent; color: var(--indigo-600);
+    border: 1.5px solid var(--indigo-300); padding: 12px 24px; border-radius: 14px;
+  }
+  .btn-outline:hover { background: var(--indigo-50); border-color: var(--indigo-400); }
+
+  .btn-ghost {
+    background: transparent; color: var(--indigo-600);
+    border: none; padding: 10px 16px; border-radius: 12px;
+  }
+  .btn-ghost:hover { background: var(--indigo-50); }
+
+  .btn-pill { border-radius: 999px !important; }
+
+  /* Status Chips */
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .chip-draft { background: var(--neutral-100); color: var(--neutral-600); }
+  .chip-draft .dot { background: var(--neutral-400); }
+  .chip-submitted { background: #FEF3C7; color: #92400E; }
+  .chip-submitted .dot { background: var(--gold-500); }
+  .chip-approved { background: #DCFCE7; color: #166534; }
+  .chip-approved .dot { background: var(--success); }
+  .chip-rejected { background: #FEE2E2; color: #991B1B; }
+  .chip-rejected .dot { background: var(--error); }
+  .chip-published { background: var(--indigo-100); color: var(--indigo-700); }
+  .chip-published .dot { background: var(--indigo-500); }
+
+  /* Category Chips — each category gets its own gradient! */
+  .cat { display: inline-flex; align-items: center; gap: 5px; padding: 6px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; color: white; cursor: pointer; transition: all 0.2s ease; }
+  .cat:hover { transform: scale(1.05); }
+  .cat-politics { background: linear-gradient(135deg, var(--indigo-500), var(--lavender-500)); }
+  .cat-sports { background: linear-gradient(135deg, var(--teal-500), var(--lime-400)); }
+  .cat-crime { background: linear-gradient(135deg, var(--coral-500), var(--pink-500)); }
+  .cat-business { background: linear-gradient(135deg, var(--gold-500), var(--coral-400)); }
+  .cat-entertainment { background: linear-gradient(135deg, var(--pink-400), var(--lavender-400)); }
+  .cat-education { background: linear-gradient(135deg, var(--teal-400), var(--indigo-400)); }
+  .cat-health { background: linear-gradient(135deg, var(--lime-400), var(--teal-400)); }
+  .cat-tech { background: linear-gradient(135deg, var(--indigo-400), var(--teal-300)); }
+
+  /* Input */
+  .input-group { display: flex; flex-direction: column; gap: 6px; }
+  .input-label { font-size: 13px; font-weight: 600; color: var(--neutral-700); }
+  .input-field {
+    background: var(--neutral-50); border: 1.5px solid var(--neutral-200); border-radius: 14px;
+    padding: 14px 16px; font-family: 'Inter'; font-size: 14px; color: var(--neutral-800);
+    outline: none; transition: all 0.2s ease; width: 100%;
+  }
+  .input-field:focus { border-color: var(--indigo-500); box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+  .input-field::placeholder { color: var(--neutral-400); }
+
+  /* Search */
+  .search-bar {
+    display: flex; align-items: center; gap: 12px;
+    background: white; border: 1.5px solid var(--neutral-200); border-radius: 999px;
+    padding: 12px 20px; transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .search-bar:focus-within { border-color: var(--indigo-400); box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
+  .search-bar input { border: none; background: none; font-family: 'Inter'; font-size: 14px; color: var(--neutral-800); outline: none; flex: 1; }
+  .search-bar input::placeholder { color: var(--neutral-400); }
+  .search-icon { color: var(--neutral-400); flex-shrink: 0; }
+
+  /* Voice Button */
+  .voice-container { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .voice-btn {
+    width: 80px; height: 80px; border-radius: 50%; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    position: relative; transition: all 0.2s ease;
+  }
+  .voice-btn:hover { transform: scale(1.08); }
+  .voice-btn svg { color: white; position: relative; z-index: 2; }
+  .voice-idle { background: linear-gradient(135deg, var(--indigo-500), var(--teal-400)); box-shadow: 0 8px 32px rgba(99,102,241,0.35); }
+  .voice-rec {
+    background: linear-gradient(135deg, var(--coral-500), var(--pink-500));
+    box-shadow: 0 8px 32px rgba(255,87,51,0.35);
+    animation: vpulse 1.5s ease-in-out infinite;
+  }
+  .voice-rec::before, .voice-rec::after {
+    content: ''; position: absolute; width: 100%; height: 100%; border-radius: 50%;
+    border: 2.5px solid var(--coral-300); animation: vripple 1.5s ease-out infinite;
+  }
+  .voice-rec::after { animation-delay: 0.5s; }
+  @keyframes vripple { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(2); opacity: 0; } }
+  @keyframes vpulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+  .voice-label { font-size: 13px; font-weight: 500; color: var(--neutral-500); }
+
+  /* Toast */
+  .toast {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: rgba(255,255,255,0.92); backdrop-filter: blur(16px);
+    border-radius: 14px; padding: 14px 20px; font-size: 14px; font-weight: 500; color: var(--neutral-700);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  }
+  .toast-s { border-left: 4px solid var(--success); }
+  .toast-e { border-left: 4px solid var(--error); }
+  .toast-w { border-left: 4px solid var(--warning); }
+  .toast-i { border-left: 4px solid var(--indigo-500); }
+
+  /* News Card */
+  .news-card {
+    background: white; border-radius: 20px; padding: 22px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    transition: all 0.25s ease; display: flex; flex-direction: column; gap: 12px;
+  }
+  .news-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,0.1); }
+  .news-card-head { display: flex; align-items: center; justify-content: space-between; }
+  .news-card h3 { font-family: 'Anek Odia'; font-size: 19px; font-weight: 700; color: var(--neutral-800); line-height: 1.4; }
+  .news-card .body { font-family: 'Noto Sans Oriya'; font-size: 15px; color: var(--neutral-600); line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .news-card .meta { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--neutral-500); }
+  .news-card .footer { display: flex; align-items: center; justify-content: space-between; padding-top: 10px; border-top: 1px solid var(--neutral-100); }
+  .priority-badge { display: inline-flex; align-items: center; gap: 4px; background: linear-gradient(135deg, var(--gold-400), var(--coral-400)); color: white; padding: 3px 10px; border-radius: 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; }
+
+  /* Lotus Icon (SVG gradient logo) */
+  .lotus { display: inline-block; }
+
+  /* Elevation */
+  .elev-row { display: flex; gap: 24px; flex-wrap: wrap; }
+  .elev-box {
+    width: 100px; height: 100px; background: white; border-radius: 18px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 500; color: var(--neutral-500);
+  }
+  .e1 { box-shadow: 0 1px 4px rgba(30,27,75,0.06); }
+  .e2 { box-shadow: 0 4px 12px rgba(30,27,75,0.08); }
+  .e3 { box-shadow: 0 8px 24px rgba(30,27,75,0.10); }
+  .e4 { box-shadow: 0 16px 40px rgba(30,27,75,0.12); }
+  .e5 { box-shadow: 0 24px 56px rgba(30,27,75,0.16); }
+
+  /* Mobile Frame */
+  .mobile-frame {
+    width: 375px; height: 780px; background: var(--neutral-50);
+    border-radius: 44px; border: 5px solid var(--neutral-800);
+    overflow: hidden; position: relative;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.2);
+  }
+  .mobile-notch { width: 130px; height: 30px; background: var(--neutral-800); border-radius: 0 0 18px 18px; margin: 0 auto; position: relative; z-index: 10; }
+  .mobile-screen { height: 100%; overflow-y: auto; }
+  .mobile-nav {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 68px;
+    background: rgba(255,255,255,0.9); backdrop-filter: blur(20px);
+    display: flex; align-items: center; justify-content: space-around;
+    border-top: 1px solid rgba(0,0,0,0.06);
+  }
+  .nav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; font-weight: 500; color: var(--neutral-400); }
+  .nav-item.active { color: var(--indigo-600); }
+  .nav-fab {
+    width: 52px; height: 52px; border-radius: 16px;
+    background: linear-gradient(135deg, var(--indigo-500), var(--teal-400));
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 26px; font-weight: 300;
+    box-shadow: 0 6px 20px rgba(99,102,241,0.4);
+    margin-top: -18px;
+  }
+
+  /* Ikat Pattern Section */
+  .ikat-demo {
+    border-radius: 20px; padding: 40px; position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px;
+  }
+  .ikat-demo * { position: relative; z-index: 1; }
+  .ikat-demo h3 { color: white; font-size: 22px; font-weight: 700; text-align: center; }
+  .ikat-demo p { color: rgba(255,255,255,0.7); font-size: 14px; text-align: center; max-width: 500px; }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .hero { padding: 48px 24px; }
+    .hero h1 { font-size: 34px; }
+    .comp-grid { grid-template-columns: 1fr; }
+    .grad-grid { grid-template-columns: 1fr; }
+    .type-row { flex-direction: column; gap: 4px; }
+    .type-label { width: auto; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== HERO ===== -->
+<div class="hero">
+  <h1>News<span>Flow</span></h1>
+  <p>Design System v2.0 — Multi-Hue + Odia Heritage</p>
+  <div class="odia-title">ସମ୍ବାଦ ପ୍ରକ୍ରିୟା ସ୍ୱୟଂଚାଳିତ ପ୍ରଣାଳୀ</div>
+  <div class="badge">Sambalpuri Ikat + Mesh Gradients + Glassmorphism</div>
+</div>
+
+<div class="container">
+
+<!-- ===== 1. COLOR PALETTE ===== -->
+<div class="section">
+  <h2 class="section-title">Color Palette</h2>
+  <p class="section-subtitle">Multi-hue system inspired by Odisha's heritage and modern gradient art.</p>
+
+  <div class="color-groups">
+    <div>
+      <div class="group-title">Indigo — Primary (Sambalpuri)</div>
+      <div class="color-row">
+        <div class="swatch" style="background:#EEF2FF;color:#4338CA"><span class="lbl">50</span><span class="hex">#EEF2FF</span></div>
+        <div class="swatch" style="background:#E0E7FF;color:#4338CA"><span class="lbl">100</span><span class="hex">#E0E7FF</span></div>
+        <div class="swatch" style="background:#C7D2FE;color:#4338CA"><span class="lbl">200</span><span class="hex">#C7D2FE</span></div>
+        <div class="swatch" style="background:#A5B4FC;color:#1E1B4B"><span class="lbl">300</span><span class="hex">#A5B4FC</span></div>
+        <div class="swatch" style="background:#818CF8;color:white"><span class="lbl">400</span><span class="hex">#818CF8</span></div>
+        <div class="swatch" style="background:#6366F1;color:white"><span class="lbl">500</span><span class="hex">#6366F1</span></div>
+        <div class="swatch" style="background:#4F46E5;color:white"><span class="lbl">600</span><span class="hex">#4F46E5</span></div>
+        <div class="swatch" style="background:#4338CA;color:white"><span class="lbl">700</span><span class="hex">#4338CA</span></div>
+        <div class="swatch" style="background:#1E1B4B;color:white"><span class="lbl">800</span><span class="hex">#1E1B4B</span></div>
+        <div class="swatch" style="background:#0F0A2E;color:white"><span class="lbl">900</span><span class="hex">#0F0A2E</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="group-title">Teal — Kashmir</div>
+      <div class="color-row">
+        <div class="swatch" style="background:#F0FDFA;color:#004B3D"><span class="lbl">50</span><span class="hex">#F0FDFA</span></div>
+        <div class="swatch" style="background:#CCFBF1;color:#004B3D"><span class="lbl">100</span><span class="hex">#CCFBF1</span></div>
+        <div class="swatch" style="background:#99F6E4;color:#004B3D"><span class="lbl">200</span><span class="hex">#99F6E4</span></div>
+        <div class="swatch" style="background:#5EEAD4;color:#004B3D"><span class="lbl">300</span><span class="hex">#5EEAD4</span></div>
+        <div class="swatch" style="background:#2DD4BF;color:white"><span class="lbl">400</span><span class="hex">#2DD4BF</span></div>
+        <div class="swatch" style="background:#14B8A6;color:white"><span class="lbl">500</span><span class="hex">#14B8A6</span></div>
+        <div class="swatch" style="background:#0D9488;color:white"><span class="lbl">600</span><span class="hex">#0D9488</span></div>
+        <div class="swatch" style="background:#004B3D;color:white"><span class="lbl">700</span><span class="hex">#004B3D</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="group-title">Coral — Sunrise</div>
+      <div class="color-row">
+        <div class="swatch" style="background:#FFF5F2;color:#E0421F"><span class="lbl">50</span><span class="hex">#FFF5F2</span></div>
+        <div class="swatch" style="background:#FFE4DE;color:#E0421F"><span class="lbl">100</span><span class="hex">#FFE4DE</span></div>
+        <div class="swatch" style="background:#FFBFB0;color:#E0421F"><span class="lbl">200</span><span class="hex">#FFBFB0</span></div>
+        <div class="swatch" style="background:#FF9A85;color:white"><span class="lbl">300</span><span class="hex">#FF9A85</span></div>
+        <div class="swatch" style="background:#FF7A5C;color:white"><span class="lbl">400</span><span class="hex">#FF7A5C</span></div>
+        <div class="swatch" style="background:#FF5733;color:white"><span class="lbl">500</span><span class="hex">#FF5733</span></div>
+        <div class="swatch" style="background:#E0421F;color:white"><span class="lbl">600</span><span class="hex">#E0421F</span></div>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 40px; flex-wrap: wrap;">
+      <div>
+        <div class="group-title">Gold</div>
+        <div class="color-row">
+          <div class="swatch" style="background:#FDE68A;color:#92400E"><span class="lbl">200</span><span class="hex">#FDE68A</span></div>
+          <div class="swatch" style="background:#FBBF24;color:white"><span class="lbl">400</span><span class="hex">#FBBF24</span></div>
+          <div class="swatch" style="background:#F59E0B;color:white"><span class="lbl">500</span><span class="hex">#F59E0B</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="group-title">Pink — Petal</div>
+        <div class="color-row">
+          <div class="swatch" style="background:#FDA4AF;color:white"><span class="lbl">300</span><span class="hex">#FDA4AF</span></div>
+          <div class="swatch" style="background:#FB7185;color:white"><span class="lbl">400</span><span class="hex">#FB7185</span></div>
+          <div class="swatch" style="background:#F43F5E;color:white"><span class="lbl">500</span><span class="hex">#F43F5E</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="group-title">Lavender</div>
+        <div class="color-row">
+          <div class="swatch" style="background:#D8B4FE;color:#4C1D95"><span class="lbl">300</span><span class="hex">#D8B4FE</span></div>
+          <div class="swatch" style="background:#A855F7;color:white"><span class="lbl">500</span><span class="hex">#A855F7</span></div>
+          <div class="swatch" style="background:#7C3AED;color:white"><span class="lbl">600</span><span class="hex">#7C3AED</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="group-title">Lime</div>
+        <div class="color-row">
+          <div class="swatch" style="background:#D9F99D;color:#365314"><span class="lbl">200</span><span class="hex">#D9F99D</span></div>
+          <div class="swatch" style="background:#BEF264;color:#365314"><span class="lbl">300</span><span class="hex">#BEF264</span></div>
+          <div class="swatch" style="background:#84CC16;color:white"><span class="lbl">500</span><span class="hex">#84CC16</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="group-title">Semantic</div>
+      <div class="color-row">
+        <div class="swatch" style="background:#22C55E;color:white;width:100px"><span class="lbl">Success</span><span class="hex">#22C55E</span></div>
+        <div class="swatch" style="background:#F59E0B;color:white;width:100px"><span class="lbl">Warning</span><span class="hex">#F59E0B</span></div>
+        <div class="swatch" style="background:#EF4444;color:white;width:100px"><span class="lbl">Error</span><span class="hex">#EF4444</span></div>
+        <div class="swatch" style="background:#3B82F6;color:white;width:100px"><span class="lbl">Info</span><span class="hex">#3B82F6</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 2. GRADIENTS ===== -->
+<div class="section">
+  <h2 class="section-title">Named Gradients</h2>
+  <p class="section-subtitle">Each gradient tells a different story. Use across cards, headers, and accents.</p>
+
+  <div class="grad-grid">
+    <div class="grad-card with-ikat" style="background: linear-gradient(135deg, #1E1B4B 0%, #4338CA 50%, #14B8A6 100%);">
+      <h3>Sambalpuri Night</h3>
+      <p>Indigo → Teal with ikat texture</p>
+    </div>
+    <div class="grad-card" style="background: linear-gradient(135deg, #004B3D 0%, #14B8A6 40%, #5EEAD4 80%, #BEF264 100%);">
+      <h3>Kashmir</h3>
+      <p>Deep teal → Mint → Lime</p>
+    </div>
+    <div class="grad-card" style="background: linear-gradient(135deg, #FF5733 0%, #FB7185 50%, #FDA4AF 100%);">
+      <h3>Electric Pulse</h3>
+      <p>Coral → Pink → Blush</p>
+    </div>
+    <div class="grad-card" style="background: linear-gradient(135deg, #7C3AED 0%, #A855F7 40%, #D8B4FE 80%, #E6E6FA 100%);">
+      <h3>Lavender Fields</h3>
+      <p>Deep violet → Soft lavender</p>
+    </div>
+    <div class="grad-card dark-text" style="background: linear-gradient(135deg, #FF9A85 0%, #FDE68A 40%, #BEF264 80%, #99F6E4 100%);">
+      <h3>Sunrise Glow</h3>
+      <p>Peach → Gold → Lime → Teal</p>
+    </div>
+    <div class="grad-card" style="background: linear-gradient(135deg, #FBBF24 0%, #FF7A5C 50%, #F43F5E 100%);">
+      <h3>Golden Hour</h3>
+      <p>Gold → Coral → Rose</p>
+    </div>
+    <div class="grad-card" style="background: linear-gradient(135deg, #6366F1 0%, #A855F7 50%, #FB7185 100%);">
+      <h3>Aurora</h3>
+      <p>Indigo → Lavender → Pink</p>
+    </div>
+    <div class="grad-card dark-text" style="background: linear-gradient(135deg, #CCFBF1 0%, #E0E7FF 50%, #F3E8FF 100%);">
+      <h3>Soft Mist</h3>
+      <p>Mint → Periwinkle → Lilac (backgrounds)</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 3. IKAT PATTERN ===== -->
+<div class="section">
+  <h2 class="section-title">Sambalpuri Ikat Pattern</h2>
+  <p class="section-subtitle">Traditional Odisha handloom textile as a subtle background texture. Cultural identity woven into the UI.</p>
+
+  <div class="ikat-demo ikat-pattern" style="height: 200px;">
+    <h3>Rooted in Odisha's Heritage</h3>
+    <p>The ikat weave pattern appears as a subtle overlay on dark surfaces — headers, splash screens, and premium cards.</p>
+  </div>
+</div>
+
+<!-- ===== 4. GLASSMORPHISM ===== -->
+<div class="section">
+  <h2 class="section-title">Glass Cards on Gradients</h2>
+  <p class="section-subtitle">Frosted glass containers over vibrant gradient backgrounds.</p>
+
+  <div class="glass-container" style="background: linear-gradient(135deg, #1E1B4B 0%, #4338CA 30%, #14B8A6 70%, #BEF264 100%);">
+    <div class="glass-card">
+      <h3>Reporter Dashboard</h3>
+      <p>5 articles today. 3 approved, 1 rejected, 1 pending review.</p>
+    </div>
+    <div class="glass-card">
+      <h3 style="font-family:'Anek Odia';font-size:19px;">ସମ୍ବାଦ ଲେଖନ</h3>
+      <p style="font-family:'Noto Sans Oriya';font-size:15px;line-height:1.6;">ମାଇକ୍ରୋଫୋନ ଟ୍ୟାପ କରି ଓଡ଼ିଆରେ କହନ୍ତୁ। AI ଆପଣଙ୍କ ସମ୍ବାଦକୁ ପ୍ରଫେସନାଲ ଭାଷାରେ ଲେଖିବ।</p>
+    </div>
+    <div class="glass-card">
+      <div style="font-size:36px;font-weight:800;background:linear-gradient(135deg,#5EEAD4,#BEF264);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">42</div>
+      <p style="color:var(--neutral-500);font-size:13px;margin-top:4px;">Articles today across all reporters</p>
+    </div>
+  </div>
+
+  <div class="glass-container" style="background: linear-gradient(135deg, #FF5733 0%, #FB7185 50%, #D8B4FE 100%); margin-top: 20px;">
+    <div class="glass-card">
+      <h3>Breaking News Queue</h3>
+      <p>3 priority articles waiting for editorial review.</p>
+    </div>
+    <div class="glass-card">
+      <h3>Translation Ready</h3>
+      <p>12 articles approved for Odia → English translation via Sarvam AI.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 5. TYPOGRAPHY ===== -->
+<div class="section">
+  <h2 class="section-title">Typography</h2>
+  <p class="section-subtitle">Inter (English) + Anek Odia (Display) + Noto Sans Oriya (Body)</p>
+
+  <div class="type-specimen">
+    <div class="type-row"><div class="type-label">Display Large<br>36px / 800</div><div style="font-size:36px;font-weight:800;letter-spacing:-1px;line-height:1.15">NewsFlow Platform</div></div>
+    <div class="type-row"><div class="type-label">Display Medium<br>30px / 700</div><div style="font-size:30px;font-weight:700;letter-spacing:-0.5px;line-height:1.2">Today's Headlines</div></div>
+    <div class="type-row"><div class="type-label">Heading H1<br>26px / 700</div><div style="font-size:26px;font-weight:700;line-height:1.25">Breaking News Dashboard</div></div>
+    <div class="type-row"><div class="type-label">Heading H2<br>22px / 600</div><div style="font-size:22px;font-weight:600;line-height:1.3">Reporter Submissions</div></div>
+    <div class="type-row"><div class="type-label">Heading H3<br>18px / 600</div><div style="font-size:18px;font-weight:600;line-height:1.4">Category Management</div></div>
+    <div class="type-row"><div class="type-label">Body Large<br>16px / 400</div><div style="font-size:16px;line-height:1.6;color:var(--neutral-600)">The reporter app enables field journalists to capture news through voice dictation, powered by Sarvam AI's speech-to-text with Odia language support.</div></div>
+    <div class="type-row"><div class="type-label">Body Small<br>13px / 400</div><div style="font-size:13px;line-height:1.5;color:var(--neutral-500)">Feb 24, 2026 &middot; 2:30 PM &middot; Bhubaneswar &middot; Satrujit Panda</div></div>
+    <div class="type-row"><div class="type-label">Label<br>12px / 600</div><div style="font-size:12px;font-weight:600;letter-spacing:0.5px;color:var(--neutral-500)">SUBMIT NEWS &rarr;</div></div>
+  </div>
+
+  <div class="odia-showcase">
+    <h3>ମୁଖ୍ୟମନ୍ତ୍ରୀ ଆଜି କଟକ ଗସ୍ତରେ</h3>
+    <div class="sub">ରାଜ୍ୟ ସରକାରଙ୍କ ନୂଆ ଘୋଷଣା — ବିଭିନ୍ନ ପ୍ରକଳ୍ପର ଶୁଭାରମ୍ଭ</div>
+    <div class="odia-divider"></div>
+    <div class="body">ଓଡ଼ିଶାର ମୁଖ୍ୟମନ୍ତ୍ରୀ ଆଜି କଟକ ଜିଲ୍ଲା ଗସ୍ତରେ ଆସିଛନ୍ତି। ସେ ବିଭିନ୍ନ ଉନ୍ନୟନ ପ୍ରକଳ୍ପର ଶୁଭାରମ୍ଭ କରିବେ ବୋଲି ସୂଚନା ମିଳିଛି। ଏହି ଗସ୍ତ ସମୟରେ ସେ ସ୍ଥାନୀୟ ଲୋକଙ୍କ ସହ ମଧ୍ୟ ସାକ୍ଷାତ କରିବେ ଏବଂ ସେମାନଙ୍କ ସମସ୍ୟା ଶୁଣିବେ।</div>
+    <div class="meta">&#128205; କଟକ &nbsp; &#128100; ସତ୍ରୁଜିତ &nbsp; &#128197; ୨୪ ଫେବ୍ରୁଆରୀ ୨୦୨୬</div>
+  </div>
+</div>
+
+<!-- ===== 6. COMPONENTS ===== -->
+<div class="section">
+  <h2 class="section-title">Components</h2>
+  <p class="section-subtitle">Core building blocks with multi-gradient theming.</p>
+
+  <div class="comp-grid">
+    <!-- Buttons -->
+    <div class="comp-card">
+      <h4>Buttons</h4>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-primary">Submit News &rarr;</button>
+          <button class="btn btn-primary btn-pill">Publish &rarr;</button>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-coral">Reject</button>
+          <button class="btn btn-gold">&#11088; Priority</button>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-outline">Save Draft</button>
+          <button class="btn btn-ghost">&#10024; Rephrase with AI</button>
+        </div>
+        <div><button class="btn btn-primary" style="opacity:0.4;pointer-events:none;">Disabled</button></div>
+      </div>
+    </div>
+
+    <!-- Status Chips -->
+    <div class="comp-card">
+      <h4>Status Chips</h4>
+      <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start;">
+        <div class="chip chip-draft"><span class="dot"></span> Draft</div>
+        <div class="chip chip-submitted"><span class="dot"></span> Submitted</div>
+        <div class="chip chip-approved"><span class="dot"></span> Approved</div>
+        <div class="chip chip-rejected"><span class="dot"></span> Rejected</div>
+        <div class="chip chip-published"><span class="dot"></span> Published</div>
+      </div>
+    </div>
+
+    <!-- Category Chips — GRADIENT! -->
+    <div class="comp-card">
+      <h4>Category Chips (Gradient)</h4>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <span class="cat cat-politics">&#127963; ରାଜନୀତି</span>
+        <span class="cat cat-sports">&#9917; କ୍ରୀଡ଼ା</span>
+        <span class="cat cat-crime">&#128680; ଅପରାଧ</span>
+        <span class="cat cat-business">&#128200; ବ୍ୟବସାୟ</span>
+        <span class="cat cat-entertainment">&#127917; ମନୋରଞ୍ଜନ</span>
+        <span class="cat cat-education">&#127891; ଶିକ୍ଷା</span>
+        <span class="cat cat-health">&#128154; ସ୍ୱାସ୍ଥ୍ୟ</span>
+        <span class="cat cat-tech">&#128187; ଟେକ</span>
+      </div>
+    </div>
+
+    <!-- Voice Button -->
+    <div class="comp-card" style="text-align:center;">
+      <h4>Voice Dictation</h4>
+      <div style="display:flex;gap:48px;justify-content:center;align-items:flex-start;">
+        <div class="voice-container">
+          <button class="voice-btn voice-idle">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+          </button>
+          <span class="voice-label">Tap to dictate</span>
+        </div>
+        <div class="voice-container">
+          <button class="voice-btn voice-rec">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          </button>
+          <span class="voice-label" style="color:var(--coral-500);font-weight:600;">Recording 0:12</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="comp-card">
+      <h4>Input Fields</h4>
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="input-group">
+          <label class="input-label">News Headline</label>
+          <input type="text" class="input-field" placeholder="Enter headline...">
+        </div>
+        <div class="input-group">
+          <label class="input-label" style="font-family:'Noto Sans Oriya'">ସମ୍ବାଦ ଶୀର୍ଷକ</label>
+          <input type="text" class="input-field" value="ମୁଖ୍ୟମନ୍ତ୍ରୀ ଆଜି କଟକ ଗସ୍ତରେ" style="font-family:'Noto Sans Oriya';font-size:16px;">
+        </div>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="comp-card">
+      <h4>Search + Filters</h4>
+      <div class="search-bar">
+        <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" placeholder="Search news, reporters...">
+      </div>
+      <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;">
+        <span class="cat" style="background:var(--indigo-600);font-size:11px;padding:4px 12px;border-radius:8px;">All</span>
+        <span class="cat" style="background:var(--neutral-200);color:var(--neutral-700);font-size:11px;padding:4px 12px;border-radius:8px;">Today</span>
+        <span class="cat" style="background:var(--neutral-200);color:var(--neutral-700);font-size:11px;padding:4px 12px;border-radius:8px;">Priority</span>
+        <span class="cat" style="background:var(--neutral-200);color:var(--neutral-700);font-size:11px;padding:4px 12px;border-radius:8px;">Pending</span>
+      </div>
+    </div>
+
+    <!-- Toasts -->
+    <div class="comp-card">
+      <h4>Toasts</h4>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div class="toast toast-s">&#10003; News submitted successfully!</div>
+        <div class="toast toast-e">&#10007; Submission failed. Try again.</div>
+        <div class="toast toast-w">&#9888; Offline. Drafts saved locally.</div>
+        <div class="toast toast-i">&#128172; Admin left feedback on your article.</div>
+      </div>
+    </div>
+
+    <!-- Badges -->
+    <div class="comp-card">
+      <h4>Badges & Tags</h4>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <span class="priority-badge">&#11088; PRIORITY</span>
+        <span style="background:linear-gradient(135deg,var(--gold-400),var(--coral-400));color:white;padding:3px 12px;border-radius:8px;font-size:11px;font-weight:700;">AD</span>
+        <span style="background:var(--indigo-100);color:var(--indigo-700);padding:3px 12px;border-radius:8px;font-size:11px;font-weight:600;">3 Photos</span>
+        <span style="background:var(--teal-100);color:var(--teal-700);padding:3px 12px;border-radius:8px;font-size:11px;font-weight:600;">1 Video</span>
+        <span style="background:var(--lavender-100);color:var(--lavender-600);padding:3px 12px;border-radius:8px;font-size:11px;font-weight:600;">Translated</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 7. NEWS CARDS ===== -->
+<div class="section">
+  <h2 class="section-title">News Cards</h2>
+  <p class="section-subtitle">Each category has its own gradient identity.</p>
+
+  <div class="comp-grid">
+    <div class="news-card">
+      <div class="news-card-head">
+        <span class="cat cat-politics" style="font-size:11px;padding:3px 10px;">&#127963; ରାଜନୀତି</span>
+        <span class="priority-badge">&#11088; PRIORITY</span>
+      </div>
+      <h3>ମୁଖ୍ୟମନ୍ତ୍ରୀ ଆଜି କଟକ ଗସ୍ତରେ, ବିଭିନ୍ନ ପ୍ରକଳ୍ପର ଶୁଭାରମ୍ଭ</h3>
+      <div class="body">ଓଡ଼ିଶାର ମୁଖ୍ୟମନ୍ତ୍ରୀ ଆଜି କଟକ ଜିଲ୍ଲା ଗସ୍ତରେ ଆସିଛନ୍ତି। ସେ ବିଭିନ୍ନ ଉନ୍ନୟନ ପ୍ରକଳ୍ପର ଶୁଭାରମ୍ଭ କରିବେ।</div>
+      <div class="meta"><span>&#128205; କଟକ</span><span>&#128100; ସତ୍ରୁଜିତ</span><span>&#128197; 24 Feb</span></div>
+      <div class="footer">
+        <div class="chip chip-submitted"><span class="dot"></span> Submitted</div>
+        <div style="display:flex;gap:6px;">
+          <span style="background:var(--indigo-100);color:var(--indigo-600);padding:2px 8px;border-radius:6px;font-size:10px;">&#128247; 3</span>
+          <span style="background:var(--teal-100);color:var(--teal-600);padding:2px 8px;border-radius:6px;font-size:10px;">&#127909; 1</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="news-card">
+      <div class="news-card-head">
+        <span class="cat cat-sports" style="font-size:11px;padding:3px 10px;">&#9917; କ୍ରୀଡ଼ା</span>
+      </div>
+      <h3>ଓଡ଼ିଶା ଫୁଟବଲ ଦଳ ଫାଇନାଲରେ ପ୍ରବେଶ</h3>
+      <div class="body">ଜାତୀୟ ଫୁଟବଲ ଚାମ୍ପିଅନସିପ୍ ରେ ଓଡ଼ିଶା ଦଳ ସେମିଫାଇନାଲ ଜିତି ଫାଇନାଲରେ ସ୍ଥାନ ହାସଲ କରିଛି।</div>
+      <div class="meta"><span>&#128205; ଭୁବନେଶ୍ୱର</span><span>&#128100; ପ୍ରଦୀପ</span><span>&#128197; 24 Feb</span></div>
+      <div class="footer">
+        <div class="chip chip-approved"><span class="dot"></span> Approved</div>
+        <span style="background:var(--indigo-100);color:var(--indigo-600);padding:2px 8px;border-radius:6px;font-size:10px;">&#128247; 2</span>
+      </div>
+    </div>
+
+    <div class="news-card" style="border-left:3px solid var(--error);">
+      <div class="news-card-head">
+        <span class="cat cat-crime" style="font-size:11px;padding:3px 10px;">&#128680; ଅପରାଧ</span>
+      </div>
+      <h3>ବ୍ରହ୍ମପୁରରେ ଲୁଟ ଘଟଣା, ୨ ଗିରଫ</h3>
+      <div class="body">ଗତ ରାତିରେ ବ୍ରହ୍ମପୁର ସହରର ଏକ ସୁନା ଦୋକାନରେ ଲୁଟ ଘଟଣା ଘଟିଛି।</div>
+      <div class="meta"><span>&#128205; ବ୍ରହ୍ମପୁର</span><span>&#128100; ସୁନୀତା</span><span>&#128197; 24 Feb</span></div>
+      <div class="footer">
+        <div class="chip chip-rejected"><span class="dot"></span> Rejected</div>
+        <span style="font-size:12px;color:var(--error);">Needs more details</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 8. ELEVATION ===== -->
+<div class="section">
+  <h2 class="section-title">Elevation</h2>
+  <p class="section-subtitle">Indigo-tinted soft shadows for depth.</p>
+  <div class="elev-row">
+    <div class="elev-box e1">xs</div>
+    <div class="elev-box e2">sm</div>
+    <div class="elev-box e3">md</div>
+    <div class="elev-box e4">lg</div>
+    <div class="elev-box e5">xl</div>
+  </div>
+</div>
+
+<!-- ===== 9. MOBILE PREVIEW ===== -->
+<div class="section">
+  <h2 class="section-title">Mobile App Preview</h2>
+  <p class="section-subtitle">Reporter app — Home screen & Voice dictation.</p>
+
+  <div style="display:flex;gap:48px;justify-content:center;flex-wrap:wrap;">
+    <!-- Home Screen -->
+    <div>
+      <div style="text-align:center;margin-bottom:16px;font-size:13px;font-weight:600;color:var(--neutral-400);text-transform:uppercase;letter-spacing:1px;">Home</div>
+      <div class="mobile-frame">
+        <div class="mobile-notch"></div>
+        <div class="mobile-screen">
+          <!-- Header with ikat -->
+          <div style="background:linear-gradient(135deg,#1E1B4B 0%,#4338CA 50%,#14B8A6 100%);padding:40px 20px 28px;position:relative;overflow:hidden;">
+            <div style="position:absolute;inset:0;background-image:url('data:image/svg+xml,%3Csvg width=%2260%22 height=%2260%22 viewBox=%220 0 60 60%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cg fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%220.8%22 opacity=%220.08%22%3E%3Crect x=%222%22 y=%222%22 width=%2212%22 height=%2224%22 rx=%221%22/%3E%3Crect x=%2218%22 y=%222%22 width=%2224%22 height=%2212%22 rx=%221%22/%3E%3Crect x=%2246%22 y=%222%22 width=%2212%22 height=%2224%22 rx=%221%22/%3E%3Crect x=%222%22 y=%2230%22 width=%2224%22 height=%2212%22 rx=%221%22/%3E%3Crect x=%2230%22 y=%2234%22 width=%2224%22 height=%2212%22 rx=%221%22/%3E%3C/g%3E%3C/svg%3E');"></div>
+            <div style="position:relative;z-index:1;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.6);">Good morning</div>
+                  <div style="font-size:22px;font-weight:700;color:white;">Satrujit</div>
+                </div>
+                <div style="width:40px;height:40px;border-radius:14px;background:rgba(255,255,255,0.15);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;font-size:13px;color:white;font-weight:700;border:1px solid rgba(255,255,255,0.2);">SR</div>
+              </div>
+              <div style="display:flex;gap:10px;">
+                <div style="background:rgba(255,255,255,0.12);backdrop-filter:blur(10px);border-radius:14px;padding:12px;flex:1;text-align:center;border:1px solid rgba(255,255,255,0.1);">
+                  <div style="font-size:22px;font-weight:800;color:white;">5</div>
+                  <div style="font-size:10px;color:rgba(255,255,255,0.7);">Today</div>
+                </div>
+                <div style="background:rgba(255,255,255,0.12);backdrop-filter:blur(10px);border-radius:14px;padding:12px;flex:1;text-align:center;border:1px solid rgba(255,255,255,0.1);">
+                  <div style="font-size:22px;font-weight:800;background:linear-gradient(135deg,#5EEAD4,#BEF264);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">3</div>
+                  <div style="font-size:10px;color:rgba(255,255,255,0.7);">Approved</div>
+                </div>
+                <div style="background:rgba(255,255,255,0.12);backdrop-filter:blur(10px);border-radius:14px;padding:12px;flex:1;text-align:center;border:1px solid rgba(255,255,255,0.1);">
+                  <div style="font-size:22px;font-weight:800;color:#FDA4AF;">1</div>
+                  <div style="font-size:10px;color:rgba(255,255,255,0.7);">Rejected</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding:16px 16px 90px;display:flex;flex-direction:column;gap:12px;margin-top:-10px;">
+            <div style="font-size:15px;font-weight:700;color:var(--neutral-800);">Recent</div>
+
+            <div style="background:white;border-radius:16px;padding:14px;box-shadow:0 2px 10px rgba(30,27,75,0.06);">
+              <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                <span class="cat cat-politics" style="font-size:9px;padding:2px 8px;border-radius:6px;">ରାଜନୀତି</span>
+                <span class="priority-badge" style="font-size:8px;padding:2px 6px;">&#11088; PRIORITY</span>
+              </div>
+              <div style="font-family:'Anek Odia';font-size:15px;font-weight:700;color:var(--neutral-800);line-height:1.4;">ମୁଖ୍ୟମନ୍ତ୍ରୀ ଆଜି କଟକ ଗସ୍ତରେ</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+                <div class="chip chip-submitted" style="font-size:10px;padding:2px 8px;"><span class="dot" style="width:6px;height:6px;"></span> Submitted</div>
+                <span style="font-size:10px;color:var(--neutral-400);">2:30 PM</span>
+              </div>
+            </div>
+
+            <div style="background:white;border-radius:16px;padding:14px;box-shadow:0 2px 10px rgba(30,27,75,0.06);">
+              <div style="margin-bottom:6px;">
+                <span class="cat cat-sports" style="font-size:9px;padding:2px 8px;border-radius:6px;">କ୍ରୀଡ଼ା</span>
+              </div>
+              <div style="font-family:'Anek Odia';font-size:15px;font-weight:700;color:var(--neutral-800);line-height:1.4;">ଓଡ଼ିଶା ଫୁଟବଲ ଦଳ ଜିତିଲା</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+                <div class="chip chip-approved" style="font-size:10px;padding:2px 8px;"><span class="dot" style="width:6px;height:6px;"></span> Approved</div>
+                <span style="font-size:10px;color:var(--neutral-400);">11:15 AM</span>
+              </div>
+            </div>
+
+            <div style="background:white;border-radius:16px;padding:14px;box-shadow:0 2px 10px rgba(30,27,75,0.06);border-left:3px solid var(--error);">
+              <div style="margin-bottom:6px;">
+                <span class="cat cat-crime" style="font-size:9px;padding:2px 8px;border-radius:6px;">ଅପରାଧ</span>
+              </div>
+              <div style="font-family:'Anek Odia';font-size:15px;font-weight:700;color:var(--neutral-800);line-height:1.4;">ବ୍ରହ୍ମପୁରରେ ଲୁଟ ଘଟଣା</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+                <div class="chip chip-rejected" style="font-size:10px;padding:2px 8px;"><span class="dot" style="width:6px;height:6px;"></span> Rejected</div>
+                <span style="font-size:10px;color:var(--error);">Needs details</span>
+              </div>
+            </div>
+
+            <div style="background:white;border-radius:16px;padding:14px;box-shadow:0 2px 10px rgba(30,27,75,0.06);border:1.5px dashed var(--neutral-300);">
+              <div style="margin-bottom:6px;">
+                <span class="cat cat-business" style="font-size:9px;padding:2px 8px;border-radius:6px;">ବ୍ୟବସାୟ</span>
+              </div>
+              <div style="font-family:'Anek Odia';font-size:15px;font-weight:700;color:var(--neutral-400);line-height:1.4;">ନୂଆ IT ପାର୍କ ପ୍ରସ୍ତାବ...</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+                <div class="chip chip-draft" style="font-size:10px;padding:2px 8px;"><span class="dot" style="width:6px;height:6px;"></span> Draft</div>
+                <span style="font-size:10px;color:var(--neutral-400);">In progress</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="mobile-nav">
+          <div class="nav-item active"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>Home</div>
+          <div class="nav-item"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14,2 14,8 20,8"/></svg>My News</div>
+          <div class="nav-item"><div class="nav-fab">+</div></div>
+          <div class="nav-item"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Alerts</div>
+          <div class="nav-item"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Profile</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dictation Screen -->
+    <div>
+      <div style="text-align:center;margin-bottom:16px;font-size:13px;font-weight:600;color:var(--neutral-400);text-transform:uppercase;letter-spacing:1px;">Voice Dictation</div>
+      <div class="mobile-frame">
+        <div class="mobile-notch"></div>
+        <div class="mobile-screen" style="background:linear-gradient(180deg, var(--indigo-50) 0%, white 50%);">
+          <div style="padding:44px 20px 20px;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-600)" stroke-width="2"><path d="m12 19-7-7 7-7"/></svg>
+              <span style="font-size:16px;font-weight:700;color:var(--neutral-800);">New News</span>
+              <div style="margin-left:auto;display:flex;gap:4px;">
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--indigo-500);"></div>
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--neutral-300);"></div>
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--neutral-300);"></div>
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--neutral-300);"></div>
+              </div>
+            </div>
+
+            <div style="text-align:center;margin-bottom:20px;">
+              <div style="font-size:18px;font-weight:700;color:var(--neutral-800);">Dictate Your News</div>
+              <div style="font-size:14px;color:var(--neutral-500);font-family:'Noto Sans Oriya';margin-top:4px;">ଓଡ଼ିଆରେ କହନ୍ତୁ, AI ଲେଖିବ</div>
+            </div>
+
+            <div style="text-align:center;margin:28px 0;">
+              <div class="voice-container">
+                <button class="voice-btn voice-rec" style="width:88px;height:88px;">
+                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                </button>
+                <span class="voice-label" style="color:var(--coral-500);font-weight:700;font-size:15px;">Recording... 0:12</span>
+              </div>
+            </div>
+
+            <div style="background:white;border-radius:18px;padding:18px;box-shadow:0 4px 20px rgba(30,27,75,0.08);margin-top:20px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <span style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--neutral-400);">TRANSCRIBED</span>
+                <span style="font-size:11px;color:var(--teal-500);font-weight:600;">Live &#9679;</span>
+              </div>
+              <div style="font-family:'Noto Sans Oriya';font-size:16px;line-height:1.7;color:var(--neutral-700);">
+                ଓଡ଼ିଶାର ମୁଖ୍ୟମନ୍ତ୍ରୀ ଆଜି କଟକ ଜିଲ୍ଲା ଗସ୍ତରେ ଆସିଛନ୍ତି। ସେ ବିଭିନ୍ନ ଉନ୍ନୟନ ପ୍ରକଳ୍ପର ଶୁଭାରମ୍ଭ କରିବେ...
+              </div>
+              <div style="border-top:1px solid var(--neutral-100);margin-top:14px;padding-top:12px;display:flex;gap:6px;">
+                <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px;border-radius:10px;">&#9998; Edit</button>
+                <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px;border-radius:10px;background:var(--indigo-50);color:var(--indigo-600);">&#10024; Rephrase</button>
+                <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px;border-radius:10px;">&#128264; Listen</button>
+                <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px;border-radius:10px;">&#127760; Translate</button>
+              </div>
+            </div>
+
+            <div style="margin-top:20px;">
+              <button class="btn btn-primary" style="width:100%;justify-content:center;border-radius:16px;padding:16px;">Continue to Details &rarr;</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- Footer -->
+<div style="text-align:center;padding:48px 24px;position:relative;overflow:hidden;" class="ikat-pattern">
+  <div style="position:relative;z-index:1;">
+    <div style="font-size:28px;font-weight:800;color:white;margin-bottom:4px;">News<span style="background:linear-gradient(135deg,#5EEAD4,#BEF264);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Flow</span></div>
+    <div style="color:rgba(255,255,255,0.5);font-size:14px;">Design System v2.0 &middot; February 2026</div>
+    <div style="color:rgba(255,255,255,0.4);font-size:13px;margin-top:2px;">Multi-Hue Gradients + Sambalpuri Heritage + Flutter</div>
+  </div>
+</div>
+
+</body>
+</html>
