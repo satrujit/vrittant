@@ -1,0 +1,397 @@
+/* ============================================================
+   LoginPage — Split-panel brand + form layout
+   ============================================================ */
+
+.page {
+  display: flex;
+  min-height: 100vh;
+  font-family: var(--vr-font-sans);
+}
+
+/* ── Left Brand Panel ── */
+
+.brandPanel {
+  position: relative;
+  width: 42%;
+  min-height: 100vh;
+  background: var(--vr-coral);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: var(--vr-space-2xl);
+}
+
+/* Large tilted V watermark */
+.watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-15deg);
+  width: 420px;
+  height: 420px;
+  opacity: 0.12;
+  pointer-events: none;
+}
+
+/* Centered logo + tagline */
+.brandContent {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--vr-space-xl);
+}
+
+.brandLogo {
+  width: 80px;
+  height: auto;
+}
+
+.tagline {
+  font-size: var(--vr-text-xl);
+  font-weight: var(--vr-weight-bold);
+  color: #fff;
+  text-align: center;
+  line-height: var(--vr-leading-tight);
+  max-width: 280px;
+}
+
+.subtitle {
+  font-size: var(--vr-text-sm);
+  color: rgba(255, 255, 255, 0.75);
+  text-align: center;
+  max-width: 260px;
+  line-height: var(--vr-leading-normal);
+}
+
+/* ── Right Form Panel ── */
+
+.formPanel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vr-bg);
+  padding: var(--vr-space-2xl);
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--vr-card-bg);
+  border-radius: var(--vr-radius-lg);
+  box-shadow: var(--vr-shadow-lg);
+  padding: var(--vr-space-3xl) var(--vr-space-2xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--vr-space-xl);
+}
+
+/* ── Vrittant Wordmark (top of card) ── */
+
+.wordmark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  margin-bottom: var(--vr-space-sm);
+}
+
+.wordmarkLogo {
+  width: 168px;
+  height: auto;
+  margin-bottom: -18px;
+  position: relative;
+  z-index: 1;
+}
+
+.wordmarkTextRow {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+}
+
+.wordmarkV {
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: var(--vr-coral);
+  font-style: italic;
+  line-height: 1;
+  letter-spacing: -2px;
+}
+
+.wordmarkText {
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: var(--vr-heading);
+  line-height: 1;
+  letter-spacing: -1.5px;
+}
+
+/* ── Title ── */
+
+.title {
+  font-family: var(--vr-font-display, var(--vr-font-sans));
+  font-size: var(--vr-text-2xl);
+  font-weight: var(--vr-weight-bold);
+  color: var(--vr-heading);
+  margin: 0;
+}
+
+.subtitleText {
+  font-size: var(--vr-text-sm);
+  color: var(--vr-section);
+  margin: -12px 0 0;
+  line-height: var(--vr-leading-normal);
+}
+
+/* ── Phone masked display (OTP step) ── */
+
+.phoneMasked {
+  font-size: var(--vr-text-sm);
+  color: var(--vr-body);
+  margin: -12px 0 0;
+}
+
+.phoneMasked strong {
+  font-weight: var(--vr-weight-semibold);
+}
+
+/* ── Form ── */
+
+.form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--vr-space-lg);
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vr-space-xs);
+}
+
+.label {
+  font-size: var(--vr-text-sm);
+  font-weight: var(--vr-weight-semibold);
+  color: var(--vr-heading);
+}
+
+/* Phone input with prefix */
+.phoneInputWrap {
+  display: flex;
+  align-items: center;
+  background: var(--vr-bg);
+  border: 1px solid var(--vr-border);
+  border-radius: var(--vr-radius-md);
+  overflow: hidden;
+  transition: border-color var(--vr-transition-fast);
+}
+
+.phoneInputWrap:focus-within {
+  border-color: var(--vr-coral);
+  box-shadow: 0 0 0 3px rgba(250, 108, 56, 0.12);
+}
+
+.phonePrefix {
+  padding: var(--vr-space-sm) var(--vr-space-md);
+  font-size: var(--vr-text-base);
+  font-family: var(--vr-font-sans);
+  color: var(--vr-section);
+  border-right: 1px solid var(--vr-border);
+  background: transparent;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.phoneInput {
+  flex: 1;
+  padding: var(--vr-space-sm) var(--vr-space-md);
+  font-size: var(--vr-text-base);
+  font-family: var(--vr-font-sans);
+  color: var(--vr-heading);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.phoneInput::placeholder {
+  color: var(--vr-muted);
+}
+
+/* ── 6-Box OTP Input ── */
+
+.otpGrid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+}
+
+.otpBox {
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 52px;
+  font-size: 1.25rem;
+  font-weight: var(--vr-weight-semibold);
+  font-family: var(--vr-font-sans);
+  text-align: center;
+  color: var(--vr-heading);
+  background: var(--vr-bg);
+  border: 1.5px solid var(--vr-border);
+  border-radius: var(--vr-radius-md);
+  outline: none;
+  transition: border-color var(--vr-transition-fast);
+}
+
+.otpBox:focus {
+  border-color: var(--vr-coral);
+  box-shadow: 0 0 0 3px rgba(250, 108, 56, 0.12);
+}
+
+.otpBox::placeholder {
+  color: var(--vr-muted);
+  font-size: 1.5rem;
+}
+
+/* ── Primary Button ── */
+
+.primaryBtn {
+  width: 100%;
+  padding: 14px var(--vr-space-lg);
+  font-size: var(--vr-text-base);
+  font-weight: var(--vr-weight-semibold);
+  font-family: var(--vr-font-sans);
+  color: #fff;
+  background: var(--vr-coral);
+  border: none;
+  border-radius: var(--vr-radius-full);
+  cursor: pointer;
+  transition: opacity var(--vr-transition-fast), transform var(--vr-transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vr-space-sm);
+}
+
+.primaryBtn:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.primaryBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btnIcon {
+  width: 18px;
+  height: 18px;
+}
+
+/* ── Links ── */
+
+.resendRow {
+  text-align: center;
+  font-size: var(--vr-text-sm);
+  color: var(--vr-section);
+}
+
+.resendLink {
+  background: none;
+  border: none;
+  color: var(--vr-coral);
+  font-size: var(--vr-text-sm);
+  font-weight: var(--vr-weight-semibold);
+  font-family: var(--vr-font-sans);
+  cursor: pointer;
+  padding: 0;
+}
+
+.resendLink:hover {
+  text-decoration: underline;
+}
+
+.backLink {
+  display: block;
+  text-align: center;
+  background: none;
+  border: none;
+  color: var(--vr-section);
+  font-size: var(--vr-text-sm);
+  font-family: var(--vr-font-sans);
+  cursor: pointer;
+  padding: var(--vr-space-xs) 0;
+  margin-top: var(--vr-space-xs);
+}
+
+.backLink:hover {
+  color: var(--vr-coral);
+}
+
+/* ── Terms ── */
+
+.terms {
+  text-align: center;
+  font-size: var(--vr-text-xs);
+  color: var(--vr-muted);
+  line-height: var(--vr-leading-relaxed);
+}
+
+.terms strong {
+  font-weight: var(--vr-weight-semibold);
+  color: var(--vr-body);
+}
+
+/* ── Error message ── */
+
+.error {
+  width: 100%;
+  text-align: center;
+  font-size: var(--vr-text-sm);
+  color: #dc2626;
+  margin: 0;
+  padding: var(--vr-space-xs) var(--vr-space-sm);
+  background: #fef2f2;
+  border-radius: var(--vr-radius-md);
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 768px) {
+  .page {
+    flex-direction: column;
+  }
+
+  .brandPanel {
+    width: 100%;
+    min-height: 240px;
+    padding: var(--vr-space-xl);
+  }
+
+  .watermark {
+    width: 260px;
+    height: 260px;
+  }
+
+  .tagline {
+    font-size: var(--vr-text-lg);
+  }
+
+  .brandLogo {
+    width: 56px;
+  }
+
+  .formPanel {
+    padding: var(--vr-space-lg);
+  }
+
+  .card {
+    padding: var(--vr-space-xl) var(--vr-space-lg);
+    box-shadow: none;
+    background: transparent;
+  }
+}

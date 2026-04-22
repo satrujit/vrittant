@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NewsFlow Pattern Collection</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: #0F0A2E; color: white; }
+
+  .hero {
+    text-align: center; padding: 80px 24px 40px;
+    background: linear-gradient(180deg, #1E1B4B 0%, #0F0A2E 100%);
+  }
+  .hero h1 { font-size: 48px; font-weight: 800; letter-spacing: -1.5px; }
+  .hero h1 span { background: linear-gradient(135deg, #5EEAD4, #BEF264); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero p { color: rgba(255,255,255,0.5); font-size: 16px; margin-top: 8px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 24px;
+    padding: 40px 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  .pattern-card {
+    border-radius: 28px;
+    overflow: hidden;
+    position: relative;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: flex-end;
+    padding: 24px;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    cursor: default;
+  }
+  .pattern-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+  }
+  .pattern-info {
+    position: relative; z-index: 10;
+    background: rgba(0,0,0,0.35);
+    backdrop-filter: blur(16px);
+    border-radius: 16px;
+    padding: 16px 20px;
+    width: 100%;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .pattern-info h3 { font-size: 18px; font-weight: 700; margin-bottom: 2px; }
+  .pattern-info p { font-size: 12px; color: rgba(255,255,255,0.6); }
+  .pattern-info .usage { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* ====================================================
+     PATTERN 1: Blooming Lotus (Concentric Petals)
+     Inspired by: Blue concentric flower image
+     ==================================================== */
+  .pat-lotus {
+    background: #F5F0EB;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .lotus-bloom {
+    position: absolute;
+    width: 80%;
+    aspect-ratio: 1;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .lotus-petal {
+    position: absolute;
+    inset: 0;
+    border-radius: 40% 40% 40% 40%;
+    animation: lotusBreath 6s ease-in-out infinite;
+  }
+  .lotus-petal:nth-child(1) { background: #C5E8F7; transform: scale(1); animation-delay: 0s; }
+  .lotus-petal:nth-child(2) { background: #8DD0EE; transform: scale(0.87); animation-delay: 0.1s; }
+  .lotus-petal:nth-child(3) { background: #5BB8E5; transform: scale(0.74); animation-delay: 0.2s; }
+  .lotus-petal:nth-child(4) { background: #3AA0DC; transform: scale(0.61); animation-delay: 0.3s; }
+  .lotus-petal:nth-child(5) { background: #2088CC; transform: scale(0.48); animation-delay: 0.4s; }
+  .lotus-petal:nth-child(6) { background: #1270B5; transform: scale(0.35); animation-delay: 0.5s; }
+  .lotus-petal:nth-child(7) { background: #0A5A9E; transform: scale(0.22); animation-delay: 0.6s; }
+  @keyframes lotusBreath {
+    0%, 100% { transform: scale(var(--s, 1)); }
+    50% { transform: scale(calc(var(--s, 1) * 1.03)); }
+  }
+
+  /* ====================================================
+     PATTERN 2: Teal Mandala (Overlapping Circles)
+     Inspired by: Dark teal overlapping circles image
+     ==================================================== */
+  .pat-mandala {
+    background: #0A1F2E;
+    overflow: hidden;
+  }
+  .mandala-center {
+    position: absolute;
+    width: 300px; height: 300px;
+    right: -30px; top: 50%; transform: translateY(-50%);
+  }
+  .mandala-circle {
+    position: absolute;
+    width: 200px; height: 200px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(14,165,155,0.5) 0%, rgba(14,165,155,0.1) 70%, transparent 100%);
+    transform-origin: 50% 100%;
+  }
+  .mandala-circle:nth-child(1) { transform: rotate(0deg) translateY(-80px); }
+  .mandala-circle:nth-child(2) { transform: rotate(30deg) translateY(-80px); }
+  .mandala-circle:nth-child(3) { transform: rotate(60deg) translateY(-80px); }
+  .mandala-circle:nth-child(4) { transform: rotate(90deg) translateY(-80px); }
+  .mandala-circle:nth-child(5) { transform: rotate(120deg) translateY(-80px); }
+  .mandala-circle:nth-child(6) { transform: rotate(150deg) translateY(-80px); }
+  .mandala-circle:nth-child(7) { transform: rotate(180deg) translateY(-80px); }
+  .mandala-circle:nth-child(8) { transform: rotate(210deg) translateY(-80px); }
+  .mandala-circle:nth-child(9) { transform: rotate(240deg) translateY(-80px); }
+  .mandala-circle:nth-child(10) { transform: rotate(270deg) translateY(-80px); }
+  .mandala-circle:nth-child(11) { transform: rotate(300deg) translateY(-80px); }
+  .mandala-circle:nth-child(12) { transform: rotate(330deg) translateY(-80px); }
+
+  /* ====================================================
+     PATTERN 3: Sunrise Rosette (Multi-color petals)
+     Inspired by: Pink/orange/purple/blue flower image
+     ==================================================== */
+  .pat-rosette {
+    background: linear-gradient(180deg, #FF4D6A 0%, #FF8C42 40%, #FFCC33 100%);
+    overflow: hidden;
+  }
+  .rosette-wrap {
+    position: absolute;
+    width: 400px; height: 400px;
+    top: 10%; right: -10%;
+  }
+  .rosette-petal {
+    position: absolute;
+    width: 180px; height: 180px;
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    margin-left: -90px; margin-top: -90px;
+    transform-origin: 50% 50%;
+    mix-blend-mode: multiply;
+    opacity: 0.7;
+    animation: rosetteRotate 20s linear infinite;
+  }
+  .rosette-petal:nth-child(1) { background: rgba(255,77,106,0.6); transform: translate(0, -60px); }
+  .rosette-petal:nth-child(2) { background: rgba(168,85,247,0.6); transform: translate(52px, -30px); }
+  .rosette-petal:nth-child(3) { background: rgba(99,102,241,0.6); transform: translate(52px, 30px); }
+  .rosette-petal:nth-child(4) { background: rgba(59,130,246,0.6); transform: translate(0, 60px); }
+  .rosette-petal:nth-child(5) { background: rgba(94,234,212,0.5); transform: translate(-52px, 30px); }
+  .rosette-petal:nth-child(6) { background: rgba(255,200,51,0.5); transform: translate(-52px, -30px); }
+  /* Inner glow */
+  .rosette-core {
+    position: absolute;
+    width: 100px; height: 100px;
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    margin-left: -50px; margin-top: -50px;
+    background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(200,230,255,0.5) 50%, transparent 100%);
+  }
+  @keyframes rosetteRotate { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+  /* ====================================================
+     PATTERN 4: Sambalpuri Ikat Weave
+     ==================================================== */
+  .pat-ikat {
+    background-color: #1E1B4B;
+    background-image:
+      url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='1.2' opacity='0.15'%3E%3Crect x='4' y='4' width='16' height='32' rx='1'/%3E%3Crect x='24' y='4' width='32' height='16' rx='1'/%3E%3Crect x='60' y='4' width='16' height='32' rx='1'/%3E%3Crect x='4' y='40' width='32' height='16' rx='1'/%3E%3Crect x='24' y='60' width='16' height='16' rx='1'/%3E%3Crect x='44' y='24' width='16' height='16' rx='1'/%3E%3Crect x='44' y='44' width='32' height='16' rx='1'/%3E%3Crect x='60' y='60' width='16' height='16' rx='1'/%3E%3Cline x1='8' y1='10' x2='16' y2='10'/%3E%3Cline x1='8' y1='16' x2='16' y2='16'/%3E%3Cline x1='8' y1='22' x2='16' y2='22'/%3E%3Cline x1='64' y1='10' x2='72' y2='10'/%3E%3Cline x1='64' y1='16' x2='72' y2='16'/%3E%3Cline x1='30' y1='8' x2='30' y2='16'/%3E%3Cline x1='36' y1='8' x2='36' y2='16'/%3E%3Cline x1='42' y1='8' x2='42' y2='16'/%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  /* ====================================================
+     PATTERN 5: Gradient Mesh Orbs
+     ==================================================== */
+  .pat-mesh {
+    background: #0F0A2E;
+    overflow: hidden;
+  }
+  .mesh-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(40px);
+    animation: orbFloat 8s ease-in-out infinite;
+  }
+  .mesh-orb:nth-child(1) { width: 250px; height: 250px; background: rgba(99,102,241,0.5); top: -20%; left: -10%; animation-delay: 0s; }
+  .mesh-orb:nth-child(2) { width: 200px; height: 200px; background: rgba(20,184,166,0.4); top: 40%; right: -5%; animation-delay: 2s; }
+  .mesh-orb:nth-child(3) { width: 180px; height: 180px; background: rgba(244,63,94,0.35); bottom: -10%; left: 20%; animation-delay: 4s; }
+  .mesh-orb:nth-child(4) { width: 150px; height: 150px; background: rgba(190,242,100,0.3); top: 10%; right: 30%; animation-delay: 1s; }
+  @keyframes orbFloat {
+    0%, 100% { transform: translate(0, 0); }
+    33% { transform: translate(15px, -20px); }
+    66% { transform: translate(-10px, 15px); }
+  }
+
+  /* ====================================================
+     PATTERN 6: Concentric Rings
+     ==================================================== */
+  .pat-rings {
+    background: linear-gradient(135deg, #004B3D 0%, #0D9488 50%, #5EEAD4 100%);
+    overflow: hidden;
+  }
+  .ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.12);
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    animation: ringPulse 4s ease-in-out infinite;
+  }
+  .ring:nth-child(1) { width: 60px; height: 60px; animation-delay: 0s; }
+  .ring:nth-child(2) { width: 120px; height: 120px; animation-delay: 0.2s; }
+  .ring:nth-child(3) { width: 180px; height: 180px; animation-delay: 0.4s; }
+  .ring:nth-child(4) { width: 240px; height: 240px; animation-delay: 0.6s; }
+  .ring:nth-child(5) { width: 300px; height: 300px; animation-delay: 0.8s; }
+  .ring:nth-child(6) { width: 360px; height: 360px; animation-delay: 1s; }
+  .ring:nth-child(7) { width: 420px; height: 420px; animation-delay: 1.2s; }
+  .ring:nth-child(8) { width: 480px; height: 480px; animation-delay: 1.4s; }
+  @keyframes ringPulse {
+    0%, 100% { opacity: 0.15; transform: translate(-50%, -50%) scale(1); }
+    50% { opacity: 0.3; transform: translate(-50%, -50%) scale(1.03); }
+  }
+
+  /* ====================================================
+     PATTERN 7: Petal Burst (Radiating petals)
+     Inspired by: Teal radiating petal image
+     ==================================================== */
+  .pat-petalburst {
+    background: #000;
+    overflow: hidden;
+  }
+  .petalburst-wrap {
+    position: absolute;
+    width: 350px; height: 350px;
+    bottom: -15%; right: -5%;
+  }
+  .pb-petal {
+    position: absolute;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    bottom: 0; right: 0;
+    transform-origin: 0% 100%;
+    background: radial-gradient(ellipse, rgba(14,165,155,0.6) 0%, rgba(14,165,155,0.1) 70%, transparent 100%);
+  }
+  .pb-petal:nth-child(1) { transform: rotate(0deg) translate(0, -100px); }
+  .pb-petal:nth-child(2) { transform: rotate(24deg) translate(0, -100px); }
+  .pb-petal:nth-child(3) { transform: rotate(48deg) translate(0, -100px); }
+  .pb-petal:nth-child(4) { transform: rotate(72deg) translate(0, -100px); }
+  .pb-petal:nth-child(5) { transform: rotate(96deg) translate(0, -100px); }
+  .pb-petal:nth-child(6) { transform: rotate(120deg) translate(0, -100px); }
+  .pb-petal:nth-child(7) { transform: rotate(144deg) translate(0, -100px); }
+  .pb-petal:nth-child(8) { transform: rotate(168deg) translate(0, -100px); }
+  .pb-petal:nth-child(9) { transform: rotate(192deg) translate(0, -100px); }
+  .pb-petal:nth-child(10) { transform: rotate(216deg) translate(0, -100px); }
+  .pb-petal:nth-child(11) { transform: rotate(240deg) translate(0, -100px); }
+  .pb-petal:nth-child(12) { transform: rotate(264deg) translate(0, -100px); }
+  .pb-petal:nth-child(13) { transform: rotate(288deg) translate(0, -100px); }
+  .pb-petal:nth-child(14) { transform: rotate(312deg) translate(0, -100px); }
+  .pb-petal:nth-child(15) { transform: rotate(336deg) translate(0, -100px); }
+
+  /* ====================================================
+     PATTERN 8: Coral Wave Layers
+     ==================================================== */
+  .pat-waves {
+    background: linear-gradient(180deg, #FF5733 0%, #FB7185 50%, #FFE4E6 100%);
+    overflow: hidden;
+  }
+  .wave-layer {
+    position: absolute;
+    left: -10%;
+    width: 120%;
+    height: 80px;
+    border-radius: 50%;
+    animation: waveFloat 6s ease-in-out infinite;
+  }
+  .wave-layer:nth-child(1) { bottom: 60%; background: rgba(255,255,255,0.08); animation-delay: 0s; }
+  .wave-layer:nth-child(2) { bottom: 50%; background: rgba(255,255,255,0.06); animation-delay: 0.5s; }
+  .wave-layer:nth-child(3) { bottom: 40%; background: rgba(255,255,255,0.10); animation-delay: 1s; }
+  .wave-layer:nth-child(4) { bottom: 30%; background: rgba(255,255,255,0.07); animation-delay: 1.5s; }
+  .wave-layer:nth-child(5) { bottom: 20%; background: rgba(255,255,255,0.05); animation-delay: 2s; }
+  @keyframes waveFloat {
+    0%, 100% { transform: translateX(0) scaleY(1); }
+    50% { transform: translateX(3%) scaleY(1.3); }
+  }
+
+  /* ====================================================
+     PATTERN 9: Gold Diamond Lattice
+     ==================================================== */
+  .pat-lattice {
+    background: #1E1B4B;
+    background-image:
+      url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23FBBF24' stroke-width='0.6' opacity='0.2'%3E%3Cpath d='M20 0L40 20L20 40L0 20Z'/%3E%3Cpath d='M20 8L32 20L20 32L8 20Z'/%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  /* ====================================================
+     PATTERN 10: Lavender Aurora
+     ==================================================== */
+  .pat-aurora {
+    background: #1a0a30;
+    overflow: hidden;
+  }
+  .aurora-band {
+    position: absolute;
+    width: 150%;
+    height: 120px;
+    left: -25%;
+    border-radius: 50%;
+    filter: blur(30px);
+    animation: auroraShimmer 8s ease-in-out infinite;
+  }
+  .aurora-band:nth-child(1) { top: 15%; background: rgba(168,85,247,0.3); animation-delay: 0s; }
+  .aurora-band:nth-child(2) { top: 30%; background: rgba(99,102,241,0.25); animation-delay: 1s; }
+  .aurora-band:nth-child(3) { top: 45%; background: rgba(244,63,94,0.2); animation-delay: 2s; }
+  .aurora-band:nth-child(4) { top: 60%; background: rgba(14,184,166,0.2); animation-delay: 3s; }
+  @keyframes auroraShimmer {
+    0%, 100% { transform: translateX(0) scaleY(1); opacity: 0.6; }
+    50% { transform: translateX(5%) scaleY(1.5); opacity: 1; }
+  }
+
+  /* ====================================================
+     PATTERN 11: Dot Matrix
+     ==================================================== */
+  .pat-dots {
+    background: linear-gradient(135deg, #004B3D, #0D9488);
+    background-image:
+      url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='10' cy='10' r='1.5' fill='%23ffffff' opacity='0.15'/%3E%3C/svg%3E");
+  }
+
+  /* ====================================================
+     PATTERN 12: Sunrise Bloom (Full multi-color petals)
+     ==================================================== */
+  .pat-sunrise-bloom {
+    background: #FFF5F0;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sb-wrap {
+    position: absolute;
+    width: 320px; height: 320px;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    animation: sbSpin 30s linear infinite;
+  }
+  .sb-petal {
+    position: absolute;
+    width: 140px; height: 140px;
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    margin-left: -70px; margin-top: -70px;
+    mix-blend-mode: multiply;
+    opacity: 0.55;
+  }
+  .sb-petal:nth-child(1) { background: #FF9A85; transform: translate(0, -55px); }
+  .sb-petal:nth-child(2) { background: #FB7185; transform: translate(47px, -27px); }
+  .sb-petal:nth-child(3) { background: #C084FC; transform: translate(47px, 27px); }
+  .sb-petal:nth-child(4) { background: #818CF8; transform: translate(0, 55px); }
+  .sb-petal:nth-child(5) { background: #5EEAD4; transform: translate(-47px, 27px); }
+  .sb-petal:nth-child(6) { background: #BEF264; transform: translate(-47px, -27px); }
+  .sb-core {
+    position: absolute;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    margin-left: -40px; margin-top: -40px;
+    background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.3) 70%, transparent 100%);
+    z-index: 2;
+  }
+  @keyframes sbSpin { 0% { transform: translate(-50%, -50%) rotate(0deg); } 100% { transform: translate(-50%, -50%) rotate(360deg); } }
+
+  /* ====================================================
+     PATTERN 13: Ikat Stripe (Horizontal variant)
+     ==================================================== */
+  .pat-ikat-stripe {
+    background: #004B3D;
+    background-image:
+      url("data:image/svg+xml,%3Csvg width='100' height='20' viewBox='0 0 100 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' opacity='0.12'%3E%3Cline x1='0' y1='5' x2='20' y2='5' stroke-width='2' stroke-dasharray='3,4'/%3E%3Cline x1='25' y1='5' x2='45' y2='5' stroke-width='1' stroke-dasharray='2,3'/%3E%3Cline x1='50' y1='5' x2='75' y2='5' stroke-width='2' stroke-dasharray='4,3'/%3E%3Cline x1='80' y1='5' x2='100' y2='5' stroke-width='1' stroke-dasharray='2,4'/%3E%3Cline x1='0' y1='15' x2='30' y2='15' stroke-width='1' stroke-dasharray='2,3'/%3E%3Cline x1='35' y1='15' x2='65' y2='15' stroke-width='2' stroke-dasharray='3,4'/%3E%3Cline x1='70' y1='15' x2='100' y2='15' stroke-width='1' stroke-dasharray='4,3'/%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  /* ====================================================
+     PATTERN 14: Gradient Honeycomb
+     ==================================================== */
+  .pat-honeycomb {
+    background: linear-gradient(135deg, #6366F1, #A855F7);
+    background-image:
+      url("data:image/svg+xml,%3Csvg width='56' height='100' viewBox='0 0 56 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M28 66L0 50L0 16L28 0L56 16L56 50L28 66ZM28 100L0 84L0 50L28 34L56 50L56 84L28 100Z' fill='none' stroke='%23ffffff' stroke-width='0.6' opacity='0.12'/%3E%3C/svg%3E");
+  }
+
+  /* ====================================================
+     PATTERN 15: Nested Squares (Geometric)
+     ==================================================== */
+  .pat-squares {
+    background: linear-gradient(135deg, #FBBF24, #FF7A5C, #F43F5E);
+    background-image:
+      url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' opacity='0.15'%3E%3Crect x='5' y='5' width='50' height='50' rx='2'/%3E%3Crect x='12' y='12' width='36' height='36' rx='2'/%3E%3Crect x='19' y='19' width='22' height='22' rx='2'/%3E%3Crect x='26' y='26' width='8' height='8' rx='1'/%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  /* ====================================================
+     PATTERN 16: Cross Hatch Linen
+     ==================================================== */
+  .pat-linen {
+    background: #292524;
+    background-image:
+      url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' opacity='0.06'%3E%3Cline x1='0' y1='0' x2='16' y2='16'/%3E%3Cline x1='16' y1='0' x2='0' y2='16'/%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  /* Section divider */
+  .section-label {
+    text-align: center;
+    padding: 48px 24px 8px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .section-label h2 {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.3);
+  }
+
+  .footer {
+    text-align: center;
+    padding: 60px 24px;
+    color: rgba(255,255,255,0.3);
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>Pattern <span>Collection</span></h1>
+  <p>16 patterns for NewsFlow &mdash; organic blooms, ikat weaves, geometric textures &amp; ambient mesh</p>
+</div>
+
+<!-- ORGANIC BLOOMS -->
+<div class="section-label"><h2>Organic Blooms &amp; Florals</h2></div>
+<div class="grid">
+
+  <!-- 1. Blooming Lotus -->
+  <div class="pattern-card pat-lotus">
+    <div class="lotus-bloom">
+      <div class="lotus-petal" style="--s:1"></div>
+      <div class="lotus-petal" style="--s:0.87"></div>
+      <div class="lotus-petal" style="--s:0.74"></div>
+      <div class="lotus-petal" style="--s:0.61"></div>
+      <div class="lotus-petal" style="--s:0.48"></div>
+      <div class="lotus-petal" style="--s:0.35"></div>
+      <div class="lotus-petal" style="--s:0.22"></div>
+    </div>
+    <div class="pattern-info">
+      <h3>Blooming Lotus</h3>
+      <p>Concentric petal layers in ocean blues</p>
+      <div class="usage">Splash screens, onboarding</div>
+    </div>
+  </div>
+
+  <!-- 12. Sunrise Bloom -->
+  <div class="pattern-card pat-sunrise-bloom">
+    <div class="sb-wrap">
+      <div class="sb-petal"></div><div class="sb-petal"></div><div class="sb-petal"></div>
+      <div class="sb-petal"></div><div class="sb-petal"></div><div class="sb-petal"></div>
+    </div>
+    <div class="sb-core"></div>
+    <div class="pattern-info">
+      <h3>Sunrise Bloom</h3>
+      <p>All palette colors blending in a rotating flower</p>
+      <div class="usage">Hero backgrounds, loading states</div>
+    </div>
+  </div>
+
+  <!-- 3. Sunrise Rosette -->
+  <div class="pattern-card pat-rosette">
+    <div class="rosette-wrap">
+      <div class="rosette-petal"></div><div class="rosette-petal"></div><div class="rosette-petal"></div>
+      <div class="rosette-petal"></div><div class="rosette-petal"></div><div class="rosette-petal"></div>
+      <div class="rosette-core"></div>
+    </div>
+    <div class="pattern-info">
+      <h3>Sunrise Rosette</h3>
+      <p>Multi-hue overlapping circles with multiply blend</p>
+      <div class="usage">Feature cards, promotional banners</div>
+    </div>
+  </div>
+
+  <!-- 7. Petal Burst -->
+  <div class="pattern-card pat-petalburst">
+    <div class="petalburst-wrap">
+      <div class="pb-petal"></div><div class="pb-petal"></div><div class="pb-petal"></div>
+      <div class="pb-petal"></div><div class="pb-petal"></div><div class="pb-petal"></div>
+      <div class="pb-petal"></div><div class="pb-petal"></div><div class="pb-petal"></div>
+      <div class="pb-petal"></div><div class="pb-petal"></div><div class="pb-petal"></div>
+      <div class="pb-petal"></div><div class="pb-petal"></div><div class="pb-petal"></div>
+    </div>
+    <div class="pattern-info">
+      <h3>Teal Petal Burst</h3>
+      <p>Radiating translucent petals from corner</p>
+      <div class="usage">Dark mode cards, night theme</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- AMBIENT & ATMOSPHERIC -->
+<div class="section-label"><h2>Ambient &amp; Atmospheric</h2></div>
+<div class="grid">
+
+  <!-- 2. Teal Mandala -->
+  <div class="pattern-card pat-mandala">
+    <div class="mandala-center">
+      <div class="mandala-circle"></div><div class="mandala-circle"></div><div class="mandala-circle"></div>
+      <div class="mandala-circle"></div><div class="mandala-circle"></div><div class="mandala-circle"></div>
+      <div class="mandala-circle"></div><div class="mandala-circle"></div><div class="mandala-circle"></div>
+      <div class="mandala-circle"></div><div class="mandala-circle"></div><div class="mandala-circle"></div>
+    </div>
+    <div class="pattern-info">
+      <h3>Teal Mandala</h3>
+      <p>12 overlapping translucent circles</p>
+      <div class="usage">Dark headers, meditation/AI states</div>
+    </div>
+  </div>
+
+  <!-- 5. Mesh Orbs -->
+  <div class="pattern-card pat-mesh">
+    <div class="mesh-orb"></div><div class="mesh-orb"></div><div class="mesh-orb"></div><div class="mesh-orb"></div>
+    <div class="pattern-info">
+      <h3>Mesh Orbs</h3>
+      <p>Floating blurred gradient spheres</p>
+      <div class="usage">Ambient backgrounds, AI processing</div>
+    </div>
+  </div>
+
+  <!-- 10. Aurora -->
+  <div class="pattern-card pat-aurora">
+    <div class="aurora-band"></div><div class="aurora-band"></div><div class="aurora-band"></div><div class="aurora-band"></div>
+    <div class="pattern-info">
+      <h3>Lavender Aurora</h3>
+      <p>Shimmering northern lights bands</p>
+      <div class="usage">Premium cards, admin dashboard headers</div>
+    </div>
+  </div>
+
+  <!-- 6. Concentric Rings -->
+  <div class="pattern-card pat-rings">
+    <div class="ring"></div><div class="ring"></div><div class="ring"></div><div class="ring"></div>
+    <div class="ring"></div><div class="ring"></div><div class="ring"></div><div class="ring"></div>
+    <div class="pattern-info">
+      <h3>Teal Ripple</h3>
+      <p>Concentric pulsing rings on teal gradient</p>
+      <div class="usage">Recording state, voice dictation bg</div>
+    </div>
+  </div>
+
+  <!-- 8. Waves -->
+  <div class="pattern-card pat-waves">
+    <div class="wave-layer"></div><div class="wave-layer"></div><div class="wave-layer"></div>
+    <div class="wave-layer"></div><div class="wave-layer"></div>
+    <div class="pattern-info">
+      <h3>Coral Waves</h3>
+      <p>Layered translucent wave forms</p>
+      <div class="usage">Priority news headers, alerts</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- TEXTILE & GEOMETRIC -->
+<div class="section-label"><h2>Textile &amp; Geometric</h2></div>
+<div class="grid">
+
+  <!-- 4. Ikat -->
+  <div class="pattern-card pat-ikat">
+    <div class="pattern-info">
+      <h3>Sambalpuri Ikat</h3>
+      <p>Traditional Odisha handloom weave pattern</p>
+      <div class="usage">Hero sections, dark surfaces, footer</div>
+    </div>
+  </div>
+
+  <!-- 13. Ikat Stripe -->
+  <div class="pattern-card pat-ikat-stripe">
+    <div class="pattern-info">
+      <h3>Ikat Stripe</h3>
+      <p>Horizontal dashed textile lines</p>
+      <div class="usage">Section dividers, card borders</div>
+    </div>
+  </div>
+
+  <!-- 9. Gold Lattice -->
+  <div class="pattern-card pat-lattice">
+    <div class="pattern-info">
+      <h3>Gold Lattice</h3>
+      <p>Nested diamond grid in gold on indigo</p>
+      <div class="usage">Premium content, advertisement cards</div>
+    </div>
+  </div>
+
+  <!-- 14. Honeycomb -->
+  <div class="pattern-card pat-honeycomb">
+    <div class="pattern-info">
+      <h3>Violet Honeycomb</h3>
+      <p>Hexagonal grid on lavender gradient</p>
+      <div class="usage">Category headers, tech/data sections</div>
+    </div>
+  </div>
+
+  <!-- 15. Nested Squares -->
+  <div class="pattern-card pat-squares">
+    <div class="pattern-info">
+      <h3>Golden Squares</h3>
+      <p>Nested square grid on warm gradient</p>
+      <div class="usage">Business category, statistics cards</div>
+    </div>
+  </div>
+
+  <!-- 11. Dot Matrix -->
+  <div class="pattern-card pat-dots">
+    <div class="pattern-info">
+      <h3>Dot Matrix</h3>
+      <p>Clean dot grid on teal</p>
+      <div class="usage">Subtle backgrounds, data screens</div>
+    </div>
+  </div>
+
+  <!-- 16. Cross Hatch -->
+  <div class="pattern-card pat-linen">
+    <div class="pattern-info">
+      <h3>Cross Hatch</h3>
+      <p>Fine diagonal linen texture on dark stone</p>
+      <div class="usage">Neutral dark backgrounds, settings</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  <div style="font-size:24px;font-weight:800;margin-bottom:4px;">News<span style="background:linear-gradient(135deg,#5EEAD4,#BEF264);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Flow</span></div>
+  Pattern Collection &mdash; 16 CSS-only patterns for Flutter + Web
+</div>
+
+</body>
+</html>
