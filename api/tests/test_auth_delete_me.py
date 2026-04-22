@@ -67,4 +67,6 @@ def test_delete_me_preserves_stories(client, db, reporter, sample_story):
 
 def test_delete_me_requires_auth(client):
     resp = client.delete("/auth/me")
-    assert resp.status_code == 401
+    # 401 (OAuth2PasswordBearer) or 403 (HTTPBearer) depending on fastapi
+    # version — both mean "auth required", which is the contract.
+    assert resp.status_code in (401, 403)
