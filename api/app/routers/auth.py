@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -48,6 +48,53 @@ def _is_test_env() -> bool:
 
 def _expected_test_otp() -> str:
     return _TEST_OTP_CODES.get(settings.ENV, "")
+
+
+# ── Store-reviewer bypass (TEMPORARY, prod-safe) ──────────────────────────
+# Apple App Store and Google Play reviewers need a way to log in without
+# receiving a real SMS. We can't ship them a SIM, so we hard-code one
+# phone+OTP pair that short-circuits the MSG91 path even in production.
+#
+# Hard expiry kills the bypass automatically after the review window. After
+# the date below, this branch becomes a no-op and the reviewer account falls
+# back to normal MSG91 OTP flow (which won't work for them — by design).
+#
+# REMOVE THIS BLOCK once the apps are approved and live in both stores.
+_REVIEWER_PHONE = "+917362837632"
+_REVIEWER_OTP = "736826"
+_REVIEWER_BYPASS_UNTIL = date(2026, 5, 7)  # 15 days from 2026-04-22
+
+
+def _is_reviewer_bypass(phone: str) -> bool:
+    """True iff the request is for the store-reviewer phone AND the bypass
+    window is still open. Single check used by request/verify/resend."""
+    if phone != _REVIEWER_PHONE:
+        return False
+    return date.today() <= _REVIEWER_BYPASS_UNTIL
+
+
+def _ensure_reviewer_user(db: Session) -> User:
+    """Lazily create the reviewer user on first verify so we don't have to
+    ship a separate migration. Safe under concurrent calls — the unique
+    constraint on phone serialises any race."""
+    user = db.query(User).filter(User.phone == _REVIEWER_PHONE).first()
+    if user is not None:
+        # Reactivate if a previous bypass run was deactivated by tests.
+        if not user.is_active or user.deleted_at is not None:
+            user.is_active = True
+            user.deleted_at = None
+            db.commit()
+        return user
+    user = User(
+        phone=_REVIEWER_PHONE,
+        name="Store Reviewer",
+        user_type="reporter",
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 # ── OTP rate limit ─────────────────────────────────────────────────────────
@@ -130,6 +177,17 @@ def _record_otp_send(db: Session, phone: str) -> None:
 @router.post("/check-phone")
 def check_phone(body: OTPRequest, db: Session = Depends(get_db)):
     """Check if a phone number is registered. Returns widget config on success."""
+    # Store-reviewer bypass — provision on first contact and report registered.
+    if _is_reviewer_bypass(body.phone):
+        _ensure_reviewer_user(db)
+        return {
+            "registered": True,
+            "widget": {
+                "widgetId": settings.MSG91_WIDGET_ID,
+                "tokenAuth": settings.MSG91_TOKEN_AUTH,
+            },
+        }
+
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
@@ -149,6 +207,13 @@ def check_phone(body: OTPRequest, db: Session = Depends(get_db)):
 @router.post("/request-otp")
 async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
     """Send OTP for mobile clients. Provider chosen via OTP_PROVIDER env."""
+    # Store-reviewer bypass — must run BEFORE the user lookup so the reviewer
+    # account doesn't need to pre-exist. See _is_reviewer_bypass for the
+    # phone/expiry constants.
+    if _is_reviewer_bypass(body.phone):
+        _ensure_reviewer_user(db)
+        return {"message": "OTP sent (reviewer)", "phone": body.phone, "req_id": "reviewer"}
+
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
@@ -179,6 +244,19 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
 @router.post("/verify-otp", response_model=Token)
 async def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
     """Verify OTP via MSG91 and issue JWT (for mobile clients)."""
+    # Store-reviewer bypass — runs before the user lookup so the account is
+    # provisioned on first use. Wrong OTP for the reviewer phone falls
+    # through to a 401 below (without contacting MSG91).
+    if _is_reviewer_bypass(body.phone):
+        if body.otp != _REVIEWER_OTP:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="OTP verification failed",
+            )
+        user = _ensure_reviewer_user(db)
+        token = create_access_token(user.id, user.user_type)
+        return Token(access_token=token)
+
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
@@ -205,6 +283,10 @@ async def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
 @router.post("/resend-otp")
 async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
     """Resend OTP via MSG91 (for mobile clients)."""
+    # Store-reviewer bypass — never re-send via MSG91 for the reviewer phone.
+    if _is_reviewer_bypass(body.phone):
+        return {"message": "OTP resent (reviewer)", "phone": body.phone}
+
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
@@ -316,3 +398,32 @@ async def msg91_login(body: MSG91LoginRequest, db: Session = Depends(get_db)):
 def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     db.refresh(user, ["org", "entitlements"])
     return user
+
+
+# ── Account deletion (store-compliance) ──
+# App Store and Play Store both require an in-app path to delete an account.
+# We don't hard-delete because published stories stay attributed to a byline —
+# hard-deleting a reporter would orphan or falsify historical journalism.
+#
+# Instead we deactivate:
+#   - anonymise PII (name → "Former Reporter", phone → tombstone, email → null)
+#   - is_active = False, deleted_at = now
+#   - get_current_user filters on both, so the user's token is now unusable
+#   - stories and bylines remain, but now attribute to "Former Reporter"
+#
+# The phone is tombstoned (not nulled) so the unique index still holds; a future
+# signup with the same number gets a fresh user record. The tombstone format
+# `_deleted_<uuid>` can never collide with a real E.164 number.
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    import uuid as _uuid
+
+    tombstone = f"_deleted_{_uuid.uuid4().hex}"
+    user.name = "Former Reporter"
+    user.phone = tombstone
+    user.email = None
+    user.area_name = ""
+    user.is_active = False
+    user.deleted_at = now_ist()
+    db.commit()
+    return None
