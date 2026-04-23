@@ -41,7 +41,7 @@ export {
   updateStory,
   deleteStory,
   adminDeleteStory,
-  createBlankStory,
+  createStory,
   uploadStoryImage,
   fetchRelatedStories,
   reassignStory,

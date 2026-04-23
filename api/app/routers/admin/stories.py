@@ -219,37 +219,62 @@ def admin_list_stories(
 
 
 # ---------------------------------------------------------------------------
-# POST /admin/stories/create-blank  (editor creates new story from scratch)
+# POST /admin/stories  (editor saves a brand-new story for the first time)
 # ---------------------------------------------------------------------------
+#
+# Deliberately *no* "create blank" endpoint. The "+" button in the panel
+# opens an in-memory editor at /review/new. A row is only inserted once
+# the user actually saves real content. This keeps the stories table from
+# accumulating empty editor-clicked-then-abandoned drafts.
 
-class CreateBlankStoryResponse(BaseModel):
-    story_id: str
+def _has_real_content(headline: Optional[str], paragraphs: Optional[list]) -> bool:
+    if (headline or "").strip():
+        return True
+    for p in paragraphs or []:
+        item = p if isinstance(p, dict) else (p.model_dump() if hasattr(p, "model_dump") else {})
+        if (item.get("text") or "").strip():
+            return True
+        if item.get("media_path") or item.get("photo_path"):
+            return True
+    return False
 
 
-@router.post("/stories/create-blank", response_model=CreateBlankStoryResponse)
-def create_blank_story(
+@router.post("/stories", response_model=AdminStoryWithRevisionResponse)
+def create_editor_story(
+    body: AdminStoryUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_reviewer),
     org_id: str = Depends(get_current_org_id),
 ):
+    """Create a story authored from the editor.
+
+    Refuses empty payloads (HTTP 400). The frontend disables the Save
+    button until there's a headline or body, so this is mostly a
+    backstop — a clean error beats inserting another phantom row.
+    """
+    paragraphs = (
+        [p.model_dump() for p in body.paragraphs] if body.paragraphs is not None else []
+    )
+    if not _has_real_content(body.headline, paragraphs):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Story must have a headline or body content before saving.",
+        )
+
+    headline = _resolve_headline(body.headline, paragraphs, "") or ""
+
     now = now_ist()
     story = Story(
         id=str(uuid_mod.uuid4()),
         reporter_id=current_user.id,
         organization_id=org_id,
-        headline="",
-        paragraphs=[],
-        # Editor-created stories start as "draft" — invisible to the rest
-        # of the panel (the list endpoints filter `status != 'draft'`). The
-        # row only graduates to "submitted" (rendered "Reported") on the
-        # first save that contains real content; see admin_update_story.
-        # This stops orphan rows from appearing on All Stories when an
-        # editor clicks "+" but never types anything.
-        status="draft",
+        headline=headline,
+        paragraphs=paragraphs,
+        category=body.category,
+        priority=body.priority or "normal",
+        status="submitted",
         submitted_at=now,
         source="Editor Created",
-        # Auto-assign to creator — they're the one writing it, so the story
-        # shouldn't sit in an "Unassigned" state in the side panel.
         assigned_to=current_user.id,
         assigned_match_reason="manual",
         created_at=now,
@@ -257,8 +282,28 @@ def create_blank_story(
     )
     story.refresh_search_text()
     db.add(story)
+
+    # Mirror translation/social_posts onto a revision row if provided. The
+    # Story row itself carries headline/paragraphs for editor-created
+    # stories (matches the convention used in admin_update_story).
+    if body.english_translation is not None or body.social_posts is not None:
+        rev = StoryRevision(
+            story_id=story.id,
+            editor_id=current_user.id,
+            headline=headline,
+            paragraphs=paragraphs,
+            english_translation=body.english_translation,
+            social_posts=body.social_posts,
+        )
+        db.add(rev)
+
     db.commit()
-    return CreateBlankStoryResponse(story_id=story.id)
+    db.refresh(story)
+    resp = AdminStoryWithRevisionResponse.model_validate(story)
+    resp.edition_info = _get_edition_info(db, story.id)
+    resp.reviewer_name = story.reviewer.name if story.reviewer else None
+    resp.assignee_name = story.assignee.name if story.assignee else None
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -505,23 +550,6 @@ def admin_update_story(
         story.category = body.category
     if body.priority is not None:
         story.priority = body.priority
-
-    # Promote a draft to "submitted" (rendered "Reported") the first time it
-    # gains real content. Editor-created stories start as drafts so they
-    # don't pollute All Stories with empty rows; once the editor types
-    # anything we surface them in the normal pipeline.
-    if story.status == "draft":
-        has_headline = bool((story.headline or "").strip())
-        has_body = any(
-            (p or {}).get("text", "").strip()
-            or (p or {}).get("media_path")
-            or (p or {}).get("photo_path")
-            for p in (story.paragraphs or [])
-        )
-        if has_headline or has_body:
-            story.status = "submitted"
-            if story.submitted_at is None:
-                story.submitted_at = now_ist()
 
     story.updated_at = now_ist()
     story.refresh_search_text()

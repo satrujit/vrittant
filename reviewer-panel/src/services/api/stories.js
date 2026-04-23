@@ -1,6 +1,6 @@
 /**
  * Stories CRUD + semantic search + image upload + related lookups.
- * (deleteStory, createBlankStory, uploadStoryImage, fetchRelatedStories
+ * (deleteStory, createStory, uploadStoryImage, fetchRelatedStories
  * lived under unrelated comment-dividers in the legacy api.js — they are
  * stories, so they live here now.)
  */
@@ -71,8 +71,19 @@ export async function adminDeleteStory(storyId) {
   return result;
 }
 
-export async function createBlankStory() {
-  return apiPost('/admin/stories/create-blank');
+/**
+ * Create a brand-new editor-authored story (the "+" button flow).
+ *
+ * The backend rejects empty payloads with 400 — the caller (Save button)
+ * must already gate on having a headline or body, so an error here is
+ * an unexpected programmer mistake rather than a routine outcome.
+ *
+ * Returns the freshly-created story (same shape as GET /admin/stories/{id}).
+ */
+export async function createStory(payload) {
+  const result = await apiPost('/admin/stories', payload);
+  invalidateCache('/admin/stories');
+  return result;
 }
 
 export async function uploadStoryImage(storyId, file) {

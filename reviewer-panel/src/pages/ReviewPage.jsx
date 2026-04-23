@@ -37,6 +37,12 @@ function ReviewPage() {
   const docFiles = mediaFiles.filter((m) => !imageFiles.includes(m) && !audioFiles.includes(m));
   const fabIcon = useMemo(() => getFabIcon(s.voiceMode, s.hasSelection), [s.voiceMode, s.hasSelection]);
 
+  // /review/new — pre-save shell. The story isn't in the DB yet, so the
+  // side panel's settings (assignee, edition, comments) and the header's
+  // status actions (approve/reject) don't apply. Hide them; just show
+  // the editor + Save.
+  const isNew = id === 'new';
+
   if (s.loading) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
@@ -89,6 +95,7 @@ function ReviewPage() {
           handleReject={s.handleReject}
           handleStatusChange={s.handleStatusChange}
           handleSaveContent={s.handleSaveContent}
+          isNew={isNew}
         />
 
         <Tabs value={s.activeTab} onValueChange={s.setActiveTab} className="flex min-h-0 flex-1 flex-col">
@@ -158,6 +165,10 @@ function ReviewPage() {
       </div>
 
       {/* ── Right side panel: settings + assignee + comments ── */}
+      {/* Hidden in /review/new — settings/assignee/comments don't apply
+          before the story exists. They mount on the next render after
+          handleSaveContent navigates to /review/<actual-id>. */}
+      {!isNew && (
       <ReviewSidePanel
         id={id}
         story={s.story}
@@ -178,6 +189,7 @@ function ReviewPage() {
         handleAssignToEdition={s.handleAssignToEdition}
         handleRemoveFromEdition={s.handleRemoveFromEdition}
       />
+      )}
     </div>
   );
 }

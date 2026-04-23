@@ -121,6 +121,8 @@
     "changesPlaceholder": "बताएं कि संवाददाता को क्या बदलाव करने चाहिए...",
     "attachments": "संलग्नक ({count})",
     "uploadImage": "इमेज अपलोड",
+    "saveDisabledEmpty": "सेव करने के लिए शीर्षक जोड़ें",
+    "saveBeforeUpload": "इमेज जोड़ने से पहले स्टोरी सेव करें।",
     "removeAttachment": "हटाएं",
     "voiceRecording": "रिकॉर्डिंग... हिंदी में बोलें",
     "editorPlaceholder": "लिखना शुरू करें...",

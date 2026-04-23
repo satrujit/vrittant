@@ -121,6 +121,8 @@
     "changesPlaceholder": "ସାମ୍ବାଦିକ କ'ଣ ପରିବର୍ତ୍ତନ କରିବା ଉଚିତ ବର୍ଣ୍ଣନା କରନ୍ତୁ...",
     "attachments": "ସଂଲଗ୍ନ ({count})",
     "uploadImage": "ଇମେଜ ଅପଲୋଡ",
+    "saveDisabledEmpty": "ସେଭ କରିବାକୁ ଶୀର୍ଷକ ଯୋଡନ୍ତୁ",
+    "saveBeforeUpload": "ଇମେଜ ସଂଲଗ୍ନ କରିବା ପୂର୍ବରୁ ଖବର ସେଭ କରନ୍ତୁ।",
     "removeAttachment": "ହଟାନ୍ତୁ",
     "voiceRecording": "ରେକର୍ଡିଂ... ଓଡ଼ିଆରେ କୁହନ୍ତୁ",
     "editorPlaceholder": "ଲେଖିବା ଆରମ୍ଭ କରନ୍ତୁ...",

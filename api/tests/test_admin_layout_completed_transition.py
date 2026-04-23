@@ -120,27 +120,13 @@ def test_flagged_is_writable(client, db, reviewer, reporter, auth_header):
     assert story.reviewed_by == reviewer.id
 
 
-def test_create_blank_starts_as_draft(client, db, auth_header):
-    """Editor-created stories start as `draft` so empty rows that an
-    editor abandons don't leak onto the Reported queue. Promotion to
-    `submitted` happens on the first save with real content (covered by
-    the promotion tests below)."""
-    resp = client.post("/admin/stories/create-blank", headers=auth_header)
-    assert resp.status_code == 200, resp.text
-    story_id = resp.json()["story_id"]
-
-    story = db.query(Story).filter(Story.id == story_id).one()
-    assert story.status == "draft"
-
-
-def test_draft_promotes_to_submitted_on_first_real_save(client, db, auth_header):
-    """A draft created by + that gets a headline + body should appear
-    on the Reported queue after save."""
-    blank = client.post("/admin/stories/create-blank", headers=auth_header)
-    story_id = blank.json()["story_id"]
-
-    resp = client.put(
-        f"/admin/stories/{story_id}",
+def test_create_editor_story_inserts_with_content(client, db, auth_header):
+    """The editor "+" path POSTs /admin/stories on first save. A row is
+    only inserted when there's real content — no more pre-emptive empty
+    rows from a + click that gets abandoned."""
+    pre = db.query(Story).count()
+    resp = client.post(
+        "/admin/stories",
         json={
             "headline": "Real headline",
             "paragraphs": [{"id": "p1", "text": "Real body."}],
@@ -148,29 +134,30 @@ def test_draft_promotes_to_submitted_on_first_real_save(client, db, auth_header)
         headers=auth_header,
     )
     assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["headline"] == "Real headline"
+    assert body["status"] == "submitted"
+    assert db.query(Story).count() == pre + 1
 
-    db.expire_all()
-    story = db.query(Story).filter(Story.id == story_id).one()
-    assert story.status == "submitted"
-    assert story.submitted_at is not None
+
+def test_create_editor_story_rejects_empty_payload(client, db, auth_header):
+    """Empty headline + empty/whitespace body → 400, no row inserted."""
+    pre = db.query(Story).count()
+    resp = client.post(
+        "/admin/stories",
+        json={"headline": "", "paragraphs": [{"id": "p1", "text": "   "}]},
+        headers=auth_header,
+    )
+    assert resp.status_code == 400
+    assert db.query(Story).count() == pre
 
 
-def test_draft_stays_draft_when_save_has_no_content(client, db, auth_header):
-    """Saving a draft with empty headline + empty paragraphs must not
-    promote it — that's the bug the promotion logic is preventing."""
-    blank = client.post("/admin/stories/create-blank", headers=auth_header)
-    story_id = blank.json()["story_id"]
-
-    resp = client.put(
-        f"/admin/stories/{story_id}",
-        json={
-            "headline": "",
-            "paragraphs": [{"id": "p1", "text": "   "}],
-        },
+def test_create_editor_story_accepts_headline_only(client, db, auth_header):
+    """Headline alone is enough to create — body can come later."""
+    resp = client.post(
+        "/admin/stories",
+        json={"headline": "Just a headline"},
         headers=auth_header,
     )
     assert resp.status_code == 200, resp.text
-
-    db.expire_all()
-    story = db.query(Story).filter(Story.id == story_id).one()
-    assert story.status == "draft"
+    assert resp.json()["headline"] == "Just a headline"

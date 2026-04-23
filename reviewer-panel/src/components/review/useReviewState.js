@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import LinkExt from '@tiptap/extension-link';
@@ -27,6 +28,7 @@ import {
   addStoryToPage,
   removeStoryFromPage,
   uploadStoryImage,
+  createStory,
 } from '../../services/api';
 
 /**
@@ -38,6 +40,7 @@ import {
  * the future, switch to a ReviewContext at this boundary.
  */
 export function useReviewState({ id, t }) {
+  const navigate = useNavigate();
   // API data state
   const [story, setStory] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -197,8 +200,31 @@ export function useReviewState({ id, t }) {
     };
   }, [editor]);
 
-  // Fetch story on mount
+  // True when this view is for an unsaved, brand-new story (the "+" flow).
+  // No backend row exists yet — we hold all editor state in memory and
+  // only POST on the first save (see handleSaveContent below). Skips the
+  // fetchStory roundtrip and renders a minimal shell.
+  const isNew = id === 'new';
+
+  // Fetch story on mount (skipped for the unsaved /review/new view)
   useEffect(() => {
+    if (isNew) {
+      // Synthesise a story-shaped stub so downstream code doesn't have
+      // to special-case `story === null` everywhere. The real Story is
+      // created by the first save.
+      setStory({
+        id: 'new',
+        headline: '',
+        paragraphs: [],
+        mediaFiles: [],
+        status: 'draft',
+        source: 'Editor Created',
+      });
+      setStatus('draft');
+      setHeadline('');
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     fetchStory(id)
@@ -656,7 +682,15 @@ export function useReviewState({ id, t }) {
     }
   }, [id, status]);
 
-  // Save all edited content in one call
+  // Save all edited content in one call.
+  //
+  // Two modes:
+  //   - `isNew` (id === 'new'): no DB row exists yet. POST /admin/stories
+  //     to create one, then navigate to /review/<newId>. The backend
+  //     refuses an empty payload with 400 — the Save button is disabled
+  //     in the UI when both headline and body are empty, so this only
+  //     trips on a programmer mistake.
+  //   - normal: PUT /admin/stories/{id} with the diff.
   const handleSaveContent = useCallback(async () => {
     if (!story || !editor) return;
     setSaving(true);
@@ -684,6 +718,18 @@ export function useReviewState({ id, t }) {
       if (socialPosts) {
         payload.social_posts = socialPosts;
       }
+
+      if (isNew) {
+        const created = await createStory(payload);
+        if (created?.id) {
+          // Replace the /review/new entry in history so Back doesn't
+          // bounce the user back into the unsaved shell.
+          navigate(`/review/${created.id}`, { replace: true });
+        }
+        setLastSavedAt(new Date());
+        return;
+      }
+
       const updated = await updateStory(id, payload);
       // Refresh local story so subsequent saves don't re-emit stale paragraph
       // ids and the side panel reflects the latest persisted state.
@@ -697,7 +743,7 @@ export function useReviewState({ id, t }) {
     } finally {
       setSaving(false);
     }
-  }, [id, story, headline, editor, englishEditor, englishTranslation, socialPosts]);
+  }, [id, isNew, story, headline, editor, englishEditor, englishTranslation, socialPosts, navigate]);
 
   // Translate to English via Sarvam's dedicated /translate endpoint.
   // We translate headline + body separately so the headline always survives
@@ -809,6 +855,14 @@ export function useReviewState({ id, t }) {
   const handleImageUpload = useCallback(async (e) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0 || !id) return;
+    if (isNew) {
+      // No story id yet — we can't attach images until the row exists.
+      // Surface the friction inline instead of silently swallowing the
+      // upload. The Save button is what creates the story.
+      setSaveError(t('review.saveBeforeUpload', 'Save the story before attaching images.'));
+      if (imageInputRef.current) imageInputRef.current.value = '';
+      return;
+    }
     const files = Array.from(fileList);
     setUploadingImage(true);
     try {

@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,7 +48,12 @@ export default function ReviewHeader({
   handleReject,
   handleStatusChange,
   handleSaveContent,
+  isNew = false,
 }) {
+  // For the unsaved /review/new view: nothing to approve/reject yet,
+  // and Save creates the row — so it must be disabled until there's
+  // real content (matches the backend's 400-on-empty contract).
+  const hasContent = Boolean((headline || '').trim());
   const { t } = useI18n();
   const navigate = useNavigate();
 
@@ -111,17 +117,25 @@ export default function ReviewHeader({
           </Button>
 
           <Button
-            variant="outline"
+            variant={isNew ? 'default' : 'outline'}
             size="sm"
-            className="h-8 gap-1 px-3 text-xs"
+            className={cn(
+              'h-8 gap-1 px-3 text-xs',
+              isNew && 'bg-primary text-primary-foreground hover:bg-primary/90'
+            )}
             onClick={handleSaveContent}
-            disabled={saving}
+            disabled={saving || (isNew && !hasContent)}
+            title={
+              isNew && !hasContent
+                ? t('review.saveDisabledEmpty', 'Add a headline to save')
+                : undefined
+            }
           >
             {saving && <Loader2 size={12} className="animate-spin" />}
-            {t('actions.saveDraft')}
+            {isNew ? t('actions.save', 'Save') : t('actions.saveDraft')}
           </Button>
 
-          {status === 'approved' && handleStatusChange && (
+          {!isNew && status === 'approved' && handleStatusChange && (
             <Button
               variant="outline"
               size="sm"
@@ -133,6 +147,7 @@ export default function ReviewHeader({
             </Button>
           )}
 
+          {!isNew && (
           <Popover open={approveOpen} onOpenChange={setApproveOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -170,8 +185,11 @@ export default function ReviewHeader({
               </div>
             </PopoverContent>
           </Popover>
+          )}
 
           {/* Overflow menu — Reject sits here since it's less common than Approve */}
+          {!isNew && (
+          <>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -241,6 +259,8 @@ export default function ReviewHeader({
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          </>
+          )}
         </div>
       </div>
 
