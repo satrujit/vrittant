@@ -211,8 +211,13 @@ export function useReviewState({ id, t }) {
           setCategory(transformed?.category || null);
 
           const rev = transformed?.revision;
-          const activeHeadline = rev ? rev.headline : (transformed?.headline || '');
-          const activeParagraphs = rev ? rev.paragraphs : (transformed?.paragraphs || []);
+          // Prefer the revision when it has actual content. An empty
+          // revision headline (legacy rows from before headline auto-fill)
+          // should NOT mask a real story.headline that the list view shows.
+          const revHeadline = rev?.headline?.trim() ? rev.headline : '';
+          const activeHeadline = revHeadline || (transformed?.headline || '');
+          const revParagraphs = rev?.paragraphs?.length ? rev.paragraphs : null;
+          const activeParagraphs = revParagraphs || (transformed?.paragraphs || []);
 
           setHeadline(activeHeadline);
 
