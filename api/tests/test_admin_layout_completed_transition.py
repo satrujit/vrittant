@@ -120,13 +120,57 @@ def test_flagged_is_writable(client, db, reviewer, reporter, auth_header):
     assert story.reviewed_by == reviewer.id
 
 
-def test_create_blank_now_starts_as_submitted(client, db, auth_header):
-    """Editor-created stories no longer enter `in_progress` limbo —
-    they go straight onto the Reported queue."""
+def test_create_blank_starts_as_draft(client, db, auth_header):
+    """Editor-created stories start as `draft` so empty rows that an
+    editor abandons don't leak onto the Reported queue. Promotion to
+    `submitted` happens on the first save with real content (covered by
+    the promotion tests below)."""
     resp = client.post("/admin/stories/create-blank", headers=auth_header)
     assert resp.status_code == 200, resp.text
     story_id = resp.json()["story_id"]
 
     story = db.query(Story).filter(Story.id == story_id).one()
+    assert story.status == "draft"
+
+
+def test_draft_promotes_to_submitted_on_first_real_save(client, db, auth_header):
+    """A draft created by + that gets a headline + body should appear
+    on the Reported queue after save."""
+    blank = client.post("/admin/stories/create-blank", headers=auth_header)
+    story_id = blank.json()["story_id"]
+
+    resp = client.put(
+        f"/admin/stories/{story_id}",
+        json={
+            "headline": "Real headline",
+            "paragraphs": [{"id": "p1", "text": "Real body."}],
+        },
+        headers=auth_header,
+    )
+    assert resp.status_code == 200, resp.text
+
+    db.expire_all()
+    story = db.query(Story).filter(Story.id == story_id).one()
     assert story.status == "submitted"
     assert story.submitted_at is not None
+
+
+def test_draft_stays_draft_when_save_has_no_content(client, db, auth_header):
+    """Saving a draft with empty headline + empty paragraphs must not
+    promote it — that's the bug the promotion logic is preventing."""
+    blank = client.post("/admin/stories/create-blank", headers=auth_header)
+    story_id = blank.json()["story_id"]
+
+    resp = client.put(
+        f"/admin/stories/{story_id}",
+        json={
+            "headline": "",
+            "paragraphs": [{"id": "p1", "text": "   "}],
+        },
+        headers=auth_header,
+    )
+    assert resp.status_code == 200, resp.text
+
+    db.expire_all()
+    story = db.query(Story).filter(Story.id == story_id).one()
+    assert story.status == "draft"

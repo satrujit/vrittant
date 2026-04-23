@@ -28,8 +28,15 @@ if not settings.DATABASE_URL.startswith("sqlite"):
         "pool_size": 3,           # max persistent connections per instance
         "max_overflow": 2,        # allow 2 extra temporary connections
         "pool_timeout": 30,       # wait 30s for a connection before erroring
-        "pool_recycle": 300,      # recycle connections every 5 min (prevent stale)
+        # Cloud SQL kills idle TCP at ~5 min. Recycling at exactly 300 races
+        # the kill (the connection can die between pre_ping and the real
+        # query). 240 keeps us comfortably under the kill window.
+        "pool_recycle": 240,
         "pool_pre_ping": True,    # test connections before use (handles Cloud SQL restarts)
+        # LIFO so the most-recently-used connection is reused — older idle
+        # connections get a chance to age out and be recycled rather than
+        # being kept perpetually warm just below the kill threshold.
+        "pool_use_lifo": True,
     }
 
 engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, **pool_kwargs)

@@ -239,10 +239,13 @@ def create_blank_story(
         organization_id=org_id,
         headline="",
         paragraphs=[],
-        # Editor-created stories enter the workflow as "submitted" (rendered
-        # "Reported" in the UI). Same status surface as a reporter-submitted
-        # story — there's no separate "in progress" limbo any more.
-        status="submitted",
+        # Editor-created stories start as "draft" — invisible to the rest
+        # of the panel (the list endpoints filter `status != 'draft'`). The
+        # row only graduates to "submitted" (rendered "Reported") on the
+        # first save that contains real content; see admin_update_story.
+        # This stops orphan rows from appearing on All Stories when an
+        # editor clicks "+" but never types anything.
+        status="draft",
         submitted_at=now,
         source="Editor Created",
         # Auto-assign to creator — they're the one writing it, so the story
@@ -502,6 +505,23 @@ def admin_update_story(
         story.category = body.category
     if body.priority is not None:
         story.priority = body.priority
+
+    # Promote a draft to "submitted" (rendered "Reported") the first time it
+    # gains real content. Editor-created stories start as drafts so they
+    # don't pollute All Stories with empty rows; once the editor types
+    # anything we surface them in the normal pipeline.
+    if story.status == "draft":
+        has_headline = bool((story.headline or "").strip())
+        has_body = any(
+            (p or {}).get("text", "").strip()
+            or (p or {}).get("media_path")
+            or (p or {}).get("photo_path")
+            for p in (story.paragraphs or [])
+        )
+        if has_headline or has_body:
+            story.status = "submitted"
+            if story.submitted_at is None:
+                story.submitted_at = now_ist()
 
     story.updated_at = now_ist()
     story.refresh_search_text()
