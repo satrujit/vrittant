@@ -30,7 +30,18 @@ function ReviewPage() {
   const mediaFiles = s.story?.mediaFiles || [];
   const audioFiles = mediaFiles.filter((m) => m.type === 'audio' || m.url?.match(/\.(mp3|wav|m4a|ogg|aac)$/i));
   const imageFiles = mediaFiles.filter((m) => m.type === 'photo' || m.type === 'image' || m.url?.match(/\.(jpg|jpeg|png|gif|webp)$/i));
+  // Anything that isn't an image or audio is rendered as a generic
+  // "document" attachment — DOCX/PDF/PPT forwarded from WhatsApp end up
+  // here. Keeping the bucket separate from images means the photo grid
+  // doesn't try to render a thumbnail for a PDF.
+  const docFiles = mediaFiles.filter((m) => !imageFiles.includes(m) && !audioFiles.includes(m));
   const fabIcon = useMemo(() => getFabIcon(s.voiceMode, s.hasSelection), [s.voiceMode, s.hasSelection]);
+
+  // /review/new — pre-save shell. The story isn't in the DB yet, so the
+  // side panel's settings (assignee, edition, comments) and the header's
+  // status actions (approve/reject) don't apply. Hide them; just show
+  // the editor + Save.
+  const isNew = id === 'new';
 
   if (s.loading) {
     return (
@@ -84,6 +95,7 @@ function ReviewPage() {
           handleReject={s.handleReject}
           handleStatusChange={s.handleStatusChange}
           handleSaveContent={s.handleSaveContent}
+          isNew={isNew}
         />
 
         <Tabs value={s.activeTab} onValueChange={s.setActiveTab} className="flex min-h-0 flex-1 flex-col">
@@ -114,6 +126,7 @@ function ReviewPage() {
               mediaFiles={mediaFiles}
               imageFiles={imageFiles}
               audioFiles={audioFiles}
+              docFiles={docFiles}
               imageInputRef={s.imageInputRef}
               uploadingImage={s.uploadingImage}
               handleImageUpload={s.handleImageUpload}
@@ -152,6 +165,10 @@ function ReviewPage() {
       </div>
 
       {/* ── Right side panel: settings + assignee + comments ── */}
+      {/* Hidden in /review/new — settings/assignee/comments don't apply
+          before the story exists. They mount on the next render after
+          handleSaveContent navigates to /review/<actual-id>. */}
+      {!isNew && (
       <ReviewSidePanel
         id={id}
         story={s.story}
@@ -172,6 +189,7 @@ function ReviewPage() {
         handleAssignToEdition={s.handleAssignToEdition}
         handleRemoveFromEdition={s.handleRemoveFromEdition}
       />
+      )}
     </div>
   );
 }

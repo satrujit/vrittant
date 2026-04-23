@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, StatusBadge, CategoryChip, SearchBar, SearchableSelect, PageHeader } from '../components/common';
 import { formatDate, formatTimeAgo } from '../utils/helpers';
+import { assignableReviewers } from '../utils/users';
 import {
   Table,
   TableBody,
@@ -91,9 +92,7 @@ export default function AllStoriesPage() {
       .then((data) => {
         const list = data.reporters || [];
         setReporters(list);
-        setReviewers(
-          list.filter((u) => u.user_type === 'reviewer' && (u.is_active ?? true))
-        );
+        setReviewers(assignableReviewers(list));
       })
       .catch(() => {
         setReporters([]);

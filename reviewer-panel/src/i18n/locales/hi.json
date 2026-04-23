@@ -50,6 +50,7 @@
     "rejected": "अस्वीकृत",
     "flagged": "चिह्नित",
     "layoutCompleted": "लेआउट पूर्ण",
+    "layoutPlaced": "लेआउट में रखा",
     "published": "प्रकाशित",
     "draft": "ड्राफ्ट",
     "submitted": "रिपोर्ट किया गया"
@@ -98,7 +99,8 @@
     "dateLabel": "प्रस्तुत",
     "sourceLabel": "स्रोत",
     "sidePanel": {
-      "details": "विवरण"
+      "details": "विवरण",
+      "settings": "सेटिंग्स"
     },
     "comments": {
       "title": "टिप्पणियाँ",
@@ -120,6 +122,8 @@
     "changesPlaceholder": "बताएं कि संवाददाता को क्या बदलाव करने चाहिए...",
     "attachments": "संलग्नक ({count})",
     "uploadImage": "इमेज अपलोड",
+    "saveDisabledEmpty": "सेव करने के लिए शीर्षक जोड़ें",
+    "saveBeforeUpload": "इमेज जोड़ने से पहले स्टोरी सेव करें।",
     "removeAttachment": "हटाएं",
     "voiceRecording": "रिकॉर्डिंग... हिंदी में बोलें",
     "editorPlaceholder": "लिखना शुरू करें...",

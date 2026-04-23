@@ -50,6 +50,7 @@
     "rejected": "Rejected",
     "flagged": "Flagged",
     "layoutCompleted": "Layout Completed",
+    "layoutPlaced": "Layout Placed",
     "published": "Published",
     "draft": "Draft",
     "submitted": "Reported"
@@ -98,7 +99,8 @@
     "dateLabel": "Submitted",
     "sourceLabel": "Source",
     "sidePanel": {
-      "details": "Details"
+      "details": "Details",
+      "settings": "Settings"
     },
     "comments": {
       "title": "Comments",
@@ -120,6 +122,8 @@
     "changesPlaceholder": "Describe what changes the reporter should make...",
     "attachments": "Attachments ({count})",
     "uploadImage": "Upload Image",
+    "saveDisabledEmpty": "Add a headline to save",
+    "saveBeforeUpload": "Save the story before attaching images.",
     "removeAttachment": "Remove",
     "voiceRecording": "Recording... Speak in Odia",
     "editorPlaceholder": "Start writing...",

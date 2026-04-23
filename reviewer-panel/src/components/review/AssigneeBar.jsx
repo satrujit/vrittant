@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { History, Loader2, UserCircle2 } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { fetchReporters, reassignStory, getAssignmentLog } from '../../services/api';
+import { assignableReviewers } from '../../utils/users';
 import {
   Dialog,
   DialogContent,
@@ -33,12 +34,7 @@ export default function AssigneeBar({ storyId, story, setStory }) {
   // Fetch active reviewers — same derivation as AllStoriesPage.
   useEffect(() => {
     fetchReporters()
-      .then((data) => {
-        const list = data.reporters || [];
-        setReviewers(
-          list.filter((u) => u.user_type === 'reviewer' && (u.is_active ?? true))
-        );
-      })
+      .then((data) => setReviewers(assignableReviewers(data.reporters || [])))
       .catch(() => setReviewers([]));
   }, []);
 

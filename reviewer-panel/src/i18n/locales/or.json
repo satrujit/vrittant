@@ -50,6 +50,7 @@
     "rejected": "ପ୍ରତ୍ୟାଖ୍ୟାତ",
     "flagged": "ଚିହ୍ନିତ",
     "layoutCompleted": "ଲେଆଉଟ ସମ୍ପୂର୍ଣ୍ଣ",
+    "layoutPlaced": "ଲେଆଉଟରେ ସ୍ଥାନିତ",
     "published": "ପ୍ରକାଶିତ",
     "draft": "ଡ୍ରାଫ୍ଟ",
     "submitted": "ରିପୋର୍ଟ୍"
@@ -98,7 +99,8 @@
     "dateLabel": "ଦାଖଲ",
     "sourceLabel": "ଉତ୍ସ",
     "sidePanel": {
-      "details": "ବିବରଣୀ"
+      "details": "ବିବରଣୀ",
+      "settings": "ସେଟିଂସ୍"
     },
     "comments": {
       "title": "ମନ୍ତବ୍ୟ",
@@ -120,6 +122,8 @@
     "changesPlaceholder": "ସାମ୍ବାଦିକ କ'ଣ ପରିବର୍ତ୍ତନ କରିବା ଉଚିତ ବର୍ଣ୍ଣନା କରନ୍ତୁ...",
     "attachments": "ସଂଲଗ୍ନ ({count})",
     "uploadImage": "ଇମେଜ ଅପଲୋଡ",
+    "saveDisabledEmpty": "ସେଭ କରିବାକୁ ଶୀର୍ଷକ ଯୋଡନ୍ତୁ",
+    "saveBeforeUpload": "ଇମେଜ ସଂଲଗ୍ନ କରିବା ପୂର୍ବରୁ ଖବର ସେଭ କରନ୍ତୁ।",
     "removeAttachment": "ହଟାନ୍ତୁ",
     "voiceRecording": "ରେକର୍ଡିଂ... ଓଡ଼ିଆରେ କୁହନ୍ତୁ",
     "editorPlaceholder": "ଲେଖିବା ଆରମ୍ଭ କରନ୍ତୁ...",

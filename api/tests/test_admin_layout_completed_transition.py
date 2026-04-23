@@ -120,13 +120,44 @@ def test_flagged_is_writable(client, db, reviewer, reporter, auth_header):
     assert story.reviewed_by == reviewer.id
 
 
-def test_create_blank_now_starts_as_submitted(client, db, auth_header):
-    """Editor-created stories no longer enter `in_progress` limbo —
-    they go straight onto the Reported queue."""
-    resp = client.post("/admin/stories/create-blank", headers=auth_header)
+def test_create_editor_story_inserts_with_content(client, db, auth_header):
+    """The editor "+" path POSTs /admin/stories on first save. A row is
+    only inserted when there's real content — no more pre-emptive empty
+    rows from a + click that gets abandoned."""
+    pre = db.query(Story).count()
+    resp = client.post(
+        "/admin/stories",
+        json={
+            "headline": "Real headline",
+            "paragraphs": [{"id": "p1", "text": "Real body."}],
+        },
+        headers=auth_header,
+    )
     assert resp.status_code == 200, resp.text
-    story_id = resp.json()["story_id"]
+    body = resp.json()
+    assert body["headline"] == "Real headline"
+    assert body["status"] == "submitted"
+    assert db.query(Story).count() == pre + 1
 
-    story = db.query(Story).filter(Story.id == story_id).one()
-    assert story.status == "submitted"
-    assert story.submitted_at is not None
+
+def test_create_editor_story_rejects_empty_payload(client, db, auth_header):
+    """Empty headline + empty/whitespace body → 400, no row inserted."""
+    pre = db.query(Story).count()
+    resp = client.post(
+        "/admin/stories",
+        json={"headline": "", "paragraphs": [{"id": "p1", "text": "   "}]},
+        headers=auth_header,
+    )
+    assert resp.status_code == 400
+    assert db.query(Story).count() == pre
+
+
+def test_create_editor_story_accepts_headline_only(client, db, auth_header):
+    """Headline alone is enough to create — body can come later."""
+    resp = client.post(
+        "/admin/stories",
+        json={"headline": "Just a headline"},
+        headers=auth_header,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["headline"] == "Just a headline"

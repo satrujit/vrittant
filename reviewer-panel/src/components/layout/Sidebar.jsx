@@ -1,9 +1,8 @@
-import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Archive, Users, Columns3, Newspaper, LogOut, Settings, LayoutGrid, ChevronsLeft, ChevronsRight, Plus, Loader2 } from 'lucide-react';
+import { LayoutDashboard, Archive, Users, Columns3, Newspaper, LogOut, Settings, LayoutGrid, ChevronsLeft, ChevronsRight, Plus } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { useAuth } from '../../contexts/AuthContext';
-import { getInitialsFromName, getMediaUrl, createBlankStory } from '../../services/api';
+import { getInitialsFromName, getMediaUrl } from '../../services/api';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { useSidebarCollapsed } from '../../hooks/useSidebarCollapsed';
@@ -47,19 +46,13 @@ function Sidebar() {
   const navigate = useNavigate();
   const { user, logout, hasEntitlement } = useAuth();
   const [collapsed, setCollapsed] = useSidebarCollapsed();
-  const [creatingStory, setCreatingStory] = useState(false);
 
-  const handleNewStory = async () => {
-    if (creatingStory) return;
-    setCreatingStory(true);
-    try {
-      const result = await createBlankStory();
-      if (result?.story_id) navigate(`/review/${result.story_id}`);
-    } catch (err) {
-      console.error('Failed to create blank story:', err);
-    } finally {
-      setCreatingStory(false);
-    }
+  // No API call here — clicking "+" just opens an in-memory editor at
+  // /review/new. The backend row is created on the first save (see
+  // useReviewState.handleSaveContent), so an editor that abandons the
+  // tab leaves zero database rows behind.
+  const handleNewStory = () => {
+    navigate('/review/new');
   };
 
   const visibleNavItems = NAV_ITEMS.filter((item) =>
@@ -123,18 +116,13 @@ function Sidebar() {
         <button
           type="button"
           onClick={handleNewStory}
-          disabled={creatingStory}
           title={collapsed ? t('newsFeed.newStory', 'New Story') : undefined}
           className={cn(
-            'flex items-center gap-2 w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer border-none text-[0.8125rem] font-semibold disabled:opacity-60 disabled:cursor-not-allowed',
+            'flex items-center gap-2 w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer border-none text-[0.8125rem] font-semibold',
             collapsed ? 'justify-center px-0 py-2' : 'px-3 py-2'
           )}
         >
-          {creatingStory ? (
-            <Loader2 size={collapsed ? 18 : 16} className="animate-spin shrink-0" />
-          ) : (
-            <Plus size={collapsed ? 18 : 16} className="shrink-0" />
-          )}
+          <Plus size={collapsed ? 18 : 16} className="shrink-0" />
           {!collapsed && (
             <span className="whitespace-nowrap overflow-hidden text-ellipsis">
               {t('newsFeed.newStory', 'New Story')}

@@ -3,7 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../../i18n';
 import { formatDate } from '../../utils/helpers';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,7 +48,19 @@ export default function ReviewHeader({
   handleReject,
   handleStatusChange,
   handleSaveContent,
+  isNew = false,
 }) {
+  // For the unsaved /review/new view: nothing to approve/reject yet,
+  // and Save creates the row — so it must be disabled until there's
+  // real content (matches the backend's 400-on-empty contract).
+  const hasContent = Boolean((headline || '').trim());
+
+  // Approve/Reject only make sense while the story is in the review queue.
+  // Once it's approved (or beyond) the green Approve button is meaningless;
+  // once it's in any terminal state, Reject is too. Hiding them keeps the
+  // header honest about which actions actually do something.
+  const canApprove = !['approved', 'rejected', 'published', 'flagged', 'layout_completed'].includes(status);
+  const canReject = !['approved', 'rejected', 'published', 'flagged', 'layout_completed'].includes(status);
   const { t } = useI18n();
   const navigate = useNavigate();
 
@@ -103,17 +124,25 @@ export default function ReviewHeader({
           </Button>
 
           <Button
-            variant="outline"
+            variant={isNew ? 'default' : 'outline'}
             size="sm"
-            className="h-8 gap-1 px-3 text-xs"
+            className={cn(
+              'h-8 gap-1 px-3 text-xs',
+              isNew && 'bg-primary text-primary-foreground hover:bg-primary/90'
+            )}
             onClick={handleSaveContent}
-            disabled={saving}
+            disabled={saving || (isNew && !hasContent)}
+            title={
+              isNew && !hasContent
+                ? t('review.saveDisabledEmpty', 'Add a headline to save')
+                : undefined
+            }
           >
             {saving && <Loader2 size={12} className="animate-spin" />}
-            {t('actions.saveDraft')}
+            {isNew ? t('actions.save', 'Save') : t('actions.saveDraft')}
           </Button>
 
-          {status === 'approved' && handleStatusChange && (
+          {!isNew && status === 'approved' && handleStatusChange && (
             <Button
               variant="outline"
               size="sm"
@@ -125,6 +154,7 @@ export default function ReviewHeader({
             </Button>
           )}
 
+          {!isNew && canApprove && (
           <Popover open={approveOpen} onOpenChange={setApproveOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -162,8 +192,11 @@ export default function ReviewHeader({
               </div>
             </PopoverContent>
           </Popover>
+          )}
 
           {/* Overflow menu — Reject sits here since it's less common than Approve */}
+          {!isNew && canReject && (
+          <>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -191,28 +224,37 @@ export default function ReviewHeader({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Hidden anchor for the reject popover so it can position relative
-              to the overflow button cluster. We render it always-mounted but
-              triggered by the overflow menu item above. */}
-          <Popover open={rejectOpen} onOpenChange={setRejectOpen}>
-            <PopoverTrigger asChild>
-              <span className="sr-only" aria-hidden="true" />
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-64 p-3">
-              <p className="mb-2 text-xs font-medium text-foreground">
-                {t('actions.reject')}?
-              </p>
+          {/* Reject dialog — modal so it always centers on screen and is
+              keyboard-dismissable. Previously rendered as a Popover anchored
+              to a hidden span, which silently failed to position on the
+              detail view; users reported the Reject action as "not working". */}
+          <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{t('actions.reject')}</DialogTitle>
+                <DialogDescription>
+                  {t('review.rejectPlaceholder')}
+                </DialogDescription>
+              </DialogHeader>
               <textarea
-                className="mb-2 min-h-12 w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring"
+                className="min-h-24 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground outline-none focus:border-ring"
                 placeholder={t('review.rejectPlaceholder')}
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
-                rows={2}
+                rows={4}
+                autoFocus
               />
-              <div className="flex gap-1">
+              <DialogFooter className="gap-2 sm:gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRejectOpen(false)}
+                >
+                  {t('actions.cancel')}
+                </Button>
                 <Button
                   size="sm"
-                  className="flex-1 bg-red-500 text-white hover:bg-red-600"
+                  className="bg-red-500 text-white hover:bg-red-600"
                   onClick={() => {
                     handleReject();
                     setRejectOpen(false);
@@ -221,17 +263,11 @@ export default function ReviewHeader({
                 >
                   {saving ? '...' : t('actions.confirm')}
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => setRejectOpen(false)}
-                >
-                  {t('actions.cancel')}
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          </>
+          )}
         </div>
       </div>
 
