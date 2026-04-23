@@ -99,7 +99,8 @@
     "dateLabel": "ଦାଖଲ",
     "sourceLabel": "ଉତ୍ସ",
     "sidePanel": {
-      "details": "ବିବରଣୀ"
+      "details": "ବିବରଣୀ",
+      "settings": "ସେଟିଂସ୍"
     },
     "comments": {
       "title": "ମନ୍ତବ୍ୟ",

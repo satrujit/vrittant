@@ -54,6 +54,13 @@ export default function ReviewHeader({
   // and Save creates the row — so it must be disabled until there's
   // real content (matches the backend's 400-on-empty contract).
   const hasContent = Boolean((headline || '').trim());
+
+  // Approve/Reject only make sense while the story is in the review queue.
+  // Once it's approved (or beyond) the green Approve button is meaningless;
+  // once it's in any terminal state, Reject is too. Hiding them keeps the
+  // header honest about which actions actually do something.
+  const canApprove = !['approved', 'rejected', 'published', 'flagged', 'layout_completed'].includes(status);
+  const canReject = !['approved', 'rejected', 'published', 'flagged', 'layout_completed'].includes(status);
   const { t } = useI18n();
   const navigate = useNavigate();
 
@@ -147,7 +154,7 @@ export default function ReviewHeader({
             </Button>
           )}
 
-          {!isNew && (
+          {!isNew && canApprove && (
           <Popover open={approveOpen} onOpenChange={setApproveOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -188,7 +195,7 @@ export default function ReviewHeader({
           )}
 
           {/* Overflow menu — Reject sits here since it's less common than Approve */}
-          {!isNew && (
+          {!isNew && canReject && (
           <>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

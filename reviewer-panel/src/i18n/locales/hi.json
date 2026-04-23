@@ -99,7 +99,8 @@
     "dateLabel": "प्रस्तुत",
     "sourceLabel": "स्रोत",
     "sidePanel": {
-      "details": "विवरण"
+      "details": "विवरण",
+      "settings": "सेटिंग्स"
     },
     "comments": {
       "title": "टिप्पणियाँ",

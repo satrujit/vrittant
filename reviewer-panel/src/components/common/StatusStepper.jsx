@@ -39,7 +39,7 @@ export default function StatusStepper({ status, className }) {
   ];
 
   return (
-    <div className={cn('flex w-full items-start gap-1', className)}>
+    <div className={cn('flex w-full items-start gap-0.5', className)}>
       {steps.map((step, i) => {
         // A status of "approved" means the Approved step is *complete*, not
         // in-progress — so steps up to and including currentStep are done,
@@ -62,9 +62,12 @@ export default function StatusStepper({ status, className }) {
               >
                 {isDone ? <Check size={11} strokeWidth={3} /> : i + 1}
               </div>
+              {/* Labels wrap onto a second line on narrow side panels rather
+                  than truncating with an ellipsis — readability beats a
+                  single-line strip when the panel is squeezed. */}
               <span
                 className={cn(
-                  'truncate text-center text-[10px] leading-tight',
+                  'w-full break-words text-center text-[10px] leading-tight',
                   (isDone || isCurrent) ? 'text-foreground' : 'text-muted-foreground',
                 )}
                 title={step.label}

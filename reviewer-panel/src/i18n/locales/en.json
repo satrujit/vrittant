@@ -99,7 +99,8 @@
     "dateLabel": "Submitted",
     "sourceLabel": "Source",
     "sidePanel": {
-      "details": "Details"
+      "details": "Details",
+      "settings": "Settings"
     },
     "comments": {
       "title": "Comments",

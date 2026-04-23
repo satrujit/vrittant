@@ -4,6 +4,8 @@ import {
   BookOpen,
   Calendar,
   Check,
+  ChevronDown,
+  ChevronUp,
   Clock,
   ExternalLink,
   FileText,
@@ -118,6 +120,28 @@ export default function ReviewSidePanel({
   const { t } = useI18n();
   const { config, user } = useAuth();
 
+  // Collapse the settings block to give Comments full panel height. Persisted
+  // per-user because Windows laptops at 1366×768 routinely squeeze the
+  // comment column to ~5 lines; collapsing once should stick.
+  const [settingsCollapsed, setSettingsCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('reviewSidePanel.settingsCollapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleSettings = () => {
+    setSettingsCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('reviewSidePanel.settingsCollapsed', next ? '1' : '0');
+      } catch {
+        /* ignore quota / private mode */
+      }
+      return next;
+    });
+  };
+
   const priorityLevels = (config?.priority_levels || [])
     .filter((p) => p.is_active)
     .map((p) => p.key);
@@ -226,7 +250,24 @@ export default function ReviewSidePanel({
   return (
     <aside className="flex h-full w-[320px] shrink-0 flex-col overflow-hidden border-l border-border bg-card">
       <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Settings collapse toggle — small bar always visible. Collapsing
+            removes the entire settings block (Details + Edition + Assigned)
+            so the Comments panel can use the full height. */}
+        <button
+          type="button"
+          onClick={toggleSettings}
+          className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-muted/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          aria-expanded={!settingsCollapsed}
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <Info size={11} />
+            {t('review.sidePanel.settings', 'Settings')}
+          </span>
+          {settingsCollapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+        </button>
+
         {/* ─────────── Settings (scrolls) ─────────── */}
+        {!settingsCollapsed && (
         <div className="overflow-y-auto border-b border-border pt-3">
           <Section icon={Info} title={t('review.sidePanel.details', 'Details')}>
           {/* Pipeline progress: Reported → Approved → Layout Placed → Published.
@@ -494,6 +535,7 @@ export default function ReviewSidePanel({
             </div>
           </Section>
         </div>
+        )}
 
         {/* ─────────── Comments (fills remaining height) ─────────── */}
         <div className="flex min-h-0 flex-1 flex-col">
