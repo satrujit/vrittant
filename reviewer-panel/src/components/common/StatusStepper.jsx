@@ -41,8 +41,11 @@ export default function StatusStepper({ status, className }) {
   return (
     <div className={cn('flex w-full items-start gap-1', className)}>
       {steps.map((step, i) => {
-        const isDone = !offPath && i < currentStep;
-        const isCurrent = !offPath && i === currentStep;
+        // A status of "approved" means the Approved step is *complete*, not
+        // in-progress — so steps up to and including currentStep are done,
+        // and the next step (currentStep + 1) is what's currently pending.
+        const isDone = !offPath && i <= currentStep;
+        const isCurrent = !offPath && i === currentStep + 1;
         const isLast = i === steps.length - 1;
 
         return (
