@@ -26,8 +26,9 @@ import {
   reassignStory,
   updateStory,
 } from '../../services/api';
-import { Avatar, StatusBadge, CategoryChip } from '../common';
+import { Avatar, StatusBadge, StatusStepper, CategoryChip } from '../common';
 import { formatDate, formatTimeAgo } from '../../utils/helpers';
+import { assignableReviewers } from '../../utils/users';
 import {
   Dialog,
   DialogContent,
@@ -131,12 +132,7 @@ export default function ReviewSidePanel({
 
   useEffect(() => {
     fetchReporters()
-      .then((data) => {
-        const list = data.reporters || [];
-        setReviewers(
-          list.filter((u) => u.user_type === 'reviewer' && (u.is_active ?? true))
-        );
-      })
+      .then((data) => setReviewers(assignableReviewers(data.reporters || [])))
       .catch(() => setReviewers([]));
   }, []);
 
@@ -233,6 +229,11 @@ export default function ReviewSidePanel({
         {/* ─────────── Settings (scrolls) ─────────── */}
         <div className="overflow-y-auto border-b border-border pt-3">
           <Section icon={Info} title={t('review.sidePanel.details', 'Details')}>
+          {/* Pipeline progress: Reported → Approved → Layout Placed → Published.
+              Off-path statuses (rejected/flagged) still get the StatusBadge below. */}
+          <div className="px-1 pb-3">
+            <StatusStepper status={status} />
+          </div>
           <Row label={t('table.status', 'Status')}>
             <StatusBadge status={status} size="sm" />
           </Row>

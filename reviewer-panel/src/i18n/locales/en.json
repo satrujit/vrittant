@@ -50,6 +50,7 @@
     "rejected": "Rejected",
     "flagged": "Flagged",
     "layoutCompleted": "Layout Completed",
+    "layoutPlaced": "Layout Placed",
     "published": "Published",
     "draft": "Draft",
     "submitted": "Reported"

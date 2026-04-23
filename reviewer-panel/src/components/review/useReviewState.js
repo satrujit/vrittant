@@ -662,11 +662,20 @@ export function useReviewState({ id, t }) {
     setSaving(true);
     setSaveError(null);
     try {
+      // Separate existing media-bearing paragraphs from text-only paragraphs.
+      // The editor only renders text, so rebuilding paragraphs naively from
+      // editor.getText() would drop any photo/document/audio attachments
+      // (their paragraphs carry media_path/photo_path with empty text).
+      const existing = Array.isArray(story.paragraphs) ? story.paragraphs : [];
+      const mediaParagraphs = existing.filter((p) => p && (p.media_path || p.photo_path));
+      const textOnlyExisting = existing.filter((p) => p && !(p.media_path || p.photo_path));
       const bodyText = editor.getText();
-      const paragraphs = bodyText.split('\n\n').map((text, i) => ({
-        id: story.paragraphs?.[i]?.id || `p-new-${i}`,
+      const textParagraphs = bodyText.split('\n\n').map((text, i) => ({
+        id: textOnlyExisting[i]?.id || `p-new-${i}`,
         text,
       }));
+      // Preserve media paragraphs by appending after the rebuilt text body.
+      const paragraphs = [...textParagraphs, ...mediaParagraphs];
       const payload = { headline, paragraphs };
       const enHtml = englishEditor ? englishEditor.getHTML() : englishTranslation;
       if (enHtml) {
@@ -798,15 +807,22 @@ export function useReviewState({ id, t }) {
   }, [playingAudio]);
 
   const handleImageUpload = useCallback(async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !id) return;
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0 || !id) return;
+    const files = Array.from(fileList);
     setUploadingImage(true);
     try {
-      await uploadStoryImage(id, file);
+      // Upload sequentially so the server-side paragraph order matches the
+      // user's selection order. Parallel uploads race on append.
+      for (const file of files) {
+        try {
+          await uploadStoryImage(id, file);
+        } catch (err) {
+          console.error('Image upload failed for', file?.name, err);
+        }
+      }
       const freshStory = await fetchStory(id);
       setStory(transformStory(freshStory));
-    } catch (err) {
-      console.error('Image upload failed:', err);
     } finally {
       setUploadingImage(false);
       if (imageInputRef.current) imageInputRef.current.value = '';

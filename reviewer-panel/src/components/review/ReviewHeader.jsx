@@ -3,6 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../../i18n';
 import { formatDate } from '../../utils/helpers';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -191,28 +199,37 @@ export default function ReviewHeader({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Hidden anchor for the reject popover so it can position relative
-              to the overflow button cluster. We render it always-mounted but
-              triggered by the overflow menu item above. */}
-          <Popover open={rejectOpen} onOpenChange={setRejectOpen}>
-            <PopoverTrigger asChild>
-              <span className="sr-only" aria-hidden="true" />
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-64 p-3">
-              <p className="mb-2 text-xs font-medium text-foreground">
-                {t('actions.reject')}?
-              </p>
+          {/* Reject dialog — modal so it always centers on screen and is
+              keyboard-dismissable. Previously rendered as a Popover anchored
+              to a hidden span, which silently failed to position on the
+              detail view; users reported the Reject action as "not working". */}
+          <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{t('actions.reject')}</DialogTitle>
+                <DialogDescription>
+                  {t('review.rejectPlaceholder')}
+                </DialogDescription>
+              </DialogHeader>
               <textarea
-                className="mb-2 min-h-12 w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring"
+                className="min-h-24 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground outline-none focus:border-ring"
                 placeholder={t('review.rejectPlaceholder')}
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
-                rows={2}
+                rows={4}
+                autoFocus
               />
-              <div className="flex gap-1">
+              <DialogFooter className="gap-2 sm:gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRejectOpen(false)}
+                >
+                  {t('actions.cancel')}
+                </Button>
                 <Button
                   size="sm"
-                  className="flex-1 bg-red-500 text-white hover:bg-red-600"
+                  className="bg-red-500 text-white hover:bg-red-600"
                   onClick={() => {
                     handleReject();
                     setRejectOpen(false);
@@ -221,17 +238,9 @@ export default function ReviewHeader({
                 >
                   {saving ? '...' : t('actions.confirm')}
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => setRejectOpen(false)}
-                >
-                  {t('actions.cancel')}
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 

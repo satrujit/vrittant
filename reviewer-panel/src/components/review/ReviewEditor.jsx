@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import {
   FileText,
   Loader2,
   Mic,
   MicOff,
   Image as ImageIcon,
+  Paperclip,
   Play,
   Pause,
   Volume2,
@@ -51,6 +53,7 @@ export default function ReviewEditor({
   mediaFiles,
   imageFiles,
   audioFiles,
+  docFiles = [],
   imageInputRef,
   uploadingImage,
   handleImageUpload,
@@ -70,6 +73,38 @@ export default function ReviewEditor({
   fabIcon,
 }) {
   const { t } = useI18n();
+  const [dragActive, setDragActive] = useState(false);
+
+  // Forward dropped/pasted files into the same upload pipeline as the
+  // file input, by synthesising a minimal `e.target.files` shape.
+  const uploadFiles = (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    handleImageUpload({ target: { files: fileList } });
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) uploadFiles(files);
+  };
+
+  const handleDragOver = (e) => {
+    // Required to allow a drop. Browsers cancel the drop if we don't
+    // preventDefault here even when the drop handler is wired up.
+    e.preventDefault();
+    e.stopPropagation();
+    if (!dragActive) setDragActive(true);
+  };
+
+  const handleDragLeave = (e) => {
+    // Only clear when the cursor leaves the wrapper, not when it
+    // moves between child elements (relatedTarget is the next element
+    // under the cursor).
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    setDragActive(false);
+  };
 
   return (
     <>
@@ -127,8 +162,17 @@ export default function ReviewEditor({
           <span>{wordCount} {t('review.words', 'words')}</span>
         </div>
 
-        {/* Attachments */}
-        <div className="mt-2 rounded-lg border border-border bg-card p-3">
+        {/* Attachments — also a drop target for files dragged from the OS */}
+        <div
+          className={cn(
+            'mt-2 rounded-lg border border-border bg-card p-3 transition-colors',
+            dragActive && 'border-primary bg-primary/5'
+          )}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
           <h4 className="mb-2 flex items-center justify-between text-xs font-semibold text-muted-foreground">
             <span className="flex items-center gap-2">
               <ImageIcon size={14} />
@@ -138,6 +182,7 @@ export default function ReviewEditor({
               ref={imageInputRef}
               type="file"
               accept="image/*"
+              multiple
               className="hidden"
               onChange={handleImageUpload}
             />
@@ -150,6 +195,11 @@ export default function ReviewEditor({
               {t('review.uploadImage', 'Upload Image')}
             </button>
           </h4>
+          {dragActive && (
+            <div className="mb-2 rounded-md border border-dashed border-primary/60 bg-primary/5 px-3 py-2 text-center text-[11px] font-medium text-primary">
+              {t('review.dropToUpload', 'Drop images to upload')}
+            </div>
+          )}
           {imageFiles.length > 0 && (
             <div className="mb-2 grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2">
               {imageFiles.map((img, i) => (
@@ -198,6 +248,63 @@ export default function ReviewEditor({
                   </a>
                 </div>
               ))}
+            </div>
+          )}
+          {docFiles.length > 0 && (
+            <div className="mb-2 flex flex-col gap-1">
+              {docFiles.map((doc, i) => {
+                // Try to derive a friendly filename from the URL when the
+                // backend didn't supply one (older WA forwards just store
+                // the GCS path with no display name).
+                const fallbackName = (() => {
+                  try {
+                    const u = new URL(doc.url);
+                    const last = u.pathname.split('/').pop() || '';
+                    return decodeURIComponent(last) || `Document ${i + 1}`;
+                  } catch {
+                    return `Document ${i + 1}`;
+                  }
+                })();
+                const displayName = doc.name && doc.name !== 'media' ? doc.name : fallbackName;
+                return (
+                  <div
+                    key={doc.paragraphId || i}
+                    className="group flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5"
+                  >
+                    <Paperclip size={12} className="shrink-0 text-muted-foreground" />
+                    <a
+                      href={doc.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="min-w-0 flex-1 truncate text-xs text-foreground hover:text-primary hover:underline"
+                      title={displayName}
+                    >
+                      {displayName}
+                    </a>
+                    <a
+                      href={doc.url}
+                      download={displayName}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                      title={t('review.download', 'Download')}
+                    >
+                      <Download size={11} />
+                    </a>
+                    {handleAttachmentDelete && doc.paragraphId && (
+                      <button
+                        type="button"
+                        title={t('review.removeAttachment', 'Remove')}
+                        aria-label={t('review.removeAttachment', 'Remove')}
+                        onClick={() => handleAttachmentDelete(doc.paragraphId)}
+                        className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-500 group-hover:opacity-100"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
           {audioFiles.length > 0 && (

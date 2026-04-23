@@ -14,6 +14,7 @@ import { fetchStats, fetchStories, fetchReporters, transformStory, reassignStory
 import { Avatar, StatusBadge, CategoryChip, SearchBar, PageHeader } from '../components/common';
 import { LayoutDashboard } from 'lucide-react';
 import { formatDate, formatTimeAgo } from '../utils/helpers';
+import { assignableReviewers } from '../utils/users';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -51,10 +52,7 @@ export default function DashboardPage() {
   // Fetch active reviewers once for reassign dropdown
   useEffect(() => {
     fetchReporters()
-      .then((data) => {
-        const list = data.reporters || [];
-        setReviewers(list.filter((u) => u.user_type === 'reviewer' && (u.is_active ?? true)));
-      })
+      .then((data) => setReviewers(assignableReviewers(data.reporters || [])))
       .catch(() => setReviewers([]));
   }, []);
 

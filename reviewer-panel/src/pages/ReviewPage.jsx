@@ -30,6 +30,11 @@ function ReviewPage() {
   const mediaFiles = s.story?.mediaFiles || [];
   const audioFiles = mediaFiles.filter((m) => m.type === 'audio' || m.url?.match(/\.(mp3|wav|m4a|ogg|aac)$/i));
   const imageFiles = mediaFiles.filter((m) => m.type === 'photo' || m.type === 'image' || m.url?.match(/\.(jpg|jpeg|png|gif|webp)$/i));
+  // Anything that isn't an image or audio is rendered as a generic
+  // "document" attachment — DOCX/PDF/PPT forwarded from WhatsApp end up
+  // here. Keeping the bucket separate from images means the photo grid
+  // doesn't try to render a thumbnail for a PDF.
+  const docFiles = mediaFiles.filter((m) => !imageFiles.includes(m) && !audioFiles.includes(m));
   const fabIcon = useMemo(() => getFabIcon(s.voiceMode, s.hasSelection), [s.voiceMode, s.hasSelection]);
 
   if (s.loading) {
@@ -114,6 +119,7 @@ function ReviewPage() {
               mediaFiles={mediaFiles}
               imageFiles={imageFiles}
               audioFiles={audioFiles}
+              docFiles={docFiles}
               imageInputRef={s.imageInputRef}
               uploadingImage={s.uploadingImage}
               handleImageUpload={s.handleImageUpload}
