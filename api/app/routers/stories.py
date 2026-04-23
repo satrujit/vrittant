@@ -39,7 +39,7 @@ def list_stories(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     org_id: str = Depends(get_current_org_id),
-    status_filter: str | None = Query(None, alias="status", description="Filter by status: draft, submitted, approved, published, rejected"),
+    status_filter: str | None = Query(None, alias="status", description="Filter by status: draft, submitted, approved, flagged, layout_completed, published, rejected"),
     category: str | None = Query(None, description="Filter by category"),
     search: str | None = Query(None, description="Search in headline text"),
     date_from: str | None = Query(None, description="Filter from date (YYYY-MM-DD)"),

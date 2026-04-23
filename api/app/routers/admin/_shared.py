@@ -149,7 +149,7 @@ class StatsResponse(BaseModel):
 
 
 class StatusUpdate(BaseModel):
-    status: str  # approved | rejected | published | in_progress
+    status: str  # approved | rejected | flagged | layout_completed | published
     reason: Optional[str] = None
 
 

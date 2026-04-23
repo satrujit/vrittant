@@ -1,7 +1,8 @@
 """Capture WHO and WHEN reviewed a story when status moves to a terminal state.
 
-Reverting a story back to a non-terminal status (e.g. `submitted`/`in_progress`)
-clears the attribution so it is unambiguous who currently owns the decision.
+Reverting a story back to ``submitted`` (the only non-terminal status a
+reviewer can target) clears the attribution so it is unambiguous who
+currently owns the decision.
 """
 from app.models.story import Story
 
@@ -45,7 +46,7 @@ def test_status_revert_to_submitted_clears_reviewer(client, db, reviewer, report
 
     resp = client.put(
         f"/admin/stories/{story.id}/status",
-        json={"status": "in_progress"},
+        json={"status": "submitted"},
         headers=auth_header,
     )
     assert resp.status_code == 200, resp.text
