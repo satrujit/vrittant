@@ -89,6 +89,10 @@ async def classify_category(
         raw = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
         return None
+    if not isinstance(raw, str) or not raw:
+        # Sarvam can return content=null when it refuses to commit; skip
+        # silently rather than crashing the whole inbound webhook.
+        return None
 
     # Strip <think> tags, lower-case, keep alnum + underscore. The model
     # sometimes wraps a single key in quotes or returns "Key: politics" —

@@ -29,6 +29,53 @@ from ._shared import (
 )
 
 
+# Maximum length when we synthesise a headline from body text.
+# Sized so it fits a single line in the list view without truncation.
+_DERIVED_HEADLINE_MAX_LEN = 120
+
+
+def _derive_headline_from_paragraphs(paragraphs) -> str:
+    """Return a non-empty headline derived from the first body paragraph.
+
+    Strategy: take the first non-empty paragraph's text, take its first
+    line (split on newline), strip, truncate to _DERIVED_HEADLINE_MAX_LEN
+    with an ellipsis if it overflows. Returns "" if no usable text exists.
+
+    Stories saved without a headline used to surface as blank rows in the
+    list view; this guarantees something readable is always present.
+    """
+    if not paragraphs:
+        return ""
+    for para in paragraphs:
+        text = (para or {}).get("text") or ""
+        # Strip HTML-ish tags conservatively — paragraph text is plain in
+        # our schema, but defensive split on '<' avoids leaking markup if
+        # any sneaks in from a paste.
+        first_line = text.split("\n", 1)[0].strip()
+        if not first_line:
+            continue
+        if len(first_line) > _DERIVED_HEADLINE_MAX_LEN:
+            return first_line[: _DERIVED_HEADLINE_MAX_LEN - 1].rstrip() + "…"
+        return first_line
+    return ""
+
+
+def _resolve_headline(submitted: Optional[str], paragraphs, fallback: Optional[str]) -> Optional[str]:
+    """Pick the headline to persist, given user input + body + existing value.
+
+    - If `submitted` has non-whitespace content, use it (trimmed).
+    - Else derive from `paragraphs`.
+    - Else keep `fallback` (existing headline).
+    - Returns None only if everything is empty (caller decides what to do).
+    """
+    if submitted is not None and submitted.strip():
+        return submitted.strip()
+    derived = _derive_headline_from_paragraphs(paragraphs)
+    if derived:
+        return derived
+    return fallback
+
+
 # ---------------------------------------------------------------------------
 # GET /admin/stories
 # ---------------------------------------------------------------------------
@@ -394,9 +441,26 @@ def admin_update_story(
     # Story.headline / Story.paragraphs) reflects saved edits. Ancillary
     # fields (english_translation, social_posts) still live on the revision.
     is_editor_created = (story.source == "Editor Created")
+
+    # Resolve the effective headline once, against the paragraphs that
+    # will actually be persisted. We never want to write back an empty
+    # headline — fall back to the first body line, then to the existing
+    # headline. See _resolve_headline.
+    effective_paragraphs = rev_paragraphs if rev_paragraphs is not None else story.paragraphs
+    if body.headline is not None:
+        resolved_headline = _resolve_headline(body.headline, effective_paragraphs, story.headline)
+    else:
+        # Headline not in payload — keep what's there, but if it's empty
+        # take the chance to backfill from current paragraphs.
+        existing_clean = (story.headline or "").strip()
+        if existing_clean:
+            resolved_headline = existing_clean
+        else:
+            resolved_headline = _resolve_headline(None, effective_paragraphs, story.headline)
+
     if is_editor_created:
-        if body.headline is not None:
-            story.headline = body.headline
+        if resolved_headline is not None:
+            story.headline = resolved_headline
         if rev_paragraphs is not None:
             story.paragraphs = rev_paragraphs
 
@@ -407,8 +471,8 @@ def admin_update_story(
     existing_rev = story.revision
     if existing_rev:
         if not is_editor_created:
-            if body.headline is not None:
-                existing_rev.headline = body.headline
+            if resolved_headline is not None:
+                existing_rev.headline = resolved_headline
             if rev_paragraphs is not None:
                 existing_rev.paragraphs = rev_paragraphs
         if body.english_translation is not None:
@@ -426,7 +490,7 @@ def admin_update_story(
             new_rev = StoryRevision(
                 story_id=story.id,
                 editor_id=current_user.id,
-                headline=body.headline or story.headline,
+                headline=resolved_headline or story.headline,
                 paragraphs=rev_paragraphs or story.paragraphs,
                 english_translation=body.english_translation,
                 social_posts=body.social_posts,

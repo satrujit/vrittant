@@ -31,6 +31,7 @@ from ..models.user import User
 from ..models.webhook_dedup import WhatsappInboundDedup
 from ..services import storage
 from ..services import whatsapp_classifier as classifier
+from ..services.assignment import NoReviewersAvailable, pick_assignee
 from ..services.categorizer import classify_category
 from ..utils.tz import now_ist
 
@@ -315,8 +316,11 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     story = Story(
         organization_id=user.organization_id,
         reporter_id=user.id,
-        assigned_to=user.id,
-        assigned_match_reason="manual",
+        # `assigned_to` is filled below via pick_assignee for reporters so
+        # the story enters the same review queue as panel-created stories.
+        # Reviewers/admins keep self-assign — they're working on it.
+        assigned_to=None if user.user_type == "reporter" else user.id,
+        assigned_match_reason=None if user.user_type == "reporter" else "manual",
         headline=headline,
         category=category,
         paragraphs=paragraphs,
@@ -326,6 +330,18 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
         whatsapp_session_open_until=now_ist() + timedelta(minutes=STITCH_MINUTES),
         needs_triage=needs_triage,
     )
+    if user.user_type == "reporter":
+        try:
+            reviewer, reason = pick_assignee(story, db)
+            story.assigned_to = reviewer.id
+            story.assigned_match_reason = reason
+        except NoReviewersAvailable:
+            # Org has no active reviewers — leave unassigned so it surfaces
+            # in the unassigned queue rather than stuck on the reporter.
+            logger.warning(
+                "WA inbound from reporter %s: no reviewers in org %s, story %s left unassigned",
+                user.id, user.organization_id, story.id,
+            )
     story.refresh_search_text()
     db.add(story)
     db.commit()
