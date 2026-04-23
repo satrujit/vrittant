@@ -46,19 +46,20 @@
   },
   "status": {
     "pendingReview": "समीक्षा लंबित",
-    "inProgress": "प्रगति में",
     "approved": "स्वीकृत",
     "rejected": "अस्वीकृत",
     "flagged": "चिह्नित",
+    "layoutCompleted": "लेआउट पूर्ण",
     "published": "प्रकाशित",
     "draft": "ड्राफ्ट",
-    "submitted": "प्रस्तुत"
+    "submitted": "रिपोर्ट किया गया"
   },
   "actions": {
     "review": "समीक्षा",
     "continue": "जारी रखें",
     "viewDetails": "विवरण देखें",
     "approve": "स्वीकृत करें",
+    "markLayoutCompleted": "लेआउट पूर्ण चिह्नित करें",
     "reject": "अस्वीकृत करें",
     "requestChanges": "बदलाव का अनुरोध",
     "saveDraft": "सहेजें",

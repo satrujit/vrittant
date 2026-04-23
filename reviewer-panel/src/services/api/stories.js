@@ -41,7 +41,7 @@ export async function fetchStory(id) {
 /**
  * PUT /admin/stories/:id/status
  * @param {string|number} id
- * @param {string} status — "approved"|"rejected"|"published"|"in_progress"
+ * @param {string} status — "approved"|"rejected"|"published"|"flagged"|"layout_completed"|"submitted"
  * @param {string} reason — optional reason for rejection or changes
  */
 export async function updateStoryStatus(id, status, reason = '') {

@@ -3,6 +3,7 @@
 @import "shadcn/tailwind.css";
 @import './styles/tiptap.css';
 @import './styles/pragativadi-fonts.css';
+@import './styles/redesign.css';
 
 @custom-variant dark (&:is(.dark *));
 :root {

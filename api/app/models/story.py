@@ -40,7 +40,7 @@ class Story(Base):
     category = Column(String, nullable=True)
     location = Column(String, nullable=True)
     paragraphs = Column(JSON, default=list)
-    status = Column(String, default="draft")  # draft | submitted | approved | published | rejected
+    status = Column(String, default="draft")  # draft | submitted | approved | flagged | layout_completed | published | rejected
     priority = Column(String, nullable=True, default="normal")  # normal | urgent | breaking
     source = Column(String, nullable=True)  # URL for auto-generated, "Reporter Submitted", "Editor Created"
     submitted_at = Column(DateTime, nullable=True)

@@ -25,11 +25,14 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..models.org_config import DEFAULT_CATEGORIES, OrgConfig
 from ..models.story import Story
 from ..models.user import User
 from ..models.webhook_dedup import WhatsappInboundDedup
 from ..services import storage
 from ..services import whatsapp_classifier as classifier
+from ..services.assignment import NoReviewersAvailable, pick_assignee
+from ..services.categorizer import classify_category
 from ..utils.tz import now_ist
 
 router = APIRouter(prefix="/webhooks/whatsapp", tags=["webhooks"])
@@ -41,6 +44,21 @@ CLOSE_KEYWORDS = {"done", "/done", "end", "/end"}
 
 def _is_close_keyword(text: str) -> bool:
     return text.strip().lower() in CLOSE_KEYWORDS
+
+
+def _org_category_keys(db: Session, organization_id: str) -> list[str]:
+    """Return the org's active category keys, falling back to platform
+    defaults if the org has no OrgConfig row or empty categories."""
+    cfg = (
+        db.query(OrgConfig)
+        .filter(OrgConfig.organization_id == organization_id)
+        .first()
+    )
+    raw = (cfg.categories if cfg else None) or DEFAULT_CATEGORIES
+    return [
+        c["key"] for c in raw
+        if isinstance(c, dict) and c.get("key") and c.get("is_active", True)
+    ]
 
 
 def _find_open_draft(db, user_id: str):
@@ -288,12 +306,23 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
             "media_type": _media_type_for(inner_type),
         })
 
+    # Best-effort category tag at ingestion. We pull the org's configured
+    # category keys (falls back to the platform defaults if the org has
+    # no override). If Sarvam errors out the helper returns None and we
+    # leave `category` unset — same as the pre-categorisation behaviour.
+    category_keys = _org_category_keys(db, user.organization_id)
+    category = await classify_category(text, category_keys) if text else None
+
     story = Story(
         organization_id=user.organization_id,
         reporter_id=user.id,
-        assigned_to=user.id,
-        assigned_match_reason="manual",
+        # `assigned_to` is filled below via pick_assignee for reporters so
+        # the story enters the same review queue as panel-created stories.
+        # Reviewers/admins keep self-assign — they're working on it.
+        assigned_to=None if user.user_type == "reporter" else user.id,
+        assigned_match_reason=None if user.user_type == "reporter" else "manual",
         headline=headline,
+        category=category,
         paragraphs=paragraphs,
         status="submitted",
         submitted_at=now_ist(),
@@ -301,6 +330,18 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
         whatsapp_session_open_until=now_ist() + timedelta(minutes=STITCH_MINUTES),
         needs_triage=needs_triage,
     )
+    if user.user_type == "reporter":
+        try:
+            reviewer, reason = pick_assignee(story, db)
+            story.assigned_to = reviewer.id
+            story.assigned_match_reason = reason
+        except NoReviewersAvailable:
+            # Org has no active reviewers — leave unassigned so it surfaces
+            # in the unassigned queue rather than stuck on the reporter.
+            logger.warning(
+                "WA inbound from reporter %s: no reviewers in org %s, story %s left unassigned",
+                user.id, user.organization_id, story.id,
+            )
     story.refresh_search_text()
     db.add(story)
     db.commit()

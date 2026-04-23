@@ -46,19 +46,20 @@
   },
   "status": {
     "pendingReview": "ସମୀକ୍ଷା ବାକି",
-    "inProgress": "ଚାଲୁଛି",
     "approved": "ଅନୁମୋଦିତ",
     "rejected": "ପ୍ରତ୍ୟାଖ୍ୟାତ",
     "flagged": "ଚିହ୍ନିତ",
+    "layoutCompleted": "ଲେଆଉଟ ସମ୍ପୂର୍ଣ୍ଣ",
     "published": "ପ୍ରକାଶିତ",
     "draft": "ଡ୍ରାଫ୍ଟ",
-    "submitted": "ଦାଖଲ"
+    "submitted": "ରିପୋର୍ଟ୍"
   },
   "actions": {
     "review": "ସମୀକ୍ଷା",
     "continue": "ଜାରି ରଖନ୍ତୁ",
     "viewDetails": "ବିବରଣୀ ଦେଖନ୍ତୁ",
     "approve": "ଅନୁମୋଦନ",
+    "markLayoutCompleted": "ଲେଆଉଟ ସମ୍ପୂର୍ଣ୍ଣ ଚିହ୍ନଟ କରନ୍ତୁ",
     "reject": "ପ୍ରତ୍ୟାଖ୍ୟାନ",
     "requestChanges": "ପରିବର୍ତ୍ତନ ଅନୁରୋଧ",
     "saveDraft": "ସଞ୍ଚୟ",

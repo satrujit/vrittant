@@ -110,8 +110,9 @@ def activity_heatmap(
     start_date = (now - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
     today_str = now.strftime("%Y-%m-%d")
 
-    # Submitted statuses (not drafts)
-    submitted_statuses = ("submitted", "approved", "published", "rejected")
+    # Submitted statuses (not drafts) — every status reachable after submit,
+    # so flagged/layout_completed count as real reporter output.
+    submitted_statuses = ("submitted", "approved", "flagged", "layout_completed", "published", "rejected")
 
     if reporter_id:
         # Single-reporter mode: only fetch data for this reporter

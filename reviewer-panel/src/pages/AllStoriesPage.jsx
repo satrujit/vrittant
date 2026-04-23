@@ -40,10 +40,10 @@ const PAGE_SIZE = 10;
 
 const ALL_STATUSES = [
   'submitted',
-  'in_progress',
   'approved',
   'rejected',
   'flagged',
+  'layout_completed',
   'published',
 ];
 
@@ -314,7 +314,7 @@ export default function AllStoriesPage() {
               allLabel={t('allStories.all')}
               options={ALL_STATUSES.map((s) => ({
                 value: s,
-                label: t(`status.${s === 'in_progress' ? 'inProgress' : s === 'submitted' ? 'submitted' : s}`),
+                label: t(`status.${s === 'layout_completed' ? 'layoutCompleted' : s}`),
               }))}
             />
           </div>
@@ -404,7 +404,7 @@ export default function AllStoriesPage() {
       </div>
 
       {/* Table Card */}
-      <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
         {loading ? (
           <div className="py-12 px-6 text-center text-muted-foreground text-sm">
             <Loader2 size={24} className="animate-spin inline-block" />
@@ -414,7 +414,7 @@ export default function AllStoriesPage() {
             {t('allStories.noResults')}
           </div>
         ) : (
-          <Table>
+          <Table className="vr-table-dense">
             <TableHeader>
               <TableRow>
                 <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
