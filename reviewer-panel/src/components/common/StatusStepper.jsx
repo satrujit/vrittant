@@ -62,12 +62,13 @@ export default function StatusStepper({ status, className }) {
               >
                 {isDone ? <Check size={11} strokeWidth={3} /> : i + 1}
               </div>
-              {/* Labels wrap onto a second line on narrow side panels rather
-                  than truncating with an ellipsis — readability beats a
-                  single-line strip when the panel is squeezed. */}
+              {/* Truncate with ellipsis on narrow side panels — earlier we
+                  let labels wrap, but `break-words` split mid-character
+                  ("Approv\ned"), which read worse than a clean ellipsis.
+                  Full label is on the title attribute for hover. */}
               <span
                 className={cn(
-                  'w-full break-words text-center text-[10px] leading-tight',
+                  'w-full truncate text-center text-[10px] leading-tight',
                   (isDone || isCurrent) ? 'text-foreground' : 'text-muted-foreground',
                 )}
                 title={step.label}

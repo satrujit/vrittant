@@ -1,20 +1,26 @@
 """Best-effort LLM categorisation for inbound stories.
 
-Used by the WhatsApp webhook to slot forwarded messages into a category
-slot at ingestion time, so reviewers don't have to tag every message
-by hand. The contract is best-effort: if Sarvam is unreachable, slow,
-or returns garbage, we return ``None`` and the story is created with no
-category (the previous behaviour). The webhook MUST NOT fail because
-of a categorisation problem.
+Used at ingestion time (WhatsApp webhook, editor save) and as a periodic
+sweep so reviewers don't have to tag every story by hand. The contract is
+best-effort: if Sarvam is unreachable, slow, or returns garbage, we leave
+the category unset. **No caller should ever fail because of categorisation.**
+
+Three entry points:
+    * ``classify_category`` — async, used by webhook handlers.
+    * ``categorize_story_in_background`` — sync wrapper for FastAPI
+      ``BackgroundTasks``; opens its own DB session and updates the row.
+    * ``sweep_uncategorized`` — batch helper for the cron endpoint.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Iterable, Optional
 
 import httpx
+from sqlalchemy.orm import Session
 
 from ..config import settings
 
@@ -110,3 +116,173 @@ async def classify_category(
     # can spot prompt drift, then give up.
     logger.info("categorizer: unmatched reply %r (allowed=%s)", raw[:80], keys)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Org category-keys lookup — used by the webhook AND the editor save path.
+# ---------------------------------------------------------------------------
+
+def org_category_keys(db: Session, organization_id: str) -> list[str]:
+    """Return the org's active category keys, falling back to platform
+    defaults if the org has no OrgConfig row or empty categories.
+
+    Imported lazily to avoid a circular import (models import services).
+    """
+    from ..models.org_config import DEFAULT_CATEGORIES, OrgConfig
+
+    cfg = (
+        db.query(OrgConfig)
+        .filter(OrgConfig.organization_id == organization_id)
+        .first()
+    )
+    raw = (cfg.categories if cfg else None) or DEFAULT_CATEGORIES
+    return [
+        c["key"] for c in raw
+        if isinstance(c, dict) and c.get("key") and c.get("is_active", True)
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Story-level helpers used by the editor save path and the cron sweep.
+# ---------------------------------------------------------------------------
+
+def _story_text_for_classification(story) -> str:
+    """Build a short snippet to send to Sarvam.
+
+    Uses headline + first non-empty paragraph text. Caps to keep token
+    spend flat regardless of story length — the model only needs enough
+    to pick a slot, not the whole article.
+    """
+    parts: list[str] = []
+    if story.headline:
+        parts.append(story.headline.strip())
+    for p in (story.paragraphs or []):
+        if not isinstance(p, dict):
+            continue
+        text = (p.get("text") or "").strip()
+        if text:
+            parts.append(text)
+            break  # one body paragraph is plenty
+    return "\n\n".join(parts).strip()
+
+
+def categorize_story_in_background(story_id: str) -> None:
+    """Sync entrypoint for ``BackgroundTasks``: classify one story and persist.
+
+    Opens its own DB session (FastAPI's request-scoped session is gone by
+    the time background tasks run). Skips work if the story already has a
+    category, has no usable text, or has been deleted.
+
+    Failures are swallowed — categorisation is best-effort. The cron sweep
+    will retry on the next tick.
+    """
+    from ..database import SessionLocal
+    from ..models.story import Story
+
+    db: Session = SessionLocal()
+    try:
+        story = (
+            db.query(Story)
+            .filter(Story.id == story_id, Story.deleted_at.is_(None))
+            .first()
+        )
+        if story is None:
+            return
+        if (story.category or "").strip():
+            return  # someone (human or earlier task) already set it
+
+        text = _story_text_for_classification(story)
+        if not text:
+            return
+
+        keys = org_category_keys(db, story.organization_id)
+        if not keys:
+            return
+
+        try:
+            category = asyncio.run(classify_category(text, keys))
+        except RuntimeError:
+            # Already in an event loop (shouldn't happen in BackgroundTasks
+            # context, but safe to handle). Skip rather than crash.
+            logger.warning("categorize_story_in_background: nested event loop, skipping %s", story_id)
+            return
+
+        if not category:
+            return
+
+        # Re-read inside the same session so we don't clobber a parallel
+        # human-tagged category. The race window is tiny but real.
+        story = db.query(Story).filter(Story.id == story_id).first()
+        if story is None or (story.category or "").strip():
+            return
+        story.category = category
+        db.commit()
+        logger.info("auto-categorized story=%s as %s", story_id, category)
+    except Exception as exc:  # noqa: BLE001
+        # Categorisation must never break the calling request.
+        logger.warning("categorize_story_in_background: failed for %s: %s", story_id, exc)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        db.close()
+
+
+async def sweep_uncategorized(db: Session, *, limit: int = 20, lookback_days: int = 14) -> dict:
+    """Classify up to ``limit`` recently-touched, uncategorised stories.
+
+    Runs synchronously (one Sarvam call per story) — the helper itself is
+    async so the cron endpoint can ``await`` it. Sequential calls keep us
+    inside Sarvam's request budget; ~20 calls fit comfortably inside the
+    300s Cloud Scheduler deadline.
+
+    Skips stories with no usable text (empty + no paragraphs). Restricts
+    to the last ``lookback_days`` so we don't churn over stale archives.
+    """
+    from datetime import timedelta
+
+    from ..models.story import Story
+    from ..utils.tz import now_ist
+
+    cutoff = now_ist() - timedelta(days=lookback_days)
+    candidates = (
+        db.query(Story)
+        .filter(Story.updated_at >= cutoff)
+        .filter(Story.deleted_at.is_(None))
+        .filter((Story.category.is_(None)) | (Story.category == ""))
+        .order_by(Story.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    swept = succeeded = skipped_no_text = failed = 0
+    for story in candidates:
+        swept += 1
+        text = _story_text_for_classification(story)
+        if not text:
+            skipped_no_text += 1
+            continue
+        keys = org_category_keys(db, story.organization_id)
+        if not keys:
+            skipped_no_text += 1
+            continue
+        category = await classify_category(text, keys)
+        if not category:
+            failed += 1
+            continue
+        # Re-fetch the row freshly so we don't clobber a parallel update.
+        fresh = db.query(Story).filter(Story.id == story.id).first()
+        if fresh is None or (fresh.category or "").strip():
+            continue
+        fresh.category = category
+        db.commit()
+        succeeded += 1
+        logger.info("sweep: auto-categorized story=%s as %s", story.id, category)
+
+    return {
+        "swept": swept,
+        "succeeded": succeeded,
+        "skipped_no_text": skipped_no_text,
+        "failed": failed,
+    }

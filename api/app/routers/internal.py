@@ -21,6 +21,7 @@ from ..config import settings
 from ..database import SessionLocal
 from ..models.story import Story
 from ..services import stt as stt_service
+from ..services.categorizer import sweep_uncategorized
 from ..services.storage import UPLOAD_DIR
 from ..utils.tz import now_ist
 
@@ -33,6 +34,11 @@ router = APIRouter(prefix="/internal", tags=["internal"])
 # Cloud Scheduler's HTTP target deadline (default 30s; we set 300s).
 _SWEEP_BATCH_LIMIT = 20
 _MAX_ATTEMPTS = 3
+
+# Categorisation sweep: same fits-in-300s budget. Each Sarvam call is
+# ~1-2s, so 20 stories per tick comfortably finishes inside the deadline.
+_CATEGORY_SWEEP_LIMIT = 20
+_CATEGORY_LOOKBACK_DAYS = 14
 
 
 def _require_internal_token(token: Optional[str]) -> None:
@@ -123,6 +129,33 @@ async def sweep_pending_stt(
         "still_failing": still_failing,
         "given_up": given_up,
     }
+
+
+@router.post("/sweep-pending-categorization")
+async def sweep_pending_categorization(
+    x_internal_token: Optional[str] = Header(default=None, alias="X-Internal-Token"),
+):
+    """Auto-categorise stories that landed without a category.
+
+    Designed to run every 30 minutes. Picks up stories the inline
+    background task missed (Sarvam was down, network blip, etc.) plus any
+    stories the editor saved without categorising. Sequential per-story
+    Sarvam calls; ``_CATEGORY_SWEEP_LIMIT`` per tick keeps token spend
+    predictable and the request inside Scheduler's deadline.
+    """
+    _require_internal_token(x_internal_token)
+
+    db: Session = SessionLocal()
+    try:
+        result = await sweep_uncategorized(
+            db,
+            limit=_CATEGORY_SWEEP_LIMIT,
+            lookback_days=_CATEGORY_LOOKBACK_DAYS,
+        )
+    finally:
+        db.close()
+
+    return result
 
 
 # ---------------------------------------------------------------------------
