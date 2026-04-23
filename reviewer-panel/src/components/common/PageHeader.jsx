@@ -30,17 +30,15 @@ export default function PageHeader({
   leading,
   className,
 }) {
-  // No more bg-primary/10 icon tile — that was the "AI generated" look.
-  // Keep the icon prop in the API for backward compatibility but render it
-  // as a quiet muted glyph beside the title (or drop it entirely if leading
-  // is provided).
+  // The `icon` prop is intentionally ignored. Header glyphs add visual
+  // noise without information value (the title already names the page,
+  // the sidebar already shows what's selected). Kept in the API only so
+  // existing call sites don't need to be touched.
+  void Icon;
   return (
     <div className={cn('flex items-start justify-between gap-4 mb-5 pb-3 border-b border-border', className)}>
       <div className="flex items-center gap-2.5 min-w-0">
         {leading}
-        {Icon && !leading && (
-          <Icon className="size-[18px] text-muted-foreground shrink-0" />
-        )}
         <div className="min-w-0">
           <h1 className="text-[17px] font-semibold leading-tight text-foreground truncate">
             {title}
