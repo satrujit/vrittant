@@ -203,25 +203,21 @@ export default function DashboardPage() {
         className="mb-0"
       />
 
-      {/* Stats Bar */}
-      <div className="grid grid-cols-4 gap-4 max-[900px]:grid-cols-2 max-sm:grid-cols-1">
-        {statsLoading ? (
-          <div className="col-span-full py-16 text-center text-muted-foreground text-sm">
-            <Loader2 size={20} className="animate-spin inline-block" />
-          </div>
-        ) : (
-          stats.map((stat) => (
-            <Card key={stat.label} className="flex flex-col gap-1 px-6 py-5 border-l-[3px] border-l-primary/40">
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                {stat.label}
-              </span>
-              <span className="text-2xl font-bold text-foreground leading-none">
-                {stat.value}
-              </span>
-            </Card>
-          ))
-        )}
-      </div>
+      {/* Stats strip — single row, dividers, no card chrome */}
+      {statsLoading ? (
+        <div className="py-8 text-center text-muted-foreground text-sm border border-border rounded-lg">
+          <Loader2 size={20} className="animate-spin inline-block" />
+        </div>
+      ) : (
+        <div className="vr-metric-strip">
+          {stats.map((stat) => (
+            <div key={stat.label} className="vr-metric-strip__item">
+              <span className="vr-metric-strip__label">{stat.label}</span>
+              <span className="vr-metric-strip__value">{stat.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Table Card */}
       <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
@@ -247,7 +243,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse vr-table-dense">
               <thead>
                 <tr>
                   <th className="px-6 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2">

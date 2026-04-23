@@ -1,67 +1,50 @@
 import { useI18n } from '../../i18n';
-import { getStatusColor } from '../../utils/helpers';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+
+// All status colour rules live in src/styles/redesign.css under
+// the `.vr-pill--*` classes. This component picks the right modifier
+// for the status string and renders a calm dot+text pill — no
+// background fill, no inline styles.
 
 const STATUS_I18N_MAP = {
   submitted: 'status.submitted',
   pending: 'status.pendingReview',
   pending_review: 'status.pendingReview',
-  in_progress: 'status.inProgress',
   approved: 'status.approved',
   rejected: 'status.rejected',
   flagged: 'status.flagged',
+  layout_completed: 'status.layoutCompleted',
   published: 'status.published',
   draft: 'status.draft',
 };
 
-const SIZE_CLASSES = {
-  sm: 'h-[22px] px-2 py-0.5 text-xs gap-1',
-  md: 'h-7 px-3 py-1 text-sm gap-1',
+const VARIANT_MAP = {
+  submitted: 'submitted',
+  pending: 'pending',
+  pending_review: 'pending',
+  approved: 'approved',
+  rejected: 'rejected',
+  flagged: 'flagged',
+  layout_completed: 'layout-completed',
+  published: 'published',
+  draft: 'draft',
 };
 
-const DOT_SIZES = {
-  sm: 'size-[5px]',
-  md: 'size-1.5',
-};
-
-function StatusBadge({ status, size = 'md', minimal = false }) {
+function StatusBadge({ status, size = 'md', minimal = false, className }) {
   const { t } = useI18n();
-  const { color, bg, dot } = getStatusColor(status);
-  const i18nKey = STATUS_I18N_MAP[status] || 'status.draft';
+  const key = (status || 'draft').toString();
+  const variant = VARIANT_MAP[key] || 'draft';
+  const i18nKey = STATUS_I18N_MAP[key] || 'status.draft';
 
-  // Minimal variant: dot + label only, no pill background. Keeps the row sleek
-  // when used inside dense tables.
-  if (minimal) {
-    return (
-      <span
-        className="inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap leading-none"
-        style={{ color }}
-      >
-        <span
-          className="shrink-0 rounded-full size-[6px]"
-          style={{ backgroundColor: dot }}
-        />
-        {t(i18nKey)}
-      </span>
-    );
-  }
+  // `minimal` is retained for API compatibility — the new pill is
+  // already minimal (no fill), so both modes render the same.
+  void minimal;
 
   return (
-    <Badge
-      variant="ghost"
-      className={cn(
-        'rounded-full font-medium whitespace-nowrap leading-none',
-        SIZE_CLASSES[size] || SIZE_CLASSES.md
-      )}
-      style={{ color, backgroundColor: bg }}
-    >
-      <span
-        className={cn('shrink-0 rounded-full', DOT_SIZES[size] || DOT_SIZES.md)}
-        style={{ backgroundColor: dot }}
-      />
+    <span className={cn('vr-pill', `vr-pill--${variant}`, className)} data-size={size}>
+      <span className="vr-pill__dot" />
       {t(i18nKey)}
-    </Badge>
+    </span>
   );
 }
 

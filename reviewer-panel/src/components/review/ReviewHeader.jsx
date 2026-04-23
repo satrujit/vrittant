@@ -37,6 +37,7 @@ export default function ReviewHeader({
   setRejectReason,
   handleApprove,
   handleReject,
+  handleStatusChange,
   handleSaveContent,
 }) {
   const { t } = useI18n();
@@ -111,6 +112,18 @@ export default function ReviewHeader({
             {saving && <Loader2 size={12} className="animate-spin" />}
             {t('actions.saveDraft')}
           </Button>
+
+          {status === 'approved' && handleStatusChange && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1 border-indigo-200 px-3 text-xs text-indigo-700 hover:bg-indigo-50"
+              onClick={() => handleStatusChange('layout_completed')}
+              disabled={saving}
+            >
+              {t('actions.markLayoutCompleted', 'Mark Layout Completed')}
+            </Button>
+          )}
 
           <Popover open={approveOpen} onOpenChange={setApproveOpen}>
             <PopoverTrigger asChild>
@@ -223,7 +236,7 @@ export default function ReviewHeader({
       </div>
 
       {/* ── Reviewed-by attribution (only for terminal statuses) ── */}
-      {['approved', 'rejected', 'published'].includes(status) &&
+      {['approved', 'rejected', 'published', 'flagged', 'layout_completed'].includes(status) &&
         story.reviewer_name && (
           <div className="shrink-0 border-b border-border bg-muted/30 px-6 py-1">
             <span className="text-[11px] text-muted-foreground">

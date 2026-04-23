@@ -113,17 +113,21 @@ export function getCategoryColor(category) {
 export function getStatusColor(status) {
   const key = status?.toLowerCase().replace(/[\s_]+/g, '') || 'draft';
 
+  // NOTE: Status pills (StatusBadge) now use the global `.vr-pill--*`
+  // classes in styles/redesign.css. This map is retained ONLY for
+  // non-pill consumers (card backgrounds, charts) that still want a
+  // tint. Keep the keys aligned with the pipeline.
   const map = {
-    submitted:    { color: '#F59E0B', bg: '#FEF3C7', dot: '#F59E0B' },
-    pending:      { color: '#F59E0B', bg: '#FEF3C7', dot: '#F59E0B' },
-    pendingreview:{ color: '#F59E0B', bg: '#FEF3C7', dot: '#F59E0B' },
-    inprogress:   { color: '#3B82F6', bg: '#DBEAFE', dot: '#3B82F6' },
-    in_progress:  { color: '#3B82F6', bg: '#DBEAFE', dot: '#3B82F6' },
-    approved:     { color: '#10B981', bg: '#D1FAE5', dot: '#10B981' },
-    rejected:     { color: '#EF4444', bg: '#FEE2E2', dot: '#EF4444' },
-    flagged:      { color: '#F59E0B', bg: '#FEF3C7', dot: '#F59E0B' },
-    published:    { color: '#10B981', bg: '#D1FAE5', dot: '#10B981' },
-    draft:        { color: '#A8A29E', bg: '#F5F5F4', dot: '#A8A29E' },
+    submitted:        { color: '#B45309', bg: '#FEF3C7', dot: '#F59E0B' },
+    pending:          { color: '#B45309', bg: '#FEF3C7', dot: '#F59E0B' },
+    pendingreview:    { color: '#B45309', bg: '#FEF3C7', dot: '#F59E0B' },
+    approved:         { color: '#047857', bg: '#D1FAE5', dot: '#10B981' },
+    rejected:         { color: '#B91C1C', bg: '#FEE2E2', dot: '#EF4444' },
+    flagged:          { color: '#C2410C', bg: '#FFEDD5', dot: '#F97316' },
+    layoutcompleted:  { color: '#4338CA', bg: '#E0E7FF', dot: '#6366F1' },
+    layout_completed: { color: '#4338CA', bg: '#E0E7FF', dot: '#6366F1' },
+    published:        { color: '#1F2937', bg: '#F3F4F6', dot: '#4B5563' },
+    draft:            { color: '#57534E', bg: '#F5F5F4', dot: '#A8A29E' },
   };
 
   return map[key] || { color: '#A8A29E', bg: '#F5F5F4', dot: '#A8A29E' };

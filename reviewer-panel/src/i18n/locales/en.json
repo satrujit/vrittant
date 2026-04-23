@@ -46,19 +46,20 @@
   },
   "status": {
     "pendingReview": "Pending Review",
-    "inProgress": "In Progress",
     "approved": "Approved",
     "rejected": "Rejected",
     "flagged": "Flagged",
+    "layoutCompleted": "Layout Completed",
     "published": "Published",
     "draft": "Draft",
-    "submitted": "Submitted"
+    "submitted": "Reported"
   },
   "actions": {
     "review": "Review",
     "continue": "Continue",
     "viewDetails": "View Details",
     "approve": "Approve",
+    "markLayoutCompleted": "Mark Layout Completed",
     "reject": "Reject",
     "requestChanges": "Request Changes",
     "saveDraft": "Save",
