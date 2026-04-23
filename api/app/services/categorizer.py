@@ -38,12 +38,13 @@ _SYSTEM = (
 
 # Sarvam-30b is a reasoning model — it spends completion tokens on an
 # internal think-pass before emitting the answer. With a tight cap (we
-# tried 16) it hits finish_reason="length" mid-think and returns
-# content=null every time. 600 leaves comfortable headroom for the
-# reasoning pass plus the one-word answer; we still pay ~$0.0002/call.
-# `reasoning_effort: low` shortens the think-pass further.
-_MAX_TOKENS = 600
-_TIMEOUT_SECONDS = 15.0
+# tried 16, then 600) it hits finish_reason="length" mid-think and
+# returns content=null every time. Empirically the reasoning pass alone
+# burns ~900-1000 tokens even with reasoning_effort=low for short
+# Odia/English prompts, so 2000 is the safe minimum for the answer to
+# actually land. Cost ≈ $0.0005/call — 80-story backfill ≈ 4¢.
+_MAX_TOKENS = 2000
+_TIMEOUT_SECONDS = 30.0
 
 
 async def classify_category(
