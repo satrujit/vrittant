@@ -30,21 +30,23 @@ export default function PageHeader({
   leading,
   className,
 }) {
+  // No more bg-primary/10 icon tile — that was the "AI generated" look.
+  // Keep the icon prop in the API for backward compatibility but render it
+  // as a quiet muted glyph beside the title (or drop it entirely if leading
+  // is provided).
   return (
-    <div className={cn('flex items-start justify-between gap-4 mb-6', className)}>
-      <div className="flex items-center gap-3 min-w-0">
+    <div className={cn('flex items-start justify-between gap-4 mb-5 pb-3 border-b border-border', className)}>
+      <div className="flex items-center gap-2.5 min-w-0">
         {leading}
         {Icon && !leading && (
-          <div className="flex items-center justify-center size-10 rounded-lg bg-primary/10 shrink-0">
-            <Icon className="size-5 text-primary" />
-          </div>
+          <Icon className="size-[18px] text-muted-foreground shrink-0" />
         )}
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold leading-tight text-foreground truncate">
+          <h1 className="text-[17px] font-semibold leading-tight text-foreground truncate">
             {title}
           </h1>
           {subtitle && (
-            <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
+            <p className="mt-0.5 text-[12.5px] text-muted-foreground">{subtitle}</p>
           )}
         </div>
       </div>

@@ -220,9 +220,9 @@ export default function DashboardPage() {
       )}
 
       {/* Table Card */}
-      <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
         {/* Toolbar */}
-        <div className="flex items-center gap-2 px-6 py-4 border-b border-border max-sm:px-4 max-sm:py-2">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border max-sm:px-2">
           <div className="flex-1 max-w-xs">
             <SearchBar
               value={searchQuery}

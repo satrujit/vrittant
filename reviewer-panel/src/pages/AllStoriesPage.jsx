@@ -404,7 +404,7 @@ export default function AllStoriesPage() {
       </div>
 
       {/* Table Card */}
-      <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
         {loading ? (
           <div className="py-12 px-6 text-center text-muted-foreground text-sm">
             <Loader2 size={24} className="animate-spin inline-block" />
