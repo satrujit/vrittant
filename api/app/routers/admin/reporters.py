@@ -59,7 +59,7 @@ def admin_list_reporters(
     org_name = org.name if org else ""
 
     # Batch: submission counts per reporter (single query)
-    submitted_statuses = ("submitted", "approved", "published", "rejected")
+    submitted_statuses = ("submitted", "approved", "flagged", "layout_completed", "published", "rejected")
     sub_rows = (
         db.query(Story.reporter_id, func.count(Story.id).label("cnt"))
         .filter(Story.reporter_id.in_(user_ids), Story.status.in_(submitted_statuses), Story.deleted_at.is_(None))

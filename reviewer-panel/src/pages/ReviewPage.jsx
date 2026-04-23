@@ -82,6 +82,7 @@ function ReviewPage() {
           setRejectReason={s.setRejectReason}
           handleApprove={s.handleApprove}
           handleReject={s.handleReject}
+          handleStatusChange={s.handleStatusChange}
           handleSaveContent={s.handleSaveContent}
         />
 

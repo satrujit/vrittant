@@ -42,8 +42,8 @@ BADGE_LABELS = {
     "century": "Century",
 }
 
-SUBMITTED_STATUSES = ("submitted", "approved", "published", "rejected")
-APPROVED_STATUSES = ("approved", "published")
+SUBMITTED_STATUSES = ("submitted", "approved", "flagged", "layout_completed", "published", "rejected")
+APPROVED_STATUSES = ("approved", "layout_completed", "published")
 
 
 def _compute_current_streak(submission_dates: list, today) -> int:

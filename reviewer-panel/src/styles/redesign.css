@@ -1,0 +1,133 @@
+/* ============================================================
+   Vrittant Reviewer Panel — Editorial Polish
+   Global styles only. No CSS Modules. shadcn primitives stay.
+   Goal: Jira-like calm density. Less chrome, less colour, more
+   information per screen. The orange (#FA6C38) is reserved for
+   *intent* — primary buttons, the active nav row, focus rings —
+   never as an accent stripe or background tint.
+   ============================================================ */
+
+/* ── Status colours (workflow pipeline) ─────────────────────── */
+:root {
+  --vr-status-submitted-fg:       #B45309;  /* amber-700 */
+  --vr-status-submitted-dot:      #F59E0B;  /* amber-500 */
+  --vr-status-approved-fg:        #047857;  /* emerald-700 */
+  --vr-status-approved-dot:       #10B981;  /* emerald-500 */
+  --vr-status-rejected-fg:        #B91C1C;  /* red-700 */
+  --vr-status-rejected-dot:       #EF4444;  /* red-500 */
+  --vr-status-flagged-fg:         #C2410C;  /* orange-700 */
+  --vr-status-flagged-dot:        #F97316;  /* orange-500 */
+  --vr-status-layout-fg:          #4338CA;  /* indigo-700 */
+  --vr-status-layout-dot:         #6366F1;  /* indigo-500 */
+  --vr-status-published-fg:       #1F2937;  /* gray-800 */
+  --vr-status-published-dot:      #4B5563;  /* gray-600 */
+  --vr-status-draft-fg:           #57534E;  /* stone-600 */
+  --vr-status-draft-dot:          #A8A29E;  /* stone-400 */
+}
+
+/* ── Status pill — text + dot, no background ────────────────── */
+.vr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: auto;
+  padding: 0;
+  background: transparent !important;
+  border: 0;
+  border-radius: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--vr-status-draft-fg);
+  white-space: nowrap;
+}
+.vr-pill__dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--vr-status-draft-dot);
+  flex-shrink: 0;
+}
+
+.vr-pill--submitted        { color: var(--vr-status-submitted-fg); }
+.vr-pill--submitted   .vr-pill__dot { background: var(--vr-status-submitted-dot); }
+.vr-pill--approved         { color: var(--vr-status-approved-fg); }
+.vr-pill--approved    .vr-pill__dot { background: var(--vr-status-approved-dot); }
+.vr-pill--rejected         { color: var(--vr-status-rejected-fg); }
+.vr-pill--rejected    .vr-pill__dot { background: var(--vr-status-rejected-dot); }
+.vr-pill--flagged          { color: var(--vr-status-flagged-fg); }
+.vr-pill--flagged     .vr-pill__dot { background: var(--vr-status-flagged-dot); }
+.vr-pill--layout-completed { color: var(--vr-status-layout-fg); }
+.vr-pill--layout-completed .vr-pill__dot { background: var(--vr-status-layout-dot); }
+.vr-pill--published        { color: var(--vr-status-published-fg); }
+.vr-pill--published   .vr-pill__dot { background: var(--vr-status-published-dot); }
+.vr-pill--draft            { color: var(--vr-status-draft-fg); }
+.vr-pill--draft       .vr-pill__dot { background: var(--vr-status-draft-dot); }
+.vr-pill--pending          { color: var(--vr-status-submitted-fg); }
+.vr-pill--pending     .vr-pill__dot { background: var(--vr-status-submitted-dot); }
+
+/* ── Metric strip — replaces 4-tile stat grid ───────────────── */
+.vr-metric-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--color-card, #fff);
+  border: 1px solid var(--color-border, #E7E5E4);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.vr-metric-strip__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 20px;
+  border-left: 1px solid var(--color-border, #E7E5E4);
+  min-width: 0;
+}
+.vr-metric-strip__item:first-child {
+  border-left: 0;
+}
+.vr-metric-strip__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground, #78716C);
+}
+.vr-metric-strip__value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--color-foreground, #1C1917);
+}
+
+@media (max-width: 720px) {
+  .vr-metric-strip {
+    flex-direction: column;
+  }
+  .vr-metric-strip__item {
+    border-left: 0;
+    border-top: 1px solid var(--color-border, #E7E5E4);
+  }
+  .vr-metric-strip__item:first-child {
+    border-top: 0;
+  }
+}
+
+/* ── Table density ──────────────────────────────────────────── */
+.vr-table-dense th {
+  padding: 8px 14px !important;
+  font-size: 11px !important;
+}
+.vr-table-dense td {
+  padding: 10px 14px !important;
+  font-size: 13.5px !important;
+}
+@media (max-width: 640px) {
+  .vr-table-dense th,
+  .vr-table-dense td {
+    padding: 8px 10px !important;
+  }
+}

@@ -192,11 +192,11 @@ def create_blank_story(
         organization_id=org_id,
         headline="",
         paragraphs=[],
-        # Editor-created stories start in "in_progress" (not "draft") so they
-        # appear in the default admin list views, which filter drafts out.
-        # Without this, the editor saves content successfully but the story
-        # never surfaces anywhere in the UI — it looks "unsaved".
-        status="in_progress",
+        # Editor-created stories enter the workflow as "submitted" (rendered
+        # "Reported" in the UI). Same status surface as a reporter-submitted
+        # story — there's no separate "in progress" limbo any more.
+        status="submitted",
+        submitted_at=now,
         source="Editor Created",
         # Auto-assign to creator — they're the one writing it, so the story
         # shouldn't sit in an "Unassigned" state in the side panel.
@@ -239,7 +239,14 @@ def admin_get_story(story_id: str, db: Session = Depends(get_db), user: User = D
 # PUT /admin/stories/{story_id}/status
 # ---------------------------------------------------------------------------
 
-TERMINAL_STATUSES = {"approved", "rejected", "published"}
+TERMINAL_STATUSES = {"approved", "rejected", "published", "layout_completed", "flagged"}
+
+# Transitions that require a specific source state. All other moves between
+# allowed statuses are unrestricted. Keep this map small and obvious — the
+# moment it gets clever it stops being readable.
+STATUS_PREDECESSORS = {
+    "layout_completed": {"approved"},
+}
 
 
 def _cleanup_transcription_audio(story: Story) -> None:
@@ -292,7 +299,10 @@ def admin_update_story_status(
     user: User = Depends(require_reviewer),
     org_id: str = Depends(get_current_org_id),
 ):
-    allowed = {"approved", "rejected", "published", "in_progress"}
+    # `submitted` is in here so reviewers can "send back" a story they
+    # approved by mistake — clears the attribution and puts the story
+    # back on the Reported queue. It's the only non-terminal target.
+    allowed = {"submitted", "approved", "rejected", "published", "flagged", "layout_completed"}
     if body.status not in allowed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -308,6 +318,19 @@ def admin_update_story_status(
     if not story:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Story not found"
+        )
+
+    # Enforce the few transitions that have a strict predecessor (e.g. only
+    # an Approved story can move to Layout Completed — that's the whole
+    # point of the layout step).
+    required_from = STATUS_PREDECESSORS.get(body.status)
+    if required_from is not None and story.status not in required_from:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Cannot move to '{body.status}' from '{story.status}'. "
+                f"Allowed source statuses: {', '.join(sorted(required_from))}."
+            ),
         )
 
     # Edition assignment is optional — approval no longer requires it
