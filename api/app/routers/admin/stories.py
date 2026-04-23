@@ -4,7 +4,7 @@ import uuid as uuid_mod
 from datetime import datetime
 from typing import Optional
 
-from fastapi import Depends, File as FastAPIFile, HTTPException, Query, UploadFile, status
+from fastapi import BackgroundTasks, Depends, File as FastAPIFile, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
@@ -14,6 +14,7 @@ from ...deps import get_current_org_id, require_org_admin, require_reviewer
 from ...models.story import Story
 from ...models.story_revision import StoryRevision
 from ...models.user import User
+from ...services.categorizer import categorize_story_in_background
 from ...utils.tz import now_ist
 from . import router
 from ._shared import (
@@ -242,6 +243,7 @@ def _has_real_content(headline: Optional[str], paragraphs: Optional[list]) -> bo
 @router.post("/stories", response_model=AdminStoryWithRevisionResponse)
 def create_editor_story(
     body: AdminStoryUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_reviewer),
     org_id: str = Depends(get_current_org_id),
@@ -299,6 +301,13 @@ def create_editor_story(
 
     db.commit()
     db.refresh(story)
+
+    # Best-effort auto-categorisation: fire after the response is sent so
+    # the editor doesn't wait on Sarvam. Skips itself if the editor already
+    # picked a category. The cron sweep mops up any failures.
+    if not (story.category or "").strip():
+        background_tasks.add_task(categorize_story_in_background, story.id)
+
     resp = AdminStoryWithRevisionResponse.model_validate(story)
     resp.edition_info = _get_edition_info(db, story.id)
     resp.reviewer_name = story.reviewer.name if story.reviewer else None
@@ -461,6 +470,7 @@ def admin_update_story_status(
 def admin_update_story(
     story_id: str,
     body: AdminStoryUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_reviewer),
     org_id: str = Depends(get_current_org_id),
@@ -555,6 +565,13 @@ def admin_update_story(
     story.refresh_search_text()
     db.commit()
     db.refresh(story)
+
+    # Best-effort auto-categorisation: only fire if the story still has no
+    # category after this save. Same fire-and-forget pattern as the create
+    # path; the cron sweep retries on failure.
+    if not (story.category or "").strip():
+        background_tasks.add_task(categorize_story_in_background, story.id)
+
     resp = AdminStoryWithRevisionResponse.model_validate(story)
     resp.edition_info = _get_edition_info(db, story.id)
     resp.reviewer_name = story.reviewer.name if story.reviewer else None

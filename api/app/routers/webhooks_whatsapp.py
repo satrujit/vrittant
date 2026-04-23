@@ -25,14 +25,13 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models.org_config import DEFAULT_CATEGORIES, OrgConfig
 from ..models.story import Story
 from ..models.user import User
 from ..models.webhook_dedup import WhatsappInboundDedup
 from ..services import storage
 from ..services import whatsapp_classifier as classifier
 from ..services.assignment import NoReviewersAvailable, pick_assignee
-from ..services.categorizer import classify_category
+from ..services.categorizer import classify_category, org_category_keys
 from ..utils.tz import now_ist
 
 router = APIRouter(prefix="/webhooks/whatsapp", tags=["webhooks"])
@@ -46,19 +45,8 @@ def _is_close_keyword(text: str) -> bool:
     return text.strip().lower() in CLOSE_KEYWORDS
 
 
-def _org_category_keys(db: Session, organization_id: str) -> list[str]:
-    """Return the org's active category keys, falling back to platform
-    defaults if the org has no OrgConfig row or empty categories."""
-    cfg = (
-        db.query(OrgConfig)
-        .filter(OrgConfig.organization_id == organization_id)
-        .first()
-    )
-    raw = (cfg.categories if cfg else None) or DEFAULT_CATEGORIES
-    return [
-        c["key"] for c in raw
-        if isinstance(c, dict) and c.get("key") and c.get("is_active", True)
-    ]
+# org_category_keys is now shared with the editor save path; see
+# services/categorizer.py. The legacy local helper used to live here.
 
 
 def _find_open_draft(db, user_id: str):
@@ -310,7 +298,7 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     # category keys (falls back to the platform defaults if the org has
     # no override). If Sarvam errors out the helper returns None and we
     # leave `category` unset — same as the pre-categorisation behaviour.
-    category_keys = _org_category_keys(db, user.organization_id)
+    category_keys = org_category_keys(db, user.organization_id)
     category = await classify_category(text, category_keys) if text else None
 
     story = Story(

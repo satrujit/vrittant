@@ -205,27 +205,17 @@ export default function ReviewEditor({
               {imageFiles.map((img, i) => (
                 <div key={img.paragraphId || i} className="group relative aspect-[4/3] overflow-hidden rounded-md border border-border bg-background">
                   <img src={img.url} alt={img.name || `Image ${i + 1}`} className="size-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
-                  {handleAttachmentDelete && img.paragraphId && (
-                    <button
-                      type="button"
-                      title={t('review.removeAttachment', 'Remove')}
-                      aria-label={t('review.removeAttachment', 'Remove')}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleAttachmentDelete(img.paragraphId);
-                      }}
-                      className="absolute right-1 top-1 z-10 inline-flex size-5 items-center justify-center rounded-full border border-white/40 bg-black/60 text-white opacity-0 transition-opacity hover:bg-red-500 group-hover:opacity-100"
-                    >
-                      <X size={11} />
-                    </button>
-                  )}
+                  {/* Download overlay sits BELOW the remove button. Both are
+                      shown on group-hover. Order matters: the link is rendered
+                      first so the X button (rendered after, z-20) captures
+                      clicks in the corner without the link's `inset-0` hit
+                      area swallowing them. */}
                   <a
                     href={img.url}
                     download={img.name || `image-${i + 1}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+                    className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
                     onClick={async (e) => {
                       e.preventDefault();
                       try {
@@ -246,6 +236,21 @@ export default function ReviewEditor({
                   >
                     <Download size={20} className="text-white" />
                   </a>
+                  {handleAttachmentDelete && img.paragraphId && (
+                    <button
+                      type="button"
+                      title={t('review.removeAttachment', 'Remove')}
+                      aria-label={t('review.removeAttachment', 'Remove')}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleAttachmentDelete(img.paragraphId);
+                      }}
+                      className="absolute right-1 top-1 z-20 inline-flex size-5 items-center justify-center rounded-full border border-white/40 bg-black/60 text-white opacity-0 transition-opacity hover:bg-red-500 group-hover:opacity-100"
+                    >
+                      <X size={11} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
