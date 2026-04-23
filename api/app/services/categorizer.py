@@ -36,10 +36,14 @@ _SYSTEM = (
     "fits, reply 'other'."
 )
 
-# Roughly the worst-case response we want to honour — a single key.
-# Larger replies are truncated and pattern-matched against the allowed set.
-_MAX_TOKENS = 16
-_TIMEOUT_SECONDS = 8.0
+# Sarvam-30b is a reasoning model — it spends completion tokens on an
+# internal think-pass before emitting the answer. With a tight cap (we
+# tried 16) it hits finish_reason="length" mid-think and returns
+# content=null every time. 600 leaves comfortable headroom for the
+# reasoning pass plus the one-word answer; we still pay ~$0.0002/call.
+# `reasoning_effort: low` shortens the think-pass further.
+_MAX_TOKENS = 600
+_TIMEOUT_SECONDS = 15.0
 
 
 async def classify_category(
@@ -72,6 +76,7 @@ async def classify_category(
         ],
         "temperature": 0.0,
         "max_tokens": _MAX_TOKENS,
+        "reasoning_effort": "low",
     }
 
     url = f"{settings.SARVAM_BASE_URL}/v1/chat/completions"
