@@ -171,14 +171,18 @@ function ReportersPage() {
           className="max-w-[320px] flex-1 min-w-[200px]"
         />
 
-        <div className="inline-flex items-center bg-muted rounded-lg p-1">
+        {/* Segmented period toggle — kept as a deliberate "pill group"
+            (not a SearchableSelect) because it's a single-purpose binary-ish
+            switch, but bumped to h-8 so it aligns vertically with the
+            adjacent SearchBar and matches the system-wide field height. */}
+        <div className="inline-flex items-center bg-muted rounded-lg p-1 h-8">
           {PERIODS.map((p) => (
             <Button
               key={p.key}
               variant={period === p.key ? 'default' : 'ghost'}
               size="sm"
               className={cn(
-                'h-7 px-3 rounded-md text-xs font-medium',
+                'h-6 px-3 rounded-md text-xs font-medium',
                 period === p.key ? '' : 'text-muted-foreground hover:text-foreground'
               )}
               onClick={() => setPeriod(p.key)}

@@ -3,14 +3,13 @@ import { SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableSelect } from '../common';
 import StoryCard from './StoryCard';
+
+// Canonical filter-label class — matches AllStoriesPage and the rest of
+// the system (text-[10px] uppercase, micro tracking).
+const FILTER_LABEL_CLASS =
+  'text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]';
 
 /**
  * Fixed-left panel listing unassigned stories with category/location filters.
@@ -71,70 +70,40 @@ export default function UnassignedPanel({
               <div className="text-sm font-semibold text-foreground">{t('buckets.filterTitle')}</div>
 
               {uniqueCategories.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <div className="flex flex-col gap-0.5">
+                  <Label className={FILTER_LABEL_CLASS}>
                     {t('buckets.filterByCategory')}
                   </Label>
-                  <Select
-                    value={categoryFilter || '__all__'}
-                    onValueChange={(val) => setCategoryFilter(val === '__all__' ? '' : val)}
-                  >
-                    <SelectTrigger
-                      size="sm"
-                      className={cn(
-                        'w-full',
-                        'font-sans text-sm text-foreground',
-                        'bg-card border border-border rounded-lg',
-                        'cursor-pointer shadow-none',
-                        'transition-[border-color,box-shadow] duration-150',
-                        'focus:border-ring focus:ring-2 focus:ring-ring/20'
-                      )}
-                    >
-                      <SelectValue placeholder={t('buckets.allCategories')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__all__">{t('buckets.allCategories')}</SelectItem>
-                      {uniqueCategories.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {t(`categories.${cat}`) !== `categories.${cat}`
-                            ? t(`categories.${cat}`)
-                            : cat}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    triggerClassName="w-full"
+                    value={categoryFilter}
+                    onChange={setCategoryFilter}
+                    placeholder={t('buckets.allCategories')}
+                    allLabel={t('buckets.allCategories')}
+                    options={uniqueCategories.map((cat) => ({
+                      value: cat,
+                      label:
+                        t(`categories.${cat}`) !== `categories.${cat}`
+                          ? t(`categories.${cat}`)
+                          : cat,
+                    }))}
+                  />
                 </div>
               )}
 
               {uniqueLocations.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <div className="flex flex-col gap-0.5">
+                  <Label className={FILTER_LABEL_CLASS}>
                     {t('buckets.filterByLocation')}
                   </Label>
-                  <Select
-                    value={locationFilter || '__all__'}
-                    onValueChange={(val) => setLocationFilter(val === '__all__' ? '' : val)}
-                  >
-                    <SelectTrigger
-                      size="sm"
-                      className={cn(
-                        'w-full',
-                        'font-sans text-sm text-foreground',
-                        'bg-card border border-border rounded-lg',
-                        'cursor-pointer shadow-none',
-                        'transition-[border-color,box-shadow] duration-150',
-                        'focus:border-ring focus:ring-2 focus:ring-ring/20'
-                      )}
-                    >
-                      <SelectValue placeholder={t('buckets.allLocations')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__all__">{t('buckets.allLocations')}</SelectItem>
-                      {uniqueLocations.map((loc) => (
-                        <SelectItem key={loc} value={loc}>{loc}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    triggerClassName="w-full"
+                    value={locationFilter}
+                    onChange={setLocationFilter}
+                    placeholder={t('buckets.allLocations')}
+                    allLabel={t('buckets.allLocations')}
+                    options={uniqueLocations.map((loc) => ({ value: loc, label: loc }))}
+                  />
                 </div>
               )}
 

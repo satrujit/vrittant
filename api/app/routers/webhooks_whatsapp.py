@@ -282,7 +282,29 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
             media_url, inner_payload.get("contentType")
         ) or media_url
 
-    headline = (text.split("\n", 1)[0][:120] if text else "Forwarded from WhatsApp")
+    # Generate the story id up front so we can prefix the headline with a
+    # short slice of it. Two reasons:
+    #   1. Forwarded press releases often share an identical first line, so
+    #      using just `text.split("\n")[0]` produced collisions in the
+    #      reviewer queue (and would now trip the editor-side duplicate
+    #      check; see admin/stories.py::_check_headline_duplicate_today).
+    #   2. Reviewers asked for a stable per-WhatsApp-item handle they can
+    #      reference in chat — `#abcdef12` is short enough to read aloud
+    #      and unique to this story.
+    new_story_id = str(uuid.uuid4())
+    short_id = new_story_id[:8]
+    if text:
+        first_line = text.split("\n", 1)[0].strip()
+    else:
+        first_line = ""
+    # Truncate the body slice so the full headline (including the
+    # "#shortid " prefix, 10 chars) stays under the 120-char editorial cap.
+    if first_line:
+        if len(first_line) > 110:
+            first_line = first_line[:109].rstrip() + "…"
+        headline = f"#{short_id} {first_line}"
+    else:
+        headline = f"#{short_id} Forwarded from WhatsApp"
     paragraphs = []
     if text:
         paragraphs.append({"id": str(uuid.uuid4()), "text": text})
@@ -302,6 +324,7 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     category = await classify_category(text, category_keys) if text else None
 
     story = Story(
+        id=new_story_id,
         organization_id=user.organization_id,
         reporter_id=user.id,
         # `assigned_to` is filled below via pick_assignee for reporters so

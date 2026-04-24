@@ -220,8 +220,9 @@ export default function DashboardPage() {
 
       {/* Table Card */}
       <div className="bg-card border border-border rounded-lg overflow-hidden">
-        {/* Toolbar */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-border max-sm:px-2">
+        {/* Toolbar — gap-3 + h-8 SearchBar matches the system-wide
+            filter-row pattern (AllStories, NewsFeed, Reporters). */}
+        <div className="flex items-center gap-3 px-3 py-2 border-b border-border max-sm:px-2">
           <div className="flex-1 max-w-xs">
             <SearchBar
               value={searchQuery}

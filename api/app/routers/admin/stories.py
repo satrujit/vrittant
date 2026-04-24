@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import BackgroundTasks, Depends, File as FastAPIFile, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from ...database import get_db
@@ -59,6 +59,49 @@ def _derive_headline_from_paragraphs(paragraphs) -> str:
             return first_line[: _DERIVED_HEADLINE_MAX_LEN - 1].rstrip() + "…"
         return first_line
     return ""
+
+
+def _check_headline_duplicate_today(
+    db: Session,
+    *,
+    org_id: str,
+    headline: Optional[str],
+    submitted_at: Optional[datetime],
+    exclude_story_id: Optional[str] = None,
+) -> None:
+    """Raise HTTP 409 if another story in the same org has the same headline
+    submitted on the same calendar day.
+
+    Editorial rule: a single org should never publish two stories with
+    identical headlines on the same day — it's almost always either an
+    accidental double-save or two reporters racing on the same press
+    release. WhatsApp-forwarded items sidestep this naturally because their
+    headlines are prefixed with the story's short id (see
+    webhooks_whatsapp.py); editor-created stories must be unique by hand.
+
+    `exclude_story_id` is required during PUT updates so the story being
+    re-saved doesn't false-positive against itself.
+    """
+    cleaned = (headline or "").strip()
+    if not cleaned or submitted_at is None:
+        return
+    target_date = submitted_at.date()
+    q = db.query(Story.id).filter(
+        Story.organization_id == org_id,
+        Story.deleted_at.is_(None),
+        Story.headline == cleaned,
+        func.date(Story.submitted_at) == target_date,
+    )
+    if exclude_story_id:
+        q = q.filter(Story.id != exclude_story_id)
+    if q.first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Another story with the headline “{cleaned}” was already "
+                f"saved today. Please use a different headline."
+            ),
+        )
 
 
 def _resolve_headline(submitted: Optional[str], paragraphs, fallback: Optional[str]) -> Optional[str]:
@@ -270,6 +313,12 @@ def create_editor_story(
     headline = _resolve_headline(body.headline, paragraphs, "") or ""
 
     now = now_ist()
+    # Reject same-org/same-day headline collisions before we hit the DB.
+    # See _check_headline_duplicate_today for the editorial rationale.
+    _check_headline_duplicate_today(
+        db, org_id=org_id, headline=headline, submitted_at=now,
+    )
+
     story = Story(
         id=str(uuid_mod.uuid4()),
         reporter_id=current_user.id,
@@ -519,6 +568,21 @@ def admin_update_story(
             resolved_headline = existing_clean
         else:
             resolved_headline = _resolve_headline(None, effective_paragraphs, story.headline)
+
+    # Block same-org/same-day headline collisions on update too. We compare
+    # against the *resolved* headline (the value that's about to land on
+    # either Story or its revision) and exclude this story from the search
+    # so re-saves of an unchanged headline don't false-positive. The check
+    # is keyed on the original Story.submitted_at — that's the day this
+    # story belongs to editorially, regardless of when the edit happens.
+    if resolved_headline:
+        _check_headline_duplicate_today(
+            db,
+            org_id=org_id,
+            headline=resolved_headline,
+            submitted_at=story.submitted_at or story.created_at,
+            exclude_story_id=story.id,
+        )
 
     if is_editor_created:
         if resolved_headline is not None:

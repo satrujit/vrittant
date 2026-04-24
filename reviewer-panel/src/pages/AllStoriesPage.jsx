@@ -481,11 +481,6 @@ export default function AllStoriesPage() {
                           className="text-sm font-semibold text-foreground leading-tight line-clamp-1 hover:text-primary transition-colors no-underline"
                         >
                           {story.headline}
-                          {story.hasRevision && (
-                            <span className="inline-block px-1.5 py-px text-[0.625rem] font-semibold uppercase tracking-[0.05em] bg-green-50 text-green-800 rounded ml-2 align-middle">
-                              {t('common.edited')}
-                            </span>
-                          )}
                         </Link>
                         <div className="flex items-center gap-[5px]">
                           <Avatar
