@@ -78,6 +78,9 @@ export {
   assignStoriesToPage,
   addStoryToPage,
   removeStoryFromPage,
+  getStoryPlacements,
+  setStoryPlacements,
+  listTodaysEditions,
 } from './editions.js';
 
 // Org admin — users, roles, entitlements, org metadata + config

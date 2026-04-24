@@ -51,3 +51,23 @@ export async function addStoryToPage(editionId, pageId, storyId) {
 export async function removeStoryFromPage(editionId, pageId, storyId) {
   return apiDelete(`/admin/editions/${editionId}/pages/${pageId}/stories/${storyId}`);
 }
+
+// ── Multi-edition placement (matrix) ──
+
+export async function getStoryPlacements(storyId) {
+  return apiGet(`/admin/stories/${storyId}/placements`);
+}
+
+export async function setStoryPlacements(storyId, placements) {
+  return apiPut(`/admin/stories/${storyId}/placements`, { placements });
+}
+
+/**
+ * List editions for a single publication date with their pages eagerly
+ * included. Used by the placement matrix to render one cell per edition
+ * and a page picker per cell without N round-trips.
+ */
+export async function listTodaysEditions(date) {
+  const query = buildQuery({ publication_date: date, limit: 100 });
+  return apiGet(`/admin/editions${query}`);
+}
