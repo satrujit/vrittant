@@ -4,6 +4,7 @@
  */
 
 import { API_BASE, AVATAR_COLORS } from './_internal.js';
+import { normalizeOdiaText } from '../../utils/odiaText.js';
 
 export function getAvatarColor(name) {
   if (!name) return AVATAR_COLORS[0];
@@ -57,13 +58,23 @@ export function transformStory(story) {
   // of reviewer image uploads) didn't include `id`, which broke the
   // attachment-delete UI because we identify paragraphs by id. The synthetic
   // id sticks the moment the story is next saved.
-  paragraphs = paragraphs.map((p) => (
-    p && typeof p === 'object' && !p.id
-      ? { ...p, id: (typeof crypto !== 'undefined' && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : `p-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}` }
-      : p
-  ));
+  //
+  // Also normalize legacy/reserved Odia codepoints in text (mostly U+0B64
+  // → ।) so stored content from WhatsApp forwards and old editors stops
+  // rendering as tofu boxes. See utils/odiaText.js.
+  paragraphs = paragraphs.map((p) => {
+    if (!p || typeof p !== 'object') return p;
+    const next = { ...p };
+    if (typeof next.text === 'string') {
+      next.text = normalizeOdiaText(next.text);
+    }
+    if (!next.id) {
+      next.id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `p-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
+    }
+    return next;
+  });
 
   // Build bodyText from paragraph texts
   const bodyText = paragraphs
@@ -94,6 +105,7 @@ export function transformStory(story) {
 
   return {
     ...story,
+    headline: normalizeOdiaText(story.headline || ''),
     paragraphs,
     bodyText,
     reporter: reporterWithUI,
