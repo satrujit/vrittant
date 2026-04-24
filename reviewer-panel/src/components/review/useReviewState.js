@@ -115,6 +115,20 @@ export function useReviewState({ id, t }) {
   const odiaKeyboardRef = useRef(true);
   useEffect(() => { odiaKeyboardRef.current = odiaKeyboard; }, [odiaKeyboard]);
 
+  // Refs that mirror the TipTap editor instances. Used by the story-fetch
+  // effect below so it doesn't have to depend on `editor`/`englishEditor`
+  // — those refs change from undefined → instance during mount, which would
+  // otherwise re-run the effect and fire `fetchStory(id)` a second time
+  // (visible in HARs as duplicate GETs ~2ms apart with serialized CORS
+  // preflights, adding seconds of perceived latency).
+  const editorRef = useRef(null);
+  const englishEditorRef = useRef(null);
+  // Buffers content the fetch produced before the editor was ready, so the
+  // editor-ready effect can flush it. Avoids a race where the network
+  // wins against TipTap init and we'd otherwise drop the initial setContent.
+  const pendingEditorContentRef = useRef(null);
+  const pendingEnglishContentRef = useRef(null);
+
   // Keyboard shortcut: Ctrl+Space to toggle Odia/English
   useEffect(() => {
     const handler = (e) => {
@@ -172,6 +186,12 @@ export function useReviewState({ id, t }) {
       setEnglishTranslation(ed.getHTML());
     },
   });
+
+  // Mirror editor instances into refs so the story-fetch effect can read
+  // them without listing them as dependencies (see editorRef declaration
+  // above for why that matters).
+  useEffect(() => { editorRef.current = editor; }, [editor]);
+  useEffect(() => { englishEditorRef.current = englishEditor; }, [englishEditor]);
 
   // Track selection state for sparkle mode + show tooltip
   useEffect(() => {
@@ -247,20 +267,31 @@ export function useReviewState({ id, t }) {
 
           setHeadline(activeHeadline);
 
-          if (editor && activeParagraphs.length > 0) {
+          // Read editors via refs so this effect doesn't re-fire when
+          // they finish initializing. If TipTap isn't ready yet, the
+          // editor-ready effect below applies the pending content.
+          const ed = editorRef.current;
+          if (ed && activeParagraphs.length > 0) {
             const html = activeParagraphs
               .map((p) => `<p>${(p.text || '').replace(/\n/g, '<br>')}</p>`)
               .join('');
-            editor.commands.setContent(html);
+            ed.commands.setContent(html);
+          } else if (activeParagraphs.length > 0) {
+            pendingEditorContentRef.current = activeParagraphs
+              .map((p) => `<p>${(p.text || '').replace(/\n/g, '<br>')}</p>`)
+              .join('');
           }
 
           if (rev && rev.english_translation) {
             setEnglishTranslation(rev.english_translation);
-            if (englishEditor) {
-              const html = rev.english_translation.startsWith('<')
-                ? rev.english_translation
-                : rev.english_translation.split('\n\n').map(p => `<p>${p}</p>`).join('');
-              englishEditor.commands.setContent(html);
+            const enEd = englishEditorRef.current;
+            const html = rev.english_translation.startsWith('<')
+              ? rev.english_translation
+              : rev.english_translation.split('\n\n').map(p => `<p>${p}</p>`).join('');
+            if (enEd) {
+              enEd.commands.setContent(html);
+            } else {
+              pendingEnglishContentRef.current = html;
             }
           }
 
@@ -283,7 +314,22 @@ export function useReviewState({ id, t }) {
         }
       });
     return () => { cancelled = true; };
-  }, [id, editor, englishEditor]);
+  }, [id]);
+
+  // If the fetch resolved before the editor was ready, apply the buffered
+  // content as soon as the editor mounts.
+  useEffect(() => {
+    if (editor && pendingEditorContentRef.current != null) {
+      editor.commands.setContent(pendingEditorContentRef.current);
+      pendingEditorContentRef.current = null;
+    }
+  }, [editor]);
+  useEffect(() => {
+    if (englishEditor && pendingEnglishContentRef.current != null) {
+      englishEditor.commands.setContent(pendingEnglishContentRef.current);
+      pendingEnglishContentRef.current = null;
+    }
+  }, [englishEditor]);
 
   // Word count from editor
   const wordCount = useMemo(() => {
