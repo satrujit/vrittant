@@ -109,6 +109,9 @@ def _media_type_for(inner_type: str) -> str:
 
 
 # Map common Gupshup contentType values → file extension for the GCS object.
+# Office formats matter for two reasons: (a) without an extension the
+# downloaded file lands as `<hex>` and most OSes refuse to open it; (b) the
+# panel's attachment rail uses the extension to pick the right icon/label.
 _CONTENT_TYPE_EXT = {
     "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
     "image/webp": ".webp", "image/gif": ".gif", "image/heic": ".heic",
@@ -116,13 +119,54 @@ _CONTENT_TYPE_EXT = {
     "audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a",
     "audio/aac": ".aac", "audio/amr": ".amr",
     "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.ms-excel": ".xls",
+    "text/plain": ".txt",
+    "text/csv": ".csv",
 }
 
 
-async def _persist_media(url: str, content_type: str | None = None) -> str | None:
+def _extract_docx_text(body: bytes) -> str:
+    """Pull the visible paragraph text out of a .docx blob. Returns "" on
+    any parse error — docx extraction is a best-effort enhancement; the
+    file itself is still attached to the story regardless."""
+    try:
+        import io
+        from docx import Document  # python-docx
+        doc = Document(io.BytesIO(body))
+        chunks: list[str] = []
+        for p in doc.paragraphs:
+            t = (p.text or "").strip()
+            if t:
+                chunks.append(t)
+        # Tables are common in government press releases — flatten them
+        # row-by-row, tab-separating cells, so the reviewer at least sees
+        # the data even if the layout doesn't survive.
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [(c.text or "").strip() for c in row.cells]
+                line = "\t".join(c for c in cells if c)
+                if line:
+                    chunks.append(line)
+        return "\n\n".join(chunks).strip()
+    except Exception:
+        logger.exception("Failed to extract docx text")
+        return ""
+
+
+async def _persist_media(
+    url: str, content_type: str | None = None, original_name: str | None = None
+) -> tuple[str | None, bytes | None, str | None]:
     """Download a media file from Gupshup's transient URL and re-host it
-    in our own bucket. Returns the public URL on success, ``None`` on
-    failure (the caller falls back to the original link)."""
+    in our own bucket.
+
+    Returns ``(stored_url, body, content_type)``. ``stored_url`` is None
+    only if the upload failed (callers fall back to the Gupshup link).
+    ``body`` and ``content_type`` are returned even when upload fails, so
+    the caller can still extract docx text from the bytes we did fetch.
+    """
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             resp = await client.get(url)
@@ -132,9 +176,13 @@ async def _persist_media(url: str, content_type: str | None = None) -> str | Non
             ct = (resp.headers.get("content-type") or content_type or "").split(";")[0].strip()
     except Exception:
         logger.exception("Failed to download Gupshup media from %s", url)
-        return None
+        return (None, None, None)
 
     ext = _CONTENT_TYPE_EXT.get(ct.lower(), "")
+    if not ext and original_name and "." in original_name:
+        # Reporter's original filename usually carries the right extension
+        # even when Gupshup's contentType is generic application/octet-stream.
+        ext = "." + original_name.rsplit(".", 1)[-1].lower()
     if not ext:
         # Try the URL path as a last resort (e.g. /abc.jpg).
         url_path = url.split("?", 1)[0]
@@ -143,10 +191,15 @@ async def _persist_media(url: str, content_type: str | None = None) -> str | Non
     filename = f"{uuid.uuid4().hex}{ext}"
 
     try:
-        return storage.save_file(body, filename, subfolder="whatsapp")
+        stored = storage.save_file(body, filename, subfolder="whatsapp")
     except Exception:
         logger.exception("Failed to upload WhatsApp media to storage")
-        return None
+        stored = None
+    return (stored, body, ct)
+
+
+def _is_docx_ct(ct: str | None) -> bool:
+    return (ct or "").lower() == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 async def _send_gupshup_reply(to_phone: str, text: str) -> None:
@@ -239,10 +292,14 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     open_draft = _find_open_draft(db, user.id)
     if open_draft is not None:
         stored_media_url: str | None = None
+        media_body: bytes | None = None
+        media_ct: str | None = None
+        original_name = inner_payload.get("name") or None
         if media_url:
-            stored_media_url = await _persist_media(
-                media_url, inner_payload.get("contentType")
-            ) or media_url
+            stored_media_url, media_body, media_ct = await _persist_media(
+                media_url, inner_payload.get("contentType"), original_name
+            )
+            stored_media_url = stored_media_url or media_url
 
         paragraphs = list(open_draft.paragraphs or [])
         if text:
@@ -250,12 +307,26 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
         if stored_media_url:
             # Empty `text` so the editor body doesn't show the URL inline —
             # the panel reads `media_path` to build the Attachments rail.
-            paragraphs.append({
+            media_para = {
                 "id": str(uuid.uuid4()),
                 "text": "",
                 "media_path": stored_media_url,
                 "media_type": _media_type_for(inner_type),
-            })
+            }
+            if original_name:
+                # `media_name` drives the panel's display name + download
+                # filename. Without this, docs land as `<hex>` with no
+                # extension on disk and the editor falls back to the URL
+                # basename (also extensionless).
+                media_para["media_name"] = original_name
+            paragraphs.append(media_para)
+        # Best-effort docx text extraction. We append it as a separate
+        # text paragraph after the file attachment so the reviewer sees
+        # the body content inline without losing the original document.
+        if media_body and _is_docx_ct(media_ct):
+            extracted = _extract_docx_text(media_body)
+            if extracted:
+                paragraphs.append({"id": str(uuid.uuid4()), "text": extracted})
         open_draft.paragraphs = paragraphs
         open_draft.whatsapp_session_open_until = now_ist() + timedelta(minutes=STITCH_MINUTES)
         open_draft.refresh_search_text()
@@ -281,10 +352,14 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
         needs_triage = (label == "unclear")
 
     stored_media_url = None
+    media_body: bytes | None = None
+    media_ct: str | None = None
+    original_name = inner_payload.get("name") or None
     if media_url:
-        stored_media_url = await _persist_media(
-            media_url, inner_payload.get("contentType")
-        ) or media_url
+        stored_media_url, media_body, media_ct = await _persist_media(
+            media_url, inner_payload.get("contentType"), original_name
+        )
+        stored_media_url = stored_media_url or media_url
 
     # Generate the story id up front so we can prefix the headline with a
     # short slice of it. Two reasons:
@@ -313,12 +388,24 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     if text:
         paragraphs.append({"id": str(uuid.uuid4()), "text": text})
     if stored_media_url:
-        paragraphs.append({
+        media_para = {
             "id": str(uuid.uuid4()),
             "text": "",
             "media_path": stored_media_url,
             "media_type": _media_type_for(inner_type),
-        })
+        }
+        if original_name:
+            media_para["media_name"] = original_name
+        paragraphs.append(media_para)
+    # Best-effort docx text extraction (mirrors the open-draft branch).
+    if media_body and _is_docx_ct(media_ct):
+        extracted = _extract_docx_text(media_body)
+        if extracted:
+            paragraphs.append({"id": str(uuid.uuid4()), "text": extracted})
+            # Use extracted text for category classification too — a docx
+            # forward with no caption would otherwise be Uncategorized.
+            if not text:
+                text = extracted
 
     # Best-effort category tag at ingestion. We pull the org's configured
     # category keys (falls back to the platform defaults if the org has

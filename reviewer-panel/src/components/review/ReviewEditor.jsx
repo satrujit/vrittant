@@ -225,6 +225,11 @@ export default function ReviewEditor({
               {t('review.uploadImage', 'Upload Image')}
             </button>
           </h4>
+          {/* Cap the combined attachment region so a long photo grid or a
+              dozen audio clips can't push the editor body off-screen. The
+              header (upload button + count) stays pinned above; only the
+              lists below scroll. */}
+          <div className="max-h-72 overflow-y-auto pr-1">
           {imageFiles.length > 0 && (
             <div className="mb-2 grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2">
               {imageFiles.map((img, i) => (
@@ -365,6 +370,7 @@ export default function ReviewEditor({
               ))}
             </div>
           )}
+          </div>
         </div>
       </div>
 
