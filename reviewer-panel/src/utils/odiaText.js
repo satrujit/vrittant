@@ -33,6 +33,16 @@ const SUBSTITUTIONS = {
   // canonical "purnaccheda" used in Odia, Hindi, Bengali, Marathi etc.
   '\u0B64': '\u0964',  // ୤ (reserved) → । DEVANAGARI DANDA
   '\u0B65': '\u0965',  // ୥ (reserved) → ॥ DEVANAGARI DOUBLE DANDA
+
+  // Legacy-font Latin-block escapes. Reporters typing in old 8-bit Odia
+  // fonts (AkrutiOriya / AkrutiOriBhagyashree etc.) emit byte 0xD2 for
+  // the dirgha-i matra glyph; when that byte is decoded as Latin-1 it
+  // arrives in our DB as `Ò` U+00D2. Pure-Odia fonts have no glyph for
+  // that codepoint, so it renders as tofu in the middle of words like
+  // ମାରିଥÒଲା (intended ମାରିଥୀଲା). Map back to the canonical matra.
+  // Add more Latin-block mappings ONLY when found in real DB scans —
+  // random Latin substitution would corrupt English in translations.
+  '\u00D2': '\u0B40',  // Ò → ୀ ORIYA VOWEL SIGN II (dirgha-i)
 };
 
 // Pre-built character class for the regex — kept module-level so we
