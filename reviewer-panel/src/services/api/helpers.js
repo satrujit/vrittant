@@ -62,19 +62,7 @@ export function transformStory(story) {
   // Also normalize legacy/reserved Odia codepoints in text (mostly U+0B64
   // → ।) so stored content from WhatsApp forwards and old editors stops
   // rendering as tofu boxes. See utils/odiaText.js.
-  paragraphs = paragraphs.map((p) => {
-    if (!p || typeof p !== 'object') return p;
-    const next = { ...p };
-    if (typeof next.text === 'string') {
-      next.text = normalizeOdiaText(next.text);
-    }
-    if (!next.id) {
-      next.id = (typeof crypto !== 'undefined' && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : `p-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
-    }
-    return next;
-  });
+  paragraphs = paragraphs.map(_normalizeParagraph);
 
   // Build bodyText from paragraph texts
   const bodyText = paragraphs
@@ -119,9 +107,49 @@ export function transformStory(story) {
     priority: story.priority || 'normal',
     wordCount: bodyText ? bodyText.trim().split(/\s+/).length : 0,
     aiAccuracy: story.ai_accuracy || story.aiAccuracy || '0',
-    // Revision data (editor's version)
-    revision: story.revision || null,
+    // Revision data (editor's version). Normalize the SAME way as the
+    // top-level fields — useReviewState prefers revision.paragraphs when
+    // a revision exists, so leaving them raw lets U+0B64 leak straight
+    // into the editor as tofu boxes.
+    revision: _normalizeRevision(story.revision),
     hasRevision: story.has_revision ?? story.revision != null,
+  };
+}
+
+// Normalize a single paragraph dict: clean Odia codepoints and backfill
+// a synthetic id so the attachment-delete UI can identify it.
+function _normalizeParagraph(p) {
+  if (!p || typeof p !== 'object') return p;
+  const next = { ...p };
+  if (typeof next.text === 'string') {
+    next.text = normalizeOdiaText(next.text);
+  }
+  if (!next.id) {
+    next.id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `p-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
+  }
+  return next;
+}
+
+// Normalize the revision payload. Mirror the top-level cleanup so the
+// editor never receives raw U+0B64. Also handles the JSON-string vs
+// already-parsed case for `paragraphs`, the same way we do above.
+function _normalizeRevision(rev) {
+  if (!rev || typeof rev !== 'object') return rev || null;
+  let revParas = rev.paragraphs || [];
+  if (typeof revParas === 'string') {
+    try { revParas = JSON.parse(revParas); } catch { revParas = []; }
+  }
+  return {
+    ...rev,
+    headline: typeof rev.headline === 'string'
+      ? normalizeOdiaText(rev.headline)
+      : rev.headline,
+    paragraphs: Array.isArray(revParas) ? revParas.map(_normalizeParagraph) : revParas,
+    english_translation: typeof rev.english_translation === 'string'
+      ? normalizeOdiaText(rev.english_translation)
+      : rev.english_translation,
   };
 }
 
