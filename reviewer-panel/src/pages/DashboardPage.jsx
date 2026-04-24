@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft,
   ChevronRight,
@@ -38,7 +38,20 @@ export default function DashboardPage() {
   // Reviewers see only what's assigned to them (delegated work lives on All Stories).
   const isOrgAdmin = user?.user_type === 'org_admin';
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  // Page lives in the URL so opening a story and pressing Close on the
+  // review page restores the same page (no snap-back to page 1).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+  const setCurrentPage = useCallback((updater) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      const cur = Math.max(1, parseInt(next.get('page') || '1', 10) || 1);
+      const value = typeof updater === 'function' ? updater(cur) : updater;
+      if (!value || value === 1) next.delete('page');
+      else next.set('page', String(value));
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   // API data state
   const [statsData, setStatsData] = useState(null);
@@ -178,7 +191,10 @@ export default function DashboardPage() {
     : [];
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1400px] mx-auto p-6 lg:p-8">
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Fixed top: page header + stats strip + toolbar (search lives
+          inside the table card's toolbar). Only the data rows scroll. */}
+      <div className="shrink-0 max-w-[1400px] mx-auto w-full px-6 lg:px-8 pt-6 lg:pt-8 pb-3 flex flex-col gap-5">
       <PageHeader
         icon={LayoutDashboard}
         title={t('dashboard.title')}
@@ -218,12 +234,10 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Table Card */}
-      <div className="bg-card border border-border rounded-lg overflow-hidden">
-        {/* Toolbar — search right-aligned (ml-auto) for consistency
-            with other pages where filters live on the left. Dashboard
-            has no filters, so the search sits alone on the right. */}
-        <div className="flex items-center gap-3 px-3 py-2 border-b border-border max-sm:px-2">
+      {/* Toolbar — search right-aligned (ml-auto). Lives in the fixed
+          top region so it stays visible while rows scroll. */}
+      <div className="bg-card border border-border rounded-lg">
+        <div className="flex items-center gap-3 px-3 py-2 max-sm:px-2">
           <div className="ml-auto w-full max-w-[280px]">
             <SearchBar
               value={searchQuery}
@@ -232,7 +246,13 @@ export default function DashboardPage() {
             />
           </div>
         </div>
+      </div>
+      </div>
 
+      {/* Scrollable region: only the data rows scroll; thead is sticky
+          and pagination sits at the bottom of the card. */}
+      <div className="flex-1 min-h-0 max-w-[1400px] mx-auto w-full px-6 lg:px-8 pb-6 lg:pb-8 pt-1">
+      <div className="bg-card border border-border rounded-lg overflow-hidden h-full flex flex-col">
         {/* Table */}
         {loading ? (
           <div className="py-16 text-center text-muted-foreground text-sm">
@@ -243,9 +263,9 @@ export default function DashboardPage() {
             {t('dashboard.noReports')}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="flex-1 min-h-0 overflow-auto">
             <table className="w-full border-collapse vr-table-dense">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_var(--border)]">
                 <tr>
                   <th className="px-6 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2">
                     {t('table.storyTitle')}
@@ -356,7 +376,7 @@ export default function DashboardPage() {
 
         {/* Pagination */}
         {totalStories > 0 && !loading && (
-          <div className="flex items-center justify-between px-6 py-3 border-t border-border max-sm:flex-col max-sm:gap-2 max-sm:items-center">
+          <div className="shrink-0 flex items-center justify-between px-6 py-3 border-t border-border max-sm:flex-col max-sm:gap-2 max-sm:items-center">
             <span className="text-xs text-muted-foreground">
               {t('dashboard.showingResults', {
                 start: startIndex + 1,
@@ -404,6 +424,7 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

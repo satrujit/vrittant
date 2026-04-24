@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Loader2, Flame, Trophy, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useI18n } from '../i18n';
 import {
@@ -77,7 +77,20 @@ function ReportersPage() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('month');
-  const [page, setPage] = useState(1);
+  // Page lives in the URL so opening a reporter detail and returning
+  // restores the same page (instead of snapping back to page 1).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+  const setPage = useCallback((updater) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      const cur = Math.max(1, parseInt(next.get('page') || '1', 10) || 1);
+      const value = typeof updater === 'function' ? updater(cur) : updater;
+      if (!value || value === 1) next.delete('page');
+      else next.set('page', String(value));
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   // Fetch users
   useEffect(() => {
@@ -155,7 +168,10 @@ function ReportersPage() {
   const slice = reporters.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1400px]">
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Fixed top: page header + toolbar. Only the leaderboard rows
+          scroll so reviewers keep filters in view while paging. */}
+      <div className="shrink-0 max-w-[1400px] w-full px-6 lg:px-8 pt-6 lg:pt-8 pb-3">
       <PageHeader
         icon={Trophy}
         title="Reporters"
@@ -164,7 +180,7 @@ function ReportersPage() {
 
       {/* Toolbar — canonical: filter (period toggle) left, search right
           (ml-auto). Mirrors AllStoriesPage / BucketsList / NewsFeed. */}
-      <div className="flex items-center gap-3 mb-5 flex-wrap">
+      <div className="flex items-center gap-3 mb-0 flex-wrap">
         {/* Segmented period toggle — kept as a deliberate "pill group"
             (not a SearchableSelect) because it's a single-purpose binary-ish
             switch, but sized to h-8 so it aligns vertically with the
@@ -194,8 +210,10 @@ function ReportersPage() {
           />
         </div>
       </div>
+      </div>
 
-      {/* Table */}
+      {/* Scrollable region — only the rows scroll; thead is sticky. */}
+      <div className="flex-1 min-h-0 max-w-[1400px] w-full px-6 lg:px-8 pb-6 lg:pb-8 pt-3">
       {loading ? (
         <div className="flex items-center justify-center py-16 text-sm text-muted-foreground italic">
           <Loader2 size={24} className="animate-spin" />
@@ -205,9 +223,10 @@ function ReportersPage() {
           {t('reporters.noReporters')}
         </div>
       ) : (
-        <Card className="overflow-hidden p-0">
+        <Card className="overflow-hidden p-0 h-full flex flex-col">
+          <div className="flex-1 min-h-0 overflow-auto">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_var(--border)]">
               <TableRow>
                 <TableHead className="w-14">Rank</TableHead>
                 <TableHead>Name</TableHead>
@@ -290,13 +309,17 @@ function ReportersPage() {
               })}
             </TableBody>
           </Table>
-          <Pagination
-            currentPage={pageSafe}
-            totalPages={totalPages}
-            onChange={setPage}
-          />
+          </div>
+          <div className="shrink-0">
+            <Pagination
+              currentPage={pageSafe}
+              totalPages={totalPages}
+              onChange={setPage}
+            />
+          </div>
         </Card>
       )}
+      </div>
     </div>
   );
 }

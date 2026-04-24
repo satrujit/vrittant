@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ExternalLink,
   Loader2,
@@ -96,7 +96,20 @@ export default function NewsFeedPage() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const [source, setSource] = useState('');
-  const [page, setPage] = useState(1);
+  // Page lives in the URL so opening a story preview and returning here
+  // restores the same page (instead of snapping back to page 1).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+  const setPage = useCallback((updater) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      const cur = Math.max(1, parseInt(next.get('page') || '1', 10) || 1);
+      const value = typeof updater === 'function' ? updater(cur) : updater;
+      if (!value || value === 1) next.delete('page');
+      else next.set('page', String(value));
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   // AI research flow (two-phase: configure → generate → preview)
   const [dialogArticle, setDialogArticle] = useState(null); // source article for context
@@ -135,6 +148,7 @@ export default function NewsFeedPage() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, category, source]);
 
   // Step 1: Open config dialog (no API call yet)
@@ -211,13 +225,16 @@ export default function NewsFeedPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-5 max-w-[1400px] mx-auto p-6 lg:p-8">
-      <PageHeader
-        icon={Newspaper}
-        title={t('newsFeed.title', 'News Feed')}
-        subtitle={t('newsFeed.subtitle', 'Latest news articles — create stories from any article.')}
-        className="mb-0"
-      />
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Fixed top: page header + filters. Only the article grid below
+          scrolls so reviewers keep filters in view while paging. */}
+      <div className="shrink-0 max-w-[1400px] mx-auto w-full px-6 lg:px-8 pt-6 lg:pt-8 pb-3 flex flex-col gap-4">
+        <PageHeader
+          icon={Newspaper}
+          title={t('newsFeed.title', 'News Feed')}
+          subtitle={t('newsFeed.subtitle', 'Latest news articles — create stories from any article.')}
+          className="mb-0"
+        />
 
       {/* Filters — canonical pattern: label (text-[10px] uppercase) above
           h-8 controls, gap-3 between fields, gap-0.5 between label and
@@ -287,7 +304,11 @@ export default function NewsFeedPage() {
           </div>
         </div>
       </div>
+      </div>
 
+      {/* Scrollable region: only the article grid scrolls. */}
+      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="max-w-[1400px] mx-auto w-full px-6 lg:px-8 pb-6 lg:pb-8 pt-1 flex flex-col gap-5">
       {/* Loading */}
       {loading && (
         <div className="flex items-center justify-center py-16">
@@ -461,6 +482,8 @@ export default function NewsFeedPage() {
           </Button>
         </div>
       )}
+      </div>
+      </div>
 
       {/* Two-phase dialog: configure → generate → preview */}
       <StoryPreviewDialog

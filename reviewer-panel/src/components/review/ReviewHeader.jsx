@@ -117,10 +117,14 @@ export default function ReviewHeader({
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 px-3 text-xs text-muted-foreground hover:text-foreground"
+            className="h-8 gap-1.5 px-3 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => navigate(-1)}
+            title={t('actions.close', 'Close') + ' (Esc)'}
           >
-            {t('actions.cancel')}
+            {t('actions.close', 'Close')}
+            <kbd className="rounded border border-border bg-muted px-1 py-px text-[9px] font-medium leading-none text-muted-foreground">
+              Esc
+            </kbd>
           </Button>
 
           <Button

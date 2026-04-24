@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Sparkles,
   ChevronLeft,
@@ -76,7 +76,21 @@ export default function AllStoriesPage() {
   // Personal queue scoping moved to the Dashboard — All Stories is org-wide.
   const [dateFrom, setDateFrom] = useState(getYesterdayISO);
   const [dateTo, setDateTo] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  // Page lives in the URL (?page=N) so that opening a story and pressing
+  // back/Close on the review page restores the same page the user was on,
+  // rather than snapping back to page 1 on remount.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+  const setCurrentPage = useCallback((updater) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      const cur = Math.max(1, parseInt(next.get('page') || '1', 10) || 1);
+      const value = typeof updater === 'function' ? updater(cur) : updater;
+      if (!value || value === 1) next.delete('page');
+      else next.set('page', String(value));
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   // API data state
   const [stories, setStories] = useState([]);
@@ -283,15 +297,17 @@ export default function AllStoriesPage() {
   };
 
   return (
-    <div className="flex flex-col gap-5 max-w-[1400px] mx-auto p-6 lg:p-8">
-      <PageHeader
-        icon={Archive}
-        title={t('allStories.title')}
-        subtitle={t('allStories.subtitle')}
-        className="mb-0"
-      />
-
-      <div className="flex flex-col gap-3">
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Fixed top: page header + filter row. The scrollable region
+          below contains only the story rows so reviewers can keep the
+          filters in view while paging through long lists. */}
+      <div className="shrink-0 max-w-[1400px] mx-auto w-full px-6 lg:px-8 pt-6 lg:pt-8 pb-3 flex flex-col gap-4">
+        <PageHeader
+          icon={Archive}
+          title={t('allStories.title')}
+          subtitle={t('allStories.subtitle')}
+          className="mb-0"
+        />
         {/* Filters Row — compact inline. Search bar now lives at the
             far right of the same row (ml-auto pushes it over) so the
             page header stays a single tidy strip instead of stacking. */}
@@ -422,8 +438,11 @@ export default function AllStoriesPage() {
         </div>
       </div>
 
-      {/* Table Card */}
-      <div className="bg-card border border-border rounded-lg overflow-hidden">
+      {/* Scrollable region: only the rows scroll. The Table header stays
+          pinned via `sticky top-0` against the scroll container below,
+          and pagination sits at the bottom of the card (shrink-0). */}
+      <div className="flex-1 min-h-0 max-w-[1400px] mx-auto w-full px-6 lg:px-8 pb-6 lg:pb-8 pt-1">
+      <div className="bg-card border border-border rounded-lg overflow-hidden h-full flex flex-col">
         {loading ? (
           <div className="py-12 px-6 text-center text-muted-foreground text-sm">
             <Loader2 size={24} className="animate-spin inline-block" />
@@ -433,8 +452,9 @@ export default function AllStoriesPage() {
             {t('allStories.noResults')}
           </div>
         ) : (
+          <div className="flex-1 min-h-0 overflow-auto">
           <Table className="vr-table-dense">
-            <TableHeader>
+            <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_var(--border)]">
               <TableRow>
                 <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
                   {t('table.storyTitle')}
@@ -593,11 +613,12 @@ export default function AllStoriesPage() {
               })}
             </TableBody>
           </Table>
+          </div>
         )}
 
         {/* Pagination */}
         {totalStories > 0 && !loading && (
-          <div className="flex items-center justify-between px-4 py-2 border-t border-border max-sm:flex-col max-sm:gap-3 max-sm:items-center">
+          <div className="shrink-0 flex items-center justify-between px-4 py-2 border-t border-border max-sm:flex-col max-sm:gap-3 max-sm:items-center">
             <span className="text-xs text-muted-foreground">
               {t('dashboard.showingResults', {
                 start: startIndex + 1,
@@ -661,6 +682,7 @@ export default function AllStoriesPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
