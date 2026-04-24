@@ -54,6 +54,7 @@ class OrgConfig(Base):
     publication_types = Column(JSON, nullable=False, default=list)
     page_suggestions = Column(JSON, nullable=False, default=list)
     priority_levels = Column(JSON, nullable=False, default=list)
+    edition_schedule = Column(JSON, nullable=False, default=list)
     default_language = Column(String, nullable=False, default="odia")
     created_at = Column(DateTime, default=now_ist)
     updated_at = Column(
