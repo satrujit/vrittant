@@ -23,6 +23,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from ..config import settings
+from . import sarvam_client
 
 logger = logging.getLogger(__name__)
 
@@ -80,19 +81,8 @@ async def classify_category(
         "reasoning_effort": "low",
     }
 
-    url = f"{settings.SARVAM_BASE_URL}/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {settings.SARVAM_API_KEY}",
-        "Content-Type": "application/json",
-    }
-
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                url, json=payload, headers=headers, timeout=_TIMEOUT_SECONDS,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        data = await sarvam_client.chat(payload=payload, timeout=_TIMEOUT_SECONDS)
     except (httpx.HTTPError, ValueError) as exc:
         logger.warning("categorizer: sarvam call failed: %s", exc)
         return None
@@ -206,7 +196,10 @@ def categorize_story_in_background(story_id: str) -> None:
             return
 
         try:
-            category = asyncio.run(classify_category(text, keys))
+            async def _classify_attributed():
+                with sarvam_client.cost_context(story_id=story_id):
+                    return await classify_category(text, keys)
+            category = asyncio.run(_classify_attributed())
         except RuntimeError:
             # Already in an event loop (shouldn't happen in BackgroundTasks
             # context, but safe to handle). Skip rather than crash.
@@ -273,7 +266,8 @@ async def sweep_uncategorized(db: Session, *, limit: int = 20, lookback_days: in
         if not keys:
             skipped_no_text += 1
             continue
-        category = await classify_category(text, keys)
+        with sarvam_client.cost_context(story_id=story.id):
+            category = await classify_category(text, keys)
         if not category:
             failed += 1
             continue

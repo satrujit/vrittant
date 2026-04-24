@@ -5,6 +5,7 @@ from .story import Story
 from .story_assignment_log import StoryAssignmentLog
 from .story_comment import StoryComment
 from .otp_send_log import OtpSendLog
+from .sarvam_usage_log import SarvamUsageLog
 
 __all__ = [
     "Edition", "EditionPage", "EditionPageStory",
@@ -14,4 +15,5 @@ __all__ = [
     "StoryAssignmentLog",
     "StoryComment",
     "OtpSendLog",
+    "SarvamUsageLog",
 ]
