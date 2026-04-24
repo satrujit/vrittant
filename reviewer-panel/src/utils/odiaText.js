@@ -42,8 +42,16 @@ const NEEDLE_RE = new RegExp(
   'g'
 );
 
+// Odia editorial convention: a space MUST precede the danda / double-danda,
+// otherwise the standalone vertical-stroke glyph of । sits flush against
+// the prior cluster and visually reads as another aa-kar matra (ା).
+// Insert a single space when the character immediately before । or ॥ is
+// non-whitespace. Leaves existing `\s।` and `^।` alone.
+const DANDA_SPACING_RE = /(\S)([\u0964\u0965])/g;
+
 /**
- * Replace any known-bad Odia codepoint with its canonical equivalent.
+ * Replace known-bad Odia codepoints with their canonical equivalents
+ * AND enforce a space before the danda for editorial legibility.
  * Pure: returns input unchanged when there's nothing to do.
  *
  * @param {string} text
@@ -51,11 +59,22 @@ const NEEDLE_RE = new RegExp(
  */
 export function normalizeOdiaText(text) {
   if (typeof text !== 'string' || text.length === 0) return text;
-  // Fast path — most strings won't contain any of the bad codepoints.
-  if (!NEEDLE_RE.test(text)) {
-    NEEDLE_RE.lastIndex = 0;
-    return text;
-  }
+
+  // Step 1 — codepoint normalization. Skipped via fast-path when none
+  // of the bad codepoints are present.
+  let out = text;
   NEEDLE_RE.lastIndex = 0;
-  return text.replace(NEEDLE_RE, (ch) => SUBSTITUTIONS[ch] || ch);
+  if (NEEDLE_RE.test(out)) {
+    NEEDLE_RE.lastIndex = 0;
+    out = out.replace(NEEDLE_RE, (ch) => SUBSTITUTIONS[ch] || ch);
+  }
+
+  // Step 2 — danda spacing. Runs against the *normalized* string so it
+  // catches both originally-canonical danda AND the freshly-substituted
+  // ones from step 1.
+  if (out.includes('\u0964') || out.includes('\u0965')) {
+    out = out.replace(DANDA_SPACING_RE, '$1 $2');
+  }
+
+  return out;
 }
