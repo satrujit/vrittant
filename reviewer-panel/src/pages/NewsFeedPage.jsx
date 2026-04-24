@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Search,
   ExternalLink,
   Loader2,
   ChevronLeft,
@@ -21,8 +20,9 @@ import {
 } from '../services/api';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { PageHeader } from '../components/common';
+import { PageHeader, SearchBar, SearchableSelect } from '../components/common';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import StoryPreviewDialog from '../components/StoryPreviewDialog';
 
@@ -218,41 +218,56 @@ export default function NewsFeedPage() {
         className="mb-0"
       />
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            className="h-8 w-full rounded-lg border border-border bg-background pl-8 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary focus:shadow-[0_0_0_2px_rgba(250,108,56,0.1)]"
-            placeholder={t('newsFeed.searchPlaceholder', 'Search articles...')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+      {/* Filters — canonical pattern: label (text-[10px] uppercase) above
+          h-8 controls, gap-3 between fields, gap-0.5 between label and
+          control. SearchBar lives at the right via ml-auto, mirroring
+          AllStoriesPage. */}
+      <div className="flex items-end gap-3 flex-wrap">
+        <div className="flex flex-col gap-0.5">
+          <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
+            {t('allStories.filterByCategory', 'Category')}
+          </Label>
+          <SearchableSelect
+            triggerClassName="min-w-[140px]"
+            value={category}
+            onChange={setCategory}
+            placeholder={t('allStories.all', 'All')}
+            allLabel={t('allStories.all', 'All')}
+            options={categories
+              .filter((c) => c.value)
+              .map((c) => ({ value: c.value, label: c.label }))}
           />
         </div>
-        <select
-          className="h-8 rounded-lg border border-border bg-background px-2.5 text-sm text-foreground outline-none focus:border-primary"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-        >
-          {categories.map((c) => (
-            <option key={c.value} value={c.value}>{c.label}</option>
-          ))}
-        </select>
+
         {sources.length > 0 && (
-          <select
-            className="h-8 rounded-lg border border-border bg-background px-2.5 text-sm text-foreground outline-none focus:border-primary"
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
-          >
-            <option value="">{t('newsFeed.allSources', 'All Sources')}</option>
-            {sources.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+          <div className="flex flex-col gap-0.5">
+            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
+              {t('newsFeed.source', 'Source')}
+            </Label>
+            <SearchableSelect
+              triggerClassName="min-w-[140px]"
+              value={source}
+              onChange={setSource}
+              placeholder={t('newsFeed.allSources', 'All Sources')}
+              allLabel={t('newsFeed.allSources', 'All Sources')}
+              options={sources.map((s) => ({ value: s, label: s }))}
+            />
+          </div>
         )}
-        <div className="ml-auto text-xs text-muted-foreground">
-          {!loading && t('newsFeed.showingResults', '{total} articles').replace('{total}', total)}
+
+        <div className="ml-auto flex items-center gap-3">
+          {!loading && (
+            <span className="text-xs text-muted-foreground">
+              {t('newsFeed.showingResults', '{total} articles').replace('{total}', total)}
+            </span>
+          )}
+          <div className="w-full max-w-[280px] min-w-[200px]">
+            <SearchBar
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('newsFeed.searchPlaceholder', 'Search articles...')}
+            />
+          </div>
         </div>
       </div>
 

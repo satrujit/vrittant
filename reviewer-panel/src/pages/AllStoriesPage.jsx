@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Sparkles,
   ChevronLeft,
@@ -63,6 +63,7 @@ function getYesterdayISO() {
 export default function AllStoriesPage() {
   const { t } = useI18n();
   const { config, user } = useAuth();
+  const navigate = useNavigate();
   const isOrgAdmin = user?.user_type === 'org_admin';
   const categoryList = (config?.categories || []).filter(c => c.is_active).map(c => c.key);
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,24 +101,31 @@ export default function AllStoriesPage() {
       });
   }, []);
 
-  // Debounce search input (300ms)
-  const debounceTimer = useRef(null);
+  // Search submits on Enter only (not on every keystroke). Semantic
+  // search hits an LLM endpoint and AI-translates non-Odia queries — both
+  // are slow and metered, so per-keystroke firing was burning quota and
+  // returning stale results. Reporters get instant local typing feedback;
+  // the actual fetch fires when they press Enter.
   const handleSearch = (e) => {
-    const value = e.target.value;
-    setSearchQuery(value);
-    setCurrentPage(1);
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => {
-      setDebouncedSearch(value);
-    }, 300);
+    setSearchQuery(e.target.value);
   };
 
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    };
-  }, []);
+  const submitSearch = () => {
+    setCurrentPage(1);
+    setDebouncedSearch(searchQuery.trim());
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitSearch();
+    }
+  };
+
+  // True when the user has typed something they haven't applied yet.
+  // Used to surface a small "press ↵" hint so the gap between input
+  // and results doesn't feel broken.
+  const hasPendingSearch = searchQuery.trim() !== debouncedSearch.trim();
 
   // Fetch stories when filters or page change — exclude drafts by default
   const loadStories = useCallback(async () => {
@@ -284,22 +292,9 @@ export default function AllStoriesPage() {
       />
 
       <div className="flex flex-col gap-3">
-        <div className="relative max-w-[420px]">
-          <SearchBar
-            value={searchQuery}
-            onChange={handleSearch}
-            placeholder={t('allStories.searchPlaceholder')}
-            icon={Sparkles}
-          />
-          {semanticLoading && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-primary">
-              <Sparkles size={14} className="animate-pulse" />
-              <span className="text-[11px] font-medium">AI searching...</span>
-            </div>
-          )}
-        </div>
-
-        {/* Filters Row — compact inline */}
+        {/* Filters Row — compact inline. Search bar now lives at the
+            far right of the same row (ml-auto pushes it over) so the
+            page header stays a single tidy strip instead of stacking. */}
         <div className="flex items-end gap-3 flex-wrap max-[900px]:flex-col max-[900px]:items-stretch">
           <div className="flex flex-col gap-0.5 max-[900px]:min-w-0">
             <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
@@ -399,6 +394,31 @@ export default function AllStoriesPage() {
               {t('allStories.clearFilters')}
             </Button>
           )}
+
+          {/* Search — right-aligned via ml-auto. Submits on Enter only
+              (semantic search is metered + slow). The "press ↵" hint and
+              "AI searching..." spinner are mutually exclusive: one shows
+              what hasn't been applied yet, the other shows what's in
+              flight. */}
+          <div className="relative ml-auto w-full max-w-[280px] max-[900px]:ml-0 max-[900px]:max-w-none">
+            <SearchBar
+              value={searchQuery}
+              onChange={handleSearch}
+              onKeyDown={handleSearchKeyDown}
+              placeholder={t('allStories.searchPlaceholder')}
+              icon={Sparkles}
+            />
+            {semanticLoading ? (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-primary">
+                <Sparkles size={12} className="animate-pulse" />
+                <span className="text-[10px] font-medium">AI…</span>
+              </div>
+            ) : hasPendingSearch ? (
+              <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                ↵
+              </kbd>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -447,26 +467,26 @@ export default function AllStoriesPage() {
                 return (
                   <TableRow
                     key={story.id}
+                    className="cursor-pointer"
+                    onClick={() => navigate(`/review/${story.id}`)}
                   >
-                    {/* Story title (clickable) + reporter/location metadata */}
+                    {/* Story title + reporter/location metadata.
+                        Whole row is clickable; the headline stays a real
+                        Link so cmd/middle-click still opens in a new tab. */}
                     <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5 max-w-[420px]">
                       <div className="flex flex-col gap-1 min-w-[200px]">
                         <Link
                           to={`/review/${story.id}`}
+                          onClick={(e) => e.stopPropagation()}
                           className="text-sm font-semibold text-foreground leading-tight line-clamp-1 hover:text-primary transition-colors no-underline"
                         >
                           {story.headline}
-                          {story.hasRevision && (
-                            <span className="inline-block px-1.5 py-px text-[0.625rem] font-semibold uppercase tracking-[0.05em] bg-green-50 text-green-800 rounded ml-2 align-middle">
-                              {t('common.edited')}
-                            </span>
-                          )}
                         </Link>
                         <div className="flex items-center gap-[5px]">
                           <Avatar
                             initials={story.reporter.initials}
                             color={story.reporter.color}
-                            size="sm"
+                            size="xs"
                           />
                           <span className="text-[11px] text-muted-foreground font-medium">
                             {story.reporter.name}
@@ -528,8 +548,13 @@ export default function AllStoriesPage() {
                       )}
                     </TableCell>
 
-                    {/* Assigned to — inline reassign popover */}
-                    <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
+                    {/* Assigned to — inline reassign popover.
+                        stopPropagation so opening the popover or picking a
+                        reviewer doesn't also navigate the row. */}
+                    <TableCell
+                      className="px-4 py-2 max-sm:px-3 max-sm:py-1.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <ReassignPopover
                         assigneeId={story.assignee_id}
                         assigneeName={story.assignee_name}
@@ -541,7 +566,10 @@ export default function AllStoriesPage() {
 
                     {/* Row actions — org_admin only */}
                     {isOrgAdmin && (
-                      <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
+                      <TableCell
+                        className="px-4 py-2 max-sm:px-3 max-sm:py-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-8 w-8">

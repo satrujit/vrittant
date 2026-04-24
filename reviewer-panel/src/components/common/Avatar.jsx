@@ -1,6 +1,9 @@
 import { cn } from '@/lib/utils';
 
 const SIZE_CLASSES = {
+  // xs is for dense table rows where the avatar is metadata, not focal.
+  // Sized to roughly match the surrounding ~11px reporter-name text.
+  xs: 'size-[18px] text-[9px]',
   sm: 'size-7 text-xs',
   md: 'size-9 text-sm',
   lg: 'size-12 text-base',

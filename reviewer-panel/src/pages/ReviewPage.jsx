@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, Pencil, FileText, Languages, Share2 } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -36,6 +36,26 @@ function ReviewPage() {
   // doesn't try to render a thumbnail for a PDF.
   const docFiles = mediaFiles.filter((m) => !imageFiles.includes(m) && !audioFiles.includes(m));
   const fabIcon = useMemo(() => getFabIcon(s.voiceMode, s.hasSelection), [s.voiceMode, s.hasSelection]);
+
+  // Cmd/Ctrl+S → save the article. Suppress the browser's "save page"
+  // dialog so the shortcut belongs to us. Undo/redo (Cmd/Ctrl+Z, Shift+Z)
+  // are handled inside the TipTap editor by StarterKit's history
+  // extension — no global hook needed for those.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta) return;
+      const k = e.key.toLowerCase();
+      if (k === 's') {
+        e.preventDefault();
+        if (!s.saving) {
+          s.handleSaveContent();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [s.handleSaveContent, s.saving]);
 
   // /review/new — pre-save shell. The story isn't in the DB yet, so the
   // side panel's settings (assignee, edition, comments) and the header's

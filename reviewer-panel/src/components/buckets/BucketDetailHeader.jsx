@@ -1,7 +1,8 @@
-import { Search, Plus, ArrowLeft, Pencil, Check } from 'lucide-react';
+import { Plus, ArrowLeft, Pencil, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { SearchBar } from '../common';
 import AddPagePopover from './AddPagePopover';
 
 /**
@@ -116,24 +117,14 @@ export default function BucketDetailHeader({
       </div>
 
       <div className="flex items-center gap-3 shrink-0">
-        <div className="relative flex items-center">
-          <Search size={16} className="absolute left-3 text-muted-foreground pointer-events-none" />
-          <Input
-            type="text"
-            className={cn(
-              'w-[220px] py-2 pr-4 pl-[38px] h-auto',
-              'font-sans text-sm text-foreground',
-              'bg-card border border-border rounded-lg outline-none',
-              'transition-[border-color,box-shadow] duration-150',
-              'placeholder:text-muted-foreground',
-              'shadow-none focus-visible:ring-0',
-              'focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20'
-            )}
-            placeholder={t('buckets.searchPlaceholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+        {/* Canonical SearchBar (h-8, 14px icon, text-[13px]) — same shape
+            as Dashboard / AllStories / Reporters / NewsFeed. */}
+        <SearchBar
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t('buckets.searchPlaceholder')}
+          className="w-[220px]"
+        />
 
         <div className="relative">
           <Button

@@ -15,6 +15,8 @@ import { TableHeader } from '@tiptap/extension-table-header';
 import TranscriptionMark from '../../extensions/TranscriptionMark';
 import ExternalInputCompat from '../../extensions/ExternalInputCompat';
 import { createShreeLipiKeyboard } from '../../extensions/ShreeLipiKeyboard';
+import { OdiaNormalize } from '../../extensions/OdiaNormalize';
+import { normalizeOdiaText } from '../../utils/odiaText';
 import {
   fetchStory,
   updateStoryStatus,
@@ -166,6 +168,7 @@ export function useReviewState({ id, t }) {
       TableHeader,
       TranscriptionMark,
       ExternalInputCompat,
+      OdiaNormalize,
       createShreeLipiKeyboard(() => odiaKeyboardRef.current),
     ],
     content: '',
@@ -180,6 +183,9 @@ export function useReviewState({ id, t }) {
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Placeholder.configure({ placeholder: 'English translation will appear here...' }),
       ExternalInputCompat,
+      // Even on the English side — translated output sometimes carries
+      // the same legacy danda when the source paragraph did.
+      OdiaNormalize,
     ],
     content: '',
     onUpdate: ({ editor: ed }) => {
@@ -750,13 +756,17 @@ export function useReviewState({ id, t }) {
       const mediaParagraphs = existing.filter((p) => p && (p.media_path || p.photo_path));
       const textOnlyExisting = existing.filter((p) => p && !(p.media_path || p.photo_path));
       const bodyText = editor.getText();
+      // Defense-in-depth: normalize before persisting so the headline
+      // input (a plain <input> with no paste hook) and any text the
+      // editor's paste-time normalizer somehow missed can't write
+      // legacy/reserved Odia codepoints back to the database.
       const textParagraphs = bodyText.split('\n\n').map((text, i) => ({
         id: textOnlyExisting[i]?.id || `p-new-${i}`,
-        text,
+        text: normalizeOdiaText(text),
       }));
       // Preserve media paragraphs by appending after the rebuilt text body.
       const paragraphs = [...textParagraphs, ...mediaParagraphs];
-      const payload = { headline, paragraphs };
+      const payload = { headline: normalizeOdiaText(headline), paragraphs };
       const enHtml = englishEditor ? englishEditor.getHTML() : englishTranslation;
       if (enHtml) {
         payload.english_translation = enHtml;
