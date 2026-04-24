@@ -168,11 +168,10 @@ async def seed_todays_editions(
 ):
     """Stamp out today's editions for every org with a non-empty
     ``edition_schedule``. Idempotent: a per-(org, date, title) pre-check
-    skips existing rows. The DB-level unique index from the editions
-    migration is defense-in-depth; this pre-check works in both Postgres
-    and the SQLite test DB.
+    skips existing rows. Stories that aren't placed on any page stay in
+    review status until a future day's editions are created.
 
-    Hit nightly (~00:05 IST) by Cloud Scheduler. Optional ``date``
+    Hit nightly (~02:00 IST) by Cloud Scheduler. Optional ``date``
     override in the body (ISO string) is for back-fills and tests.
     """
     _require_internal_token(x_internal_token)

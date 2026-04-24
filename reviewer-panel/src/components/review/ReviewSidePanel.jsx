@@ -393,10 +393,7 @@ export default function ReviewSidePanel({
 
           {/* ─────────── Edition assignment (matrix) ─────────── */}
           <Section icon={BookOpen} title={t('review.assignEditionShort', 'Edition')}>
-            <EditionPlacementMatrix
-              storyId={id}
-              publicationDate={story?.publication_date}
-            />
+            <EditionPlacementMatrix storyId={id} />
           </Section>
 
           {/* ─────────── Assignment ─────────── */}
