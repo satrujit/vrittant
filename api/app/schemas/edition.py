@@ -76,6 +76,12 @@ class EditionDetailResponse(EditionResponse):
     pages: list[EditionPageResponse] = []
 
 
+class EditionListItemResponse(EditionResponse):
+    """Edition list item — includes pages so the placement matrix can render
+    page-name pickers without an extra round-trip per edition."""
+    pages: list[EditionPageResponse] = []
+
+
 class EditionListResponse(BaseModel):
-    editions: list[EditionResponse]
+    editions: list[EditionListItemResponse]
     total: int

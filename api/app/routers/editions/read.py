@@ -1,4 +1,6 @@
 """Edition read endpoints: list, detail."""
+from datetime import date as date_type
+
 from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -15,6 +17,17 @@ from . import router
 from ._shared import _edition_to_response, _page_to_response
 
 
+def _edition_with_pages(edition: Edition) -> dict:
+    """List-shape response: edition summary + nested pages."""
+    resp = _edition_to_response(edition)
+    sorted_pages = sorted(
+        edition.pages or [],
+        key=lambda p: (p.sort_order or 0, p.page_number or 0),
+    )
+    resp["pages"] = [_page_to_response(p) for p in sorted_pages]
+    return resp
+
+
 # ---------------------------------------------------------------------------
 # GET /admin/editions
 # ---------------------------------------------------------------------------
@@ -25,12 +38,15 @@ def list_editions(
     user: User = Depends(require_reviewer),
     org_id: str = Depends(get_current_org_id),
     status_filter: str | None = Query(None, alias="status"),
+    publication_date: date_type | None = Query(None),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ):
     base_filters = [Edition.organization_id == org_id]
     if status_filter:
         base_filters.append(Edition.status == status_filter)
+    if publication_date is not None:
+        base_filters.append(Edition.publication_date == publication_date)
 
     # Total count (without joins)
     total = db.query(func.count(Edition.id)).filter(*base_filters).scalar()
@@ -57,7 +73,7 @@ def list_editions(
             unique_editions.append(e)
 
     return EditionListResponse(
-        editions=[_edition_to_response(e) for e in unique_editions],
+        editions=[_edition_with_pages(e) for e in unique_editions],
         total=total,
     )
 
