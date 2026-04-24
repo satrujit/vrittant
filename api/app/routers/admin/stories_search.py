@@ -36,6 +36,7 @@ async def semantic_search_stories(
     import httpx
     from sqlalchemy import func, desc
     from ...config import settings
+    from ...services import sarvam_client
 
     import logging as _logging
     _log = _logging.getLogger(__name__)
@@ -47,11 +48,6 @@ async def semantic_search_stories(
 
     translated_text = ""
     try:
-        translate_url = f"{settings.SARVAM_BASE_URL}/translate"
-        headers = {
-            "api-subscription-key": settings.SARVAM_API_KEY,
-            "Content-Type": "application/json",
-        }
         payload = {
             "input": q,
             "source_language_code": source_lang,
@@ -59,10 +55,9 @@ async def semantic_search_stories(
             "model": "mayura:v1",
         }
         _log.info("Search: translating query=%r (%s -> %s)", q, source_lang, target_lang)
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(translate_url, json=payload, headers=headers, timeout=15.0)
-            resp.raise_for_status()
-            translated_text = resp.json().get("translated_text", "")
+        with sarvam_client.cost_context(bucket="search"):
+            data = await sarvam_client.translate(payload=payload, timeout=15.0)
+        translated_text = data.get("translated_text", "")
         _log.info("Search: translated %r -> %r", q, translated_text)
     except Exception as exc:
         _log.warning("Sarvam translate failed (continuing with original query): %s", exc)

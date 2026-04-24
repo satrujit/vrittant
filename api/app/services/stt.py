@@ -21,6 +21,7 @@ from typing import Optional
 import httpx
 
 from ..config import settings
+from . import sarvam_client
 
 logger = logging.getLogger(__name__)
 
@@ -55,40 +56,28 @@ async def transcribe_audio(
     if not audio_bytes:
         return ""
 
-    url = f"{settings.SARVAM_BASE_URL}{_BATCH_STT_PATH}"
-    headers = {"api-subscription-key": settings.SARVAM_API_KEY}
-
-    # Sarvam accepts audio via multipart. Content type is best-effort —
-    # the service infers from the bytes.
-    files = {"file": (filename, audio_bytes, _content_type_for_filename(filename))}
-    data = {"language_code": language_code, "model": model}
-
     try:
-        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-            resp = await client.post(url, headers=headers, files=files, data=data)
+        body = await sarvam_client.stt(
+            audio_bytes=audio_bytes,
+            filename=filename,
+            content_type=_content_type_for_filename(filename) or "application/octet-stream",
+            model=model,
+            language_code=language_code,
+            timeout=timeout_seconds,
+        )
     except httpx.TimeoutException as exc:
         logger.warning("Sarvam batch STT timeout (%.1fs): %s", timeout_seconds, exc)
         raise SttRetryable("timeout") from exc
     except httpx.RequestError as exc:
         logger.warning("Sarvam batch STT network error: %s", exc)
         raise SttRetryable("network") from exc
-
-    if resp.status_code >= 500:
-        logger.warning(
-            "Sarvam batch STT 5xx (status=%d body=%s)",
-            resp.status_code, resp.text[:300],
-        )
-        raise SttRetryable(f"status_{resp.status_code}")
-
-    if resp.status_code >= 400:
-        logger.error(
-            "Sarvam batch STT 4xx (status=%d body=%s)",
-            resp.status_code, resp.text[:300],
-        )
-        raise SttError(f"status_{resp.status_code}: {resp.text[:200]}")
-
-    try:
-        body = resp.json()
+    except httpx.HTTPStatusError as exc:
+        sc = exc.response.status_code
+        if sc >= 500:
+            logger.warning("Sarvam batch STT 5xx (status=%d body=%s)", sc, exc.response.text[:300])
+            raise SttRetryable(f"status_{sc}") from exc
+        logger.error("Sarvam batch STT 4xx (status=%d body=%s)", sc, exc.response.text[:300])
+        raise SttError(f"status_{sc}: {exc.response.text[:200]}") from exc
     except ValueError as exc:
         raise SttError("malformed JSON response") from exc
 

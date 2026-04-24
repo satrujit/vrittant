@@ -5,9 +5,12 @@ import asyncio
 import logging
 import os
 import re
+import time
+from decimal import Decimal
 from typing import Iterable
 
 import httpx
+from sqlalchemy import text
 
 # Cap concurrent Sarvam calls so one widget doesn't trip rate-limits.
 _SEM = asyncio.Semaphore(int(os.getenv("SARVAM_CONCURRENCY", "6")))
@@ -17,6 +20,49 @@ logger = logging.getLogger(__name__)
 SARVAM_BASE = os.getenv("SARVAM_BASE_URL", "https://api.sarvam.ai")
 SARVAM_KEY = os.getenv("SARVAM_API_KEY", "")
 MODEL = os.getenv("SARVAM_MODEL", "sarvam-30b")
+
+# Mayura V1 translate is billed at ₹20 per 10K characters. Mirror the same
+# rate the API service uses (api/app/services/sarvam_client.py). If Sarvam
+# changes pricing, update both places.
+_TRANSLATE_RATE_PER_10K = Decimal("20")
+_PER_10K = Decimal("10000")
+
+
+def _log_translate_cost(*, characters: int, duration_ms: int, status_code: int | None, error: str | None) -> None:
+    """Insert one row into sarvam_usage_log, attributed to the widgets bucket.
+
+    Uses widgets_core.db_client's engine so we don't need to import the
+    main API's model layer (widgets runs as its own service). Failures are
+    swallowed — cost logging must never break a widget refresh.
+    """
+    try:
+        cost_inr = (Decimal(characters) * _TRANSLATE_RATE_PER_10K) / _PER_10K
+        from .db_client import get_engine
+
+        engine = get_engine()
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO public.sarvam_usage_log "
+                    "(service, model, endpoint, characters, cost_inr, bucket, "
+                    " duration_ms, status_code, error) "
+                    "VALUES (:service, :model, :endpoint, :characters, :cost_inr, :bucket, "
+                    "        :duration_ms, :status_code, :error)"
+                ),
+                {
+                    "service": "translate",
+                    "model": "mayura:v1",
+                    "endpoint": "/translate",
+                    "characters": characters,
+                    "cost_inr": cost_inr,
+                    "bucket": "widgets",
+                    "duration_ms": duration_ms,
+                    "status_code": status_code,
+                    "error": (error[:200] if error else None),
+                },
+            )
+    except Exception as exc:  # noqa: BLE001 — never break the widget
+        logger.warning("widgets translate: failed to log cost: %s", exc)
 
 
 async def translate_to_odia(text: str, *, context: str = "general") -> str:
@@ -46,16 +92,30 @@ async def translate_to_odia(text: str, *, context: str = "general") -> str:
         "Content-Type": "application/json",
     }
 
+    started = time.monotonic()
+    status_code: int | None = None
+    error: str | None = None
     try:
         async with _SEM:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 r = await client.post(f"{SARVAM_BASE}/translate", json=payload, headers=headers)
+                status_code = r.status_code
                 r.raise_for_status()
                 translated = (r.json().get("translated_text") or "").strip()
                 return translated or text
     except Exception as exc:  # noqa: BLE001 — graceful degradation
+        error = type(exc).__name__
         logger.warning("Sarvam translate failed (%s); returning original", exc)
         return text
+    finally:
+        # Log cost for every call — successful or not — so we can spot
+        # bursts of failures (high count, ₹0 each).
+        _log_translate_cost(
+            characters=len(text),
+            duration_ms=int((time.monotonic() - started) * 1000),
+            status_code=status_code,
+            error=error,
+        )
 
 
 def _expand_wildcards(payload, parts: list[str]) -> list[list[str]]:

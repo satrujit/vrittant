@@ -28,7 +28,7 @@ from ..database import get_db
 from ..models.story import Story
 from ..models.user import User
 from ..models.webhook_dedup import WhatsappInboundDedup
-from ..services import storage
+from ..services import sarvam_client, storage
 from ..services import whatsapp_classifier as classifier
 from ..services.assignment import NoReviewersAvailable, pick_assignee
 from ..services.categorizer import classify_category, org_category_keys
@@ -266,7 +266,11 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     # Media-only messages skip the classifier (always news intent).
     needs_triage = False
     if text:
-        label = await classifier.classify(text)
+        # Classification happens before we have a story_id — bucket it
+        # so we can see how much classifier overhead the WhatsApp intake
+        # path is costing us per month.
+        with sarvam_client.cost_context(bucket="whatsapp_intake"):
+            label = await classifier.classify(text)
         if label == "chitchat":
             db.commit()
             await _send_gupshup_reply(

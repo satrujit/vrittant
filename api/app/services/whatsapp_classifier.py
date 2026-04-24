@@ -10,6 +10,7 @@ import re
 import httpx
 
 from ..config import settings
+from . import sarvam_client
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +29,6 @@ _SYSTEM = (
 
 
 async def _sarvam_call(prompt: str) -> str:
-    url = f"{settings.SARVAM_BASE_URL}/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {settings.SARVAM_API_KEY}",
-        "Content-Type": "application/json",
-    }
     payload = {
         "model": "sarvam-30b",
         "messages": [
@@ -42,10 +38,7 @@ async def _sarvam_call(prompt: str) -> str:
         "temperature": 0.0,
         "max_tokens": 5,
     }
-    async with httpx.AsyncClient(timeout=3) as client:
-        resp = await client.post(url, json=payload, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
+    data = await sarvam_client.chat(payload=payload, timeout=3)
     return (data["choices"][0]["message"]["content"] or "").strip().lower()
 
 

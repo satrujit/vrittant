@@ -25,6 +25,7 @@ from ..deps import get_current_user, get_current_org_id
 from ..models.news_article import NewsArticle
 from ..models.story import Story
 from ..models.user import User
+from ..services import sarvam_client
 from ..services.news_scraper import (
     build_research_prompt,
     build_research_user_prompt,
@@ -239,24 +240,18 @@ async def search_news_articles_by_title(
     has_odia = bool(re.search(r'[\u0B00-\u0B7F]', q))
     if has_odia:
         try:
-            translate_url = f"{settings.SARVAM_BASE_URL}/translate"
-            headers = {
-                "api-subscription-key": settings.SARVAM_API_KEY,
-                "Content-Type": "application/json",
-            }
             payload = {
                 "input": q,
                 "source_language_code": "od-IN",
                 "target_language_code": "en-IN",
                 "model": "mayura:v1",
             }
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(translate_url, json=payload, headers=headers, timeout=15.0)
-                resp.raise_for_status()
-                translated = resp.json().get("translated_text", "")
-                if translated and translated.strip() and translated != q:
-                    search_terms.append(translated.strip())
-                    logger.info("search-by-title: translated %r -> %r", q, translated)
+            with sarvam_client.cost_context(bucket="search"):
+                data = await sarvam_client.translate(payload=payload, timeout=15.0)
+            translated = data.get("translated_text", "")
+            if translated and translated.strip() and translated != q:
+                search_terms.append(translated.strip())
+                logger.info("search-by-title: translated %r -> %r", q, translated)
         except Exception as exc:
             logger.warning("search-by-title: translate failed: %s", exc)
 
@@ -401,11 +396,6 @@ async def research_story_from_article(
     max_tokens = min(max(word_count * 7, 3072), 8192)
 
     try:
-        url = f"{settings.SARVAM_BASE_URL}/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {settings.SARVAM_API_KEY}",
-            "Content-Type": "application/json",
-        }
         messages = [
             {"role": "system", "content": system_prompt + "\n\nDo not output markdown formatting (no **, ##, -, etc). Return plain text only."},
             {"role": "user", "content": user_prompt},
@@ -417,10 +407,18 @@ async def research_story_from_article(
             "max_tokens": max_tokens,
         }
 
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            raw = resp.json()["choices"][0]["message"]["content"] or ""
+        # This is the "Research with AI" path — the user is creating a
+        # story FROM a news article, so we attribute to the resulting story
+        # via the route's outer cost_context (set in confirm_story).
+        # If invoked outside that context, fall back to the news_fetcher
+        # bucket so the cost still lands somewhere visible.
+        ctx = sarvam_client.current_cost_context()
+        if ctx.story_id is None and ctx.bucket is None:
+            with sarvam_client.cost_context(bucket="news_fetcher"):
+                data = await sarvam_client.chat(payload=payload, timeout=180.0)
+        else:
+            data = await sarvam_client.chat(payload=payload, timeout=180.0)
+        raw = data["choices"][0]["message"]["content"] or ""
 
         logger.info("Sarvam raw (before strip) length: %d, first 300: %s", len(raw), raw[:300])
         raw = strip_think_tags(raw)

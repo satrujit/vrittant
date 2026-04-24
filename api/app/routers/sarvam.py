@@ -4,6 +4,7 @@ import os
 import re
 import ssl
 import tempfile
+import time
 import zipfile
 from typing import Optional
 
@@ -31,6 +32,7 @@ from pydantic import BaseModel, Field
 from ..config import settings
 from ..deps import get_current_user
 from ..models.user import User
+from ..services import sarvam_client
 
 logger = logging.getLogger(__name__)
 
@@ -97,16 +99,24 @@ async def websocket_stt_proxy(
     sarvam_ws = None
     client_alive = True
     audio_queue = asyncio.Queue()
+    # Track total audio bytes relayed so we can log a single STT cost row
+    # when the session ends. Streaming STT uses raw PCM 16-bit mono @ 16kHz
+    # by default = 32000 bytes/second; if Sarvam ever changes this we'll
+    # under/over-bill ourselves until the rate is updated.
+    total_audio_bytes = 0
+    session_started = time.monotonic()
 
     # --- Task 1: Read from Flutter client, enqueue audio chunks -----------
     async def read_client():
-        nonlocal client_alive
+        nonlocal client_alive, total_audio_bytes
         try:
             while True:
                 msg = await ws.receive()
                 if msg["type"] == "websocket.receive":
                     payload = msg.get("text") or msg.get("bytes")
                     if payload:
+                        if isinstance(payload, (bytes, bytearray)):
+                            total_audio_bytes += len(payload)
                         await audio_queue.put(payload)
                 elif msg["type"] == "websocket.disconnect":
                     break
@@ -192,6 +202,23 @@ async def websocket_stt_proxy(
             await ws.close(code=1011, reason="Upstream STT service unavailable")
         except Exception:
             pass
+    finally:
+        # Log the streaming STT cost once per session. PCM 16-bit mono @ 16kHz
+        # = 32000 bytes/sec. We don't know which story the dictation
+        # belongs to (the WS proxy isn't story-aware), so this lands in
+        # the "dictation" bucket attributed to the reporter.
+        if total_audio_bytes > 0:
+            audio_seconds = max(1, total_audio_bytes // 32000)
+            duration_ms = int((time.monotonic() - session_started) * 1000)
+            try:
+                with sarvam_client.cost_context(bucket="dictation", user_id=reporter_id):
+                    sarvam_client.log_streaming_stt_cost(
+                        model=model,
+                        audio_seconds=audio_seconds,
+                        duration_ms=duration_ms,
+                    )
+            except Exception as exc:  # noqa: BLE001 — never fail teardown
+                logger.warning("STT proxy: failed to log streaming cost: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +341,7 @@ async def upload_audio(
         audio_bytes=contents,
         filename=filename,
         language_code=language_code,
+        user_id=user.id,
     )
 
     return {
@@ -329,19 +357,28 @@ def _run_stt_in_background(
     audio_bytes: bytes,
     filename: str,
     language_code: str,
+    user_id: Optional[str] = None,
 ) -> None:
     """Background task: run STT and update paragraph in a fresh DB session."""
     import asyncio as _asyncio
     from ..database import SessionLocal
 
+    async def _do_stt() -> str:
+        # cost_context must be set on the same task as the Sarvam call so
+        # the wrapper can read it via contextvar. Setting here (inside the
+        # background task's own event loop) makes the STT charge land on
+        # this story.
+        with sarvam_client.cost_context(story_id=story_id, user_id=user_id):
+            return await stt_service.transcribe_audio(
+                audio_bytes,
+                filename=filename,
+                language_code=language_code,
+            )
+
     transcript = ""
     new_status = "ok"
     try:
-        transcript = _asyncio.run(stt_service.transcribe_audio(
-            audio_bytes,
-            filename=filename,
-            language_code=language_code,
-        ))
+        transcript = _asyncio.run(_do_stt())
     except stt_service.SttRetryable as exc:
         logger.warning(
             "Background STT transient failure (paragraph=%s story=%s): %s — pending_retry",
@@ -529,6 +566,11 @@ class ChatRequest(BaseModel):
     model: str = "sarvam-30b"
     temperature: Optional[float] = None
     max_tokens: Optional[int] = Field(None, le=8192)
+    # Optional — when the call is on behalf of a specific story (e.g. the
+    # review-page editor invoking an AI assist), the panel can pass it so
+    # the cost lands on the story instead of a generic bucket. Backend-only
+    # — purely for cost attribution; not surfaced anywhere user-facing.
+    story_id: Optional[str] = None
 
 
 @router.post("/api/llm/chat")
@@ -562,50 +604,50 @@ async def llm_chat(
         # Sarvam pro tier caps sarvam-30b at 8192 output tokens
         payload["max_tokens"] = min(body.max_tokens, 8192)
 
-    url = f"{settings.SARVAM_BASE_URL}/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {settings.SARVAM_API_KEY}",
-        "Content-Type": "application/json",
-    }
+    # Attribution: prefer story_id when given, otherwise generic
+    # reviewer_panel bucket. Either way we tag the user so we can answer
+    # "which reviewer ran the AI bill up this week".
+    attribution = (
+        sarvam_client.cost_context(story_id=body.story_id, user_id=user.id)
+        if body.story_id
+        else sarvam_client.cost_context(bucket="reviewer_panel", user_id=user.id)
+    )
+    try:
+        with attribution:
+            data = await sarvam_client.chat(payload=payload, timeout=60.0)
+        # Strip <think>/<thinking> reasoning tags from model output
+        for choice in data.get("choices", []):
+            msg = choice.get("message", {})
+            if msg.get("content"):
+                content = msg["content"]
+                content = re.sub(r'<think(?:ing)?>[\s\S]*?</think(?:ing)?>', '', content)
+                content = re.sub(r'<think(?:ing)?>[\s\S]*', '', content)
+                msg["content"] = content.strip()
+        return data
+    except httpx.HTTPStatusError as exc:
+        from fastapi.responses import JSONResponse
 
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post(url, json=payload, headers=headers, timeout=60.0)
-            resp.raise_for_status()
-            data = resp.json()
-            # Strip <think>/<thinking> reasoning tags from model output
-            for choice in data.get("choices", []):
-                msg = choice.get("message", {})
-                if msg.get("content"):
-                    content = msg["content"]
-                    content = re.sub(r'<think(?:ing)?>[\s\S]*?</think(?:ing)?>', '', content)
-                    content = re.sub(r'<think(?:ing)?>[\s\S]*', '', content)
-                    msg["content"] = content.strip()
-            return data
-        except httpx.HTTPStatusError as exc:
-            from fastapi.responses import JSONResponse
+        # Log upstream error so we can diagnose 4xx/5xx from Sarvam.
+        # Truncate to keep logs readable; full body still goes to client.
+        body_preview = exc.response.text[:500]
+        logger.warning(
+            "Sarvam /v1/chat/completions returned %s (model=%s, max_tokens=%s, msgs=%d): %s",
+            exc.response.status_code, model, body.max_tokens,
+            len(messages), body_preview,
+        )
+        return JSONResponse(
+            status_code=exc.response.status_code,
+            content=exc.response.json()
+            if exc.response.headers.get("content-type", "").startswith("application/json")
+            else {"detail": exc.response.text},
+        )
+    except httpx.RequestError:
+        from fastapi.responses import JSONResponse
 
-            # Log upstream error so we can diagnose 4xx/5xx from Sarvam.
-            # Truncate to keep logs readable; full body still goes to client.
-            body_preview = exc.response.text[:500]
-            logger.warning(
-                "Sarvam /v1/chat/completions returned %s (model=%s, max_tokens=%s, msgs=%d): %s",
-                exc.response.status_code, model, body.max_tokens,
-                len(messages), body_preview,
-            )
-            return JSONResponse(
-                status_code=exc.response.status_code,
-                content=exc.response.json()
-                if exc.response.headers.get("content-type", "").startswith("application/json")
-                else {"detail": exc.response.text},
-            )
-        except httpx.RequestError:
-            from fastapi.responses import JSONResponse
-
-            return JSONResponse(
-                status_code=502,
-                content={"detail": "Unable to reach Sarvam AI service"},
-            )
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "Unable to reach Sarvam AI service"},
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -626,6 +668,11 @@ class TranslateRequest(BaseModel):
     source_language_code: str = "od-IN"
     target_language_code: str = "en-IN"
     mode: str = "formal"  # formal | classic-colloquial | modern-colloquial | code-mixed
+    # Optional — see ChatRequest.story_id. When the panel translates an
+    # article body for the editor it should pass story.id so the per-story
+    # cost rollup includes translate spend (this is usually the largest
+    # per-story line item).
+    story_id: Optional[str] = None
 
 
 def _hard_split(text: str, limit: int) -> list[str]:
@@ -691,15 +738,13 @@ async def llm_translate(
     if not chunks:
         return {"translated_text": ""}
 
-    url = f"{settings.SARVAM_BASE_URL}/translate"
-    headers = {
-        "Authorization": f"Bearer {settings.SARVAM_API_KEY}",
-        "api-subscription-key": settings.SARVAM_API_KEY,
-        "Content-Type": "application/json",
-    }
-
+    attribution = (
+        sarvam_client.cost_context(story_id=body.story_id, user_id=user.id)
+        if body.story_id
+        else sarvam_client.cost_context(bucket="reviewer_panel", user_id=user.id)
+    )
     translated_chunks: list[str] = []
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    with attribution:
         for chunk in chunks:
             payload = {
                 "input": chunk,
@@ -710,9 +755,7 @@ async def llm_translate(
                 "enable_preprocessing": True,
             }
             try:
-                resp = await client.post(url, json=payload, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
+                data = await sarvam_client.translate(payload=payload, timeout=60.0)
                 translated_chunks.append(data.get("translated_text", ""))
             except httpx.HTTPStatusError as exc:
                 from fastapi.responses import JSONResponse
@@ -878,6 +921,7 @@ def _run_ocr_job(image_bytes: bytes, filename: str, language: str) -> dict:
     output_dir = tempfile.mkdtemp()
     output_zip = os.path.join(output_dir, "output.zip")
 
+    ocr_started = time.monotonic()
     try:
         # Create a ZIP containing the image
         upload_zip_fd, upload_zip_path = tempfile.mkstemp(suffix=".zip")
@@ -893,6 +937,17 @@ def _run_ocr_job(image_bytes: bytes, filename: str, language: str) -> dict:
         job.start()
         job.wait_until_complete(timeout=120)
         job.download_output(output_zip)
+
+        # Cost: ₹1.5 per page. Single image = 1 page (the SDK doesn't
+        # expose a page count for image inputs). For PDF inputs this
+        # would need to be the actual page count.
+        try:
+            sarvam_client.log_vision_cost(
+                pages=1,
+                duration_ms=int((time.monotonic() - ocr_started) * 1000),
+            )
+        except Exception as exc:  # noqa: BLE001 — never break the OCR caller
+            logger.warning("OCR: failed to log vision cost: %s", exc)
 
         # Parse the markdown from the output ZIP
         extracted_text = ""
