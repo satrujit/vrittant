@@ -85,6 +85,21 @@ export function EditionPlacementMatrix({ storyId }) {
     };
   }, [activeDate, storyId]);
 
+  // Sort: daily editions first by numeric suffix (Ed 1, Ed 2, …), Avimat last.
+  // Backend ordering is unstable; without this the cells render right-to-left
+  // which reads weirdly when reviewers think in "Ed 1 → Ed 6" terms.
+  const sortedEditions = useMemo(() => {
+    const numOf = (title) => {
+      const m = String(title || '').match(/(\d+)/);
+      return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
+    };
+    return [...editions].sort((a, b) => {
+      if (a.title === AVIMAT) return 1;
+      if (b.title === AVIMAT) return -1;
+      return numOf(a.title) - numOf(b.title);
+    });
+  }, [editions]);
+
   const placementByEdition = useMemo(() => {
     const m = new Map();
     for (const ed of editions) m.set(ed.id, null);
@@ -175,23 +190,24 @@ export function EditionPlacementMatrix({ storyId }) {
 
   return (
     <div className="px-3 pb-2">
-      <div className="mb-2 flex items-center gap-1.5">
+      {/* Row 1: date stepper. Stays on one line — no wrapping date. */}
+      <div className="mb-1.5 flex items-center gap-1">
         <button
           type="button"
           onClick={() => setActiveDate((d) => shiftDate(d, -1))}
-          className="rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px] hover:bg-accent"
+          className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background text-[12px] leading-none hover:bg-accent"
           aria-label="Previous day"
         >
           ‹
         </button>
-        <span className="text-[11px] font-medium tabular-nums">
+        <span className="whitespace-nowrap text-[11px] font-medium tabular-nums">
           {activeDate}
-          {isToday && <span className="ml-1 text-[10px] text-muted-foreground">(today)</span>}
+          {isToday && <span className="ml-1 text-[10px] font-normal text-muted-foreground">(today)</span>}
         </span>
         <button
           type="button"
           onClick={() => setActiveDate((d) => shiftDate(d, 1))}
-          className="rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px] hover:bg-accent"
+          className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background text-[12px] leading-none hover:bg-accent"
           aria-label="Next day"
         >
           ›
@@ -200,34 +216,35 @@ export function EditionPlacementMatrix({ storyId }) {
           <button
             type="button"
             onClick={() => setActiveDate(todayIST())}
-            className="rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
+            className="ml-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
           >
             Today
           </button>
         )}
         <span className="flex-1" />
-        {editions.length > 0 && (
-          <>
-            <button
-              type="button"
-              onClick={applyAllDaily}
-              className="rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
-            >
-              {t('placements.allDaily')}
-            </button>
-            <button
-              type="button"
-              onClick={clearAll}
-              className="rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
-            >
-              {t('placements.clear')}
-            </button>
-          </>
-        )}
-        {saving && (
-          <span className="text-[10px] text-muted-foreground">…</span>
-        )}
+        {saving && <span className="text-[10px] text-muted-foreground">saving…</span>}
       </div>
+
+      {/* Row 2: action chips. Separate row so they never collide with the date. */}
+      {editions.length > 0 && (
+        <div className="mb-2 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={applyAllDaily}
+            className="whitespace-nowrap rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
+          >
+            {t('placements.allDaily')}
+          </button>
+          <button
+            type="button"
+            onClick={clearAll}
+            className="whitespace-nowrap rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
+          >
+            {t('placements.clear')}
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-xs text-muted-foreground">{t('common.loading', 'Loading...')}</div>
       ) : !editions.length ? (
@@ -235,8 +252,10 @@ export function EditionPlacementMatrix({ storyId }) {
           {t('placements.noEditions', { date: activeDate })}
         </div>
       ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {editions.map((ed) => (
+        // Fixed 4-column grid keeps cells aligned. Trailing slots stay empty
+        // rather than centring an orphan row, which reads cleaner.
+        <div className="grid grid-cols-4 gap-1.5">
+          {sortedEditions.map((ed) => (
             <Cell
               key={ed.id}
               edition={ed}
@@ -255,8 +274,8 @@ export function EditionPlacementMatrix({ storyId }) {
 function Cell({ edition, current, onPick, onDrop, dropLabel }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="flex flex-col items-center">
-      <div className="mb-0.5 max-w-[72px] truncate text-[10px] font-medium text-muted-foreground">
+    <div className="flex min-w-0 flex-col items-stretch">
+      <div className="mb-0.5 truncate text-center text-[10px] font-medium text-muted-foreground">
         {edition.title}
       </div>
       <Popover open={open} onOpenChange={setOpen}>
@@ -264,7 +283,7 @@ function Cell({ edition, current, onPick, onDrop, dropLabel }) {
           <button
             type="button"
             className={cn(
-              'min-w-[60px] rounded border border-border bg-background px-2 py-1 text-xs hover:bg-accent',
+              'w-full rounded border border-border bg-background px-1 py-1 text-center text-xs hover:bg-accent',
               current?.pageName && 'border-primary/40 bg-primary/5 font-medium text-foreground'
             )}
           >
