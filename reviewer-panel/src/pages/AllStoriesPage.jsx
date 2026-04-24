@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Sparkles,
   ChevronLeft,
@@ -63,6 +63,7 @@ function getYesterdayISO() {
 export default function AllStoriesPage() {
   const { t } = useI18n();
   const { config, user } = useAuth();
+  const navigate = useNavigate();
   const isOrgAdmin = user?.user_type === 'org_admin';
   const categoryList = (config?.categories || []).filter(c => c.is_active).map(c => c.key);
   const [searchQuery, setSearchQuery] = useState('');
@@ -447,12 +448,17 @@ export default function AllStoriesPage() {
                 return (
                   <TableRow
                     key={story.id}
+                    className="cursor-pointer"
+                    onClick={() => navigate(`/review/${story.id}`)}
                   >
-                    {/* Story title (clickable) + reporter/location metadata */}
+                    {/* Story title + reporter/location metadata.
+                        Whole row is clickable; the headline stays a real
+                        Link so cmd/middle-click still opens in a new tab. */}
                     <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5 max-w-[420px]">
                       <div className="flex flex-col gap-1 min-w-[200px]">
                         <Link
                           to={`/review/${story.id}`}
+                          onClick={(e) => e.stopPropagation()}
                           className="text-sm font-semibold text-foreground leading-tight line-clamp-1 hover:text-primary transition-colors no-underline"
                         >
                           {story.headline}
@@ -466,7 +472,7 @@ export default function AllStoriesPage() {
                           <Avatar
                             initials={story.reporter.initials}
                             color={story.reporter.color}
-                            size="sm"
+                            size="xs"
                           />
                           <span className="text-[11px] text-muted-foreground font-medium">
                             {story.reporter.name}
@@ -528,8 +534,13 @@ export default function AllStoriesPage() {
                       )}
                     </TableCell>
 
-                    {/* Assigned to — inline reassign popover */}
-                    <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
+                    {/* Assigned to — inline reassign popover.
+                        stopPropagation so opening the popover or picking a
+                        reviewer doesn't also navigate the row. */}
+                    <TableCell
+                      className="px-4 py-2 max-sm:px-3 max-sm:py-1.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <ReassignPopover
                         assigneeId={story.assignee_id}
                         assigneeName={story.assignee_name}
@@ -541,7 +552,10 @@ export default function AllStoriesPage() {
 
                     {/* Row actions — org_admin only */}
                     {isOrgAdmin && (
-                      <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
+                      <TableCell
+                        className="px-4 py-2 max-sm:px-3 max-sm:py-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-8 w-8">

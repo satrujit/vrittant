@@ -82,7 +82,22 @@ export default function ReviewEditor({
     handleImageUpload({ target: { files: fileList } });
   };
 
+  // True only for OS file drags. Internal text-selection drags within
+  // the editor have type "text/plain" / "text/html" and we ignore them
+  // (otherwise the upload overlay would flicker on every text drag).
+  const isFileDrag = (e) => {
+    const types = e.dataTransfer?.types;
+    if (!types) return false;
+    // DataTransferItemList exposes .contains in some browsers and array
+    // semantics in others; check both.
+    for (let i = 0; i < types.length; i++) {
+      if (types[i] === 'Files') return true;
+    }
+    return false;
+  };
+
   const handleDrop = (e) => {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
@@ -91,6 +106,7 @@ export default function ReviewEditor({
   };
 
   const handleDragOver = (e) => {
+    if (!isFileDrag(e)) return;
     // Required to allow a drop. Browsers cancel the drop if we don't
     // preventDefault here even when the drop handler is wired up.
     e.preventDefault();
@@ -108,7 +124,28 @@ export default function ReviewEditor({
 
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-2">
+      <div
+        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-2"
+        // Capture-phase handlers so we intercept file drops before
+        // ProseMirror's own drop handler (which would otherwise try to
+        // insert the file as an image node and bypass our upload pipeline).
+        onDropCapture={handleDrop}
+        onDragOverCapture={handleDragOver}
+        onDragEnterCapture={handleDragOver}
+        onDragLeave={handleDragLeave}
+      >
+        {/* Full-area drop overlay — sits above the editor + attachments
+            so reporters can drop image files anywhere in the editor pane,
+            not just the tiny attachments box at the bottom. */}
+        {dragActive && (
+          <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/10 backdrop-blur-[1px]">
+            <div className="flex items-center gap-2 rounded-md bg-card px-4 py-2 text-sm font-semibold text-primary shadow-lg">
+              <ImageIcon size={16} />
+              {t('review.dropToUpload', 'Drop images to upload')}
+            </div>
+          </div>
+        )}
+
         {/* Toolbar */}
         <ReviewToolbar
           editor={editor}
@@ -162,17 +199,10 @@ export default function ReviewEditor({
           <span>{wordCount} {t('review.words', 'words')}</span>
         </div>
 
-        {/* Attachments — also a drop target for files dragged from the OS */}
-        <div
-          className={cn(
-            'mt-2 rounded-lg border border-border bg-card p-3 transition-colors',
-            dragActive && 'border-primary bg-primary/5'
-          )}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragEnter={handleDragOver}
-          onDragLeave={handleDragLeave}
-        >
+        {/* Attachments — drop target is now the entire editor pane (see
+            outer wrapper above), so we don't double-up the visual hint
+            here. The box still shows the upload button + thumbnails. */}
+        <div className="mt-2 rounded-lg border border-border bg-card p-3">
           <h4 className="mb-2 flex items-center justify-between text-xs font-semibold text-muted-foreground">
             <span className="flex items-center gap-2">
               <ImageIcon size={14} />
@@ -195,11 +225,6 @@ export default function ReviewEditor({
               {t('review.uploadImage', 'Upload Image')}
             </button>
           </h4>
-          {dragActive && (
-            <div className="mb-2 rounded-md border border-dashed border-primary/60 bg-primary/5 px-3 py-2 text-center text-[11px] font-medium text-primary">
-              {t('review.dropToUpload', 'Drop images to upload')}
-            </div>
-          )}
           {imageFiles.length > 0 && (
             <div className="mb-2 grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2">
               {imageFiles.map((img, i) => (

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft,
   ChevronRight,
@@ -33,6 +33,7 @@ function formatPublishedCount(n) {
 export default function DashboardPage() {
   const { t } = useI18n();
   const { user } = useAuth();
+  const navigate = useNavigate();
   // Org admins oversee everyone, so the dashboard queue is org-wide for them.
   // Reviewers see only what's assigned to them (delegated work lives on All Stories).
   const isOrgAdmin = user?.user_type === 'org_admin';
@@ -269,13 +270,18 @@ export default function DashboardPage() {
                   return (
                     <tr
                       key={story.id}
-                      className="transition-colors hover:bg-accent [&:last-child_td]:border-b-0"
+                      className="transition-colors hover:bg-accent cursor-pointer [&:last-child_td]:border-b-0"
+                      onClick={() => navigate(`/review/${story.id}`)}
                     >
-                      {/* Story title (clickable) + reporter/location metadata */}
+                      {/* Story title + reporter/location metadata.
+                          The whole <tr> is clickable; we keep the headline
+                          as a real <Link> so middle/cmd-click still opens
+                          in a new tab and screen readers see a link. */}
                       <td className="px-6 py-3 border-b border-border align-middle max-sm:px-3 max-sm:py-2 max-w-[420px]">
                         <div className="flex flex-col gap-1.5 min-w-[200px]">
                           <Link
                             to={`/review/${story.id}`}
+                            onClick={(e) => e.stopPropagation()}
                             className="text-[0.9375rem] font-semibold text-foreground leading-tight line-clamp-1 hover:text-primary transition-colors no-underline"
                           >
                             {story.headline}
@@ -284,7 +290,7 @@ export default function DashboardPage() {
                             <Avatar
                               initials={story.reporter.initials}
                               color={story.reporter.color}
-                              size="sm"
+                              size="xs"
                             />
                             <span className="text-xs text-muted-foreground font-medium">
                               {story.reporter.name}
@@ -323,8 +329,13 @@ export default function DashboardPage() {
                         <StatusBadge status={story.status} minimal />
                       </td>
 
-                      {/* Assigned to — inline reassign */}
-                      <td className="px-6 py-3 border-b border-border align-middle max-sm:px-3 max-sm:py-2">
+                      {/* Assigned to — inline reassign.
+                          stopPropagation so opening the popover or picking a
+                          reviewer doesn't also navigate the row. */}
+                      <td
+                        className="px-6 py-3 border-b border-border align-middle max-sm:px-3 max-sm:py-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <ReassignPopover
                           assigneeId={story.assignee_id ?? story.assigned_to}
                           assigneeName={story.assignee_name}
