@@ -88,11 +88,18 @@ export function getCategoryColor(category) {
   const key = category?.toLowerCase().replace(/[\s_]+/g, '') || 'politics';
 
   const map = {
+    // ── Active default set ────────────────────────────────────────────
     politics:       { color: '#6366F1', bg: '#EEF2FF' },
-    sports:         { color: '#14B8A6', bg: '#CCFBF1' },
     crime:          { color: '#EF4444', bg: '#FEE2E2' },
-    business:       { color: '#F59E0B', bg: '#FEF3C7' },
+    accident:       { color: '#F97316', bg: '#FFEDD5' },
+    governance:     { color: '#0EA5E9', bg: '#E0F2FE' },
     entertainment:  { color: '#EC4899', bg: '#FCE7F3' },
+    science:        { color: '#06B6D4', bg: '#CFFAFE' },
+    sports:         { color: '#14B8A6', bg: '#CCFBF1' },
+    general:        { color: '#64748B', bg: '#F1F5F9' },
+    // ── Legacy keys retained so historical stories still render with
+    //    sensible colours after the category list shrank. ─────────────
+    business:       { color: '#F59E0B', bg: '#FEF3C7' },
     education:      { color: '#8B5CF6', bg: '#EDE9FE' },
     health:         { color: '#22C55E', bg: '#DCFCE7' },
     technology:     { color: '#3B82F6', bg: '#DBEAFE' },
