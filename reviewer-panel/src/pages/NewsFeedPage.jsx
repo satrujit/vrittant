@@ -11,6 +11,7 @@ import {
   Sparkles,
   Image as ImageIcon,
   Layers,
+  X,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import {
@@ -255,9 +256,25 @@ export default function NewsFeedPage() {
           </div>
         )}
 
-        <div className="ml-auto flex items-center gap-3">
+        {(category || source || search) && (
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => {
+              setCategory('');
+              setSource('');
+              setSearch('');
+            }}
+            className="h-8 text-muted-foreground hover:text-foreground"
+          >
+            <X size={12} />
+            {t('allStories.clearFilters', 'Clear')}
+          </Button>
+        )}
+
+        <div className="ml-auto flex items-end gap-3">
           {!loading && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground h-8 inline-flex items-center">
               {t('newsFeed.showingResults', '{total} articles').replace('{total}', total)}
             </span>
           )}

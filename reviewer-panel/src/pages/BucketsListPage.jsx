@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Calendar, Newspaper, Loader2, Trash2, FileText, BookOpen, Search, Pencil, ChevronRight, ChevronDown, Columns3 } from 'lucide-react';
+import { Plus, Calendar, Newspaper, Loader2, Trash2, FileText, BookOpen, Pencil, ChevronRight, ChevronDown, Columns3, X } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/table';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
-import { Modal, SearchableSelect, PageHeader } from '../components/common';
+import { Modal, SearchableSelect, PageHeader, SearchBar } from '../components/common';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -392,45 +392,70 @@ export default function BucketsListPage() {
         className="mb-0"
       />
 
-      {/* Search & Filter bar */}
-      <div className="flex items-center gap-3 flex-wrap max-md:flex-col max-md:items-stretch">
-        <div className="relative flex items-center flex-1 min-w-[200px] max-w-[360px] max-md:max-w-none">
-          <Search size={16} className="absolute left-3 text-muted-foreground pointer-events-none z-10" />
-          <Input
-            type="text"
-            className="pl-[38px] rounded-lg bg-card border-border text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-primary/10"
-            placeholder={t('buckets.searchEditionsPlaceholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+      {/* Search & Filter bar — canonical pattern: filters left, search
+          right (ml-auto), clear button appears between when any filter
+          is active. Mirrors AllStoriesPage. */}
+      <div className="flex items-end gap-3 flex-wrap">
+        <div className="flex flex-col gap-0.5">
+          <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
+            {t('buckets.filterByPaperType')}
+          </Label>
+          <SearchableSelect
+            triggerClassName="min-w-[150px]"
+            value={filterPaperType}
+            onChange={setFilterPaperType}
+            placeholder={t('allStories.all', 'All')}
+            allLabel={t('allStories.all', 'All')}
+            options={pubTypes.map(pt => ({
+              value: pt.key,
+              label: t(`buckets.paperTypes.${pt.key}`) !== `buckets.paperTypes.${pt.key}`
+                ? t(`buckets.paperTypes.${pt.key}`)
+                : pt.label,
+            }))}
           />
         </div>
 
-        <SearchableSelect
-          triggerClassName="min-w-[150px]"
-          value={filterPaperType}
-          onChange={setFilterPaperType}
-          placeholder={t('buckets.filterByPaperType')}
-          allLabel={t('buckets.filterByPaperType')}
-          options={pubTypes.map(pt => ({
-            value: pt.key,
-            label: t(`buckets.paperTypes.${pt.key}`) !== `buckets.paperTypes.${pt.key}`
-              ? t(`buckets.paperTypes.${pt.key}`)
-              : pt.label,
-          }))}
-        />
+        <div className="flex flex-col gap-0.5">
+          <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
+            {t('buckets.filterByStatus')}
+          </Label>
+          <SearchableSelect
+            triggerClassName="min-w-[150px]"
+            value={filterStatus}
+            onChange={setFilterStatus}
+            placeholder={t('allStories.all', 'All')}
+            allLabel={t('allStories.all', 'All')}
+            options={[
+              { value: 'draft', label: t('buckets.editionStatus.draft') },
+              { value: 'finalized', label: t('buckets.editionStatus.finalized') },
+              { value: 'published', label: t('buckets.editionStatus.published') },
+            ]}
+          />
+        </div>
 
-        <SearchableSelect
-          triggerClassName="min-w-[150px]"
-          value={filterStatus}
-          onChange={setFilterStatus}
-          placeholder={t('buckets.filterByStatus')}
-          allLabel={t('buckets.filterByStatus')}
-          options={[
-            { value: 'draft', label: t('buckets.editionStatus.draft') },
-            { value: 'finalized', label: t('buckets.editionStatus.finalized') },
-            { value: 'published', label: t('buckets.editionStatus.published') },
-          ]}
-        />
+        {(filterPaperType || filterStatus || search) && (
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => {
+              setFilterPaperType('');
+              setFilterStatus('');
+              setSearch('');
+            }}
+            className="h-8 text-muted-foreground hover:text-foreground"
+          >
+            <X size={12} />
+            {t('allStories.clearFilters', 'Clear')}
+          </Button>
+        )}
+
+        <div className="ml-auto w-full max-w-[280px]">
+          <SearchBar
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('buckets.searchEditionsPlaceholder')}
+          />
+        </div>
       </div>
 
       {/* Content */}
