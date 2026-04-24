@@ -205,17 +205,19 @@ export default function ReviewEditor({
               {imageFiles.map((img, i) => (
                 <div key={img.paragraphId || i} className="group relative aspect-[4/3] overflow-hidden rounded-md border border-border bg-background">
                   <img src={img.url} alt={img.name || `Image ${i + 1}`} className="size-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
-                  {/* Download overlay sits BELOW the remove button. Both are
-                      shown on group-hover. Order matters: the link is rendered
-                      first so the X button (rendered after, z-20) captures
-                      clicks in the corner without the link's `inset-0` hit
-                      area swallowing them. */}
+                  {/* Download overlay covers the IMAGE area but stops short of
+                      the top-right corner where the X button lives, so the
+                      button can't be eaten by the link's hit area regardless
+                      of stacking quirks. */}
                   <a
                     href={img.url}
                     download={img.name || `image-${i + 1}`}
                     target="_blank"
                     rel="noreferrer"
                     className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+                    style={handleAttachmentDelete && img.paragraphId
+                      ? { clipPath: 'polygon(0 0, calc(100% - 28px) 0, calc(100% - 28px) 28px, 100% 28px, 100% 100%, 0 100%)' }
+                      : undefined}
                     onClick={async (e) => {
                       e.preventDefault();
                       try {
@@ -244,11 +246,13 @@ export default function ReviewEditor({
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        handleAttachmentDelete(img.paragraphId);
+                        if (window.confirm(t('review.removeAttachmentConfirm', 'Remove this image?'))) {
+                          handleAttachmentDelete(img.paragraphId);
+                        }
                       }}
-                      className="absolute right-1 top-1 z-20 inline-flex size-5 items-center justify-center rounded-full border border-white/40 bg-black/60 text-white opacity-0 transition-opacity hover:bg-red-500 group-hover:opacity-100"
+                      className="absolute right-1 top-1 z-30 inline-flex size-6 cursor-pointer items-center justify-center rounded-full border border-white/40 bg-black/70 text-white shadow-md transition-colors hover:bg-red-500"
                     >
-                      <X size={11} />
+                      <X size={12} />
                     </button>
                   )}
                 </div>
