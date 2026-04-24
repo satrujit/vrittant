@@ -228,10 +228,11 @@ export default function ReviewEditor({
           {/* Cap the combined attachment region so a long photo grid or a
               dozen audio clips can't push the editor body off-screen. The
               header (upload button + count) stays pinned above; only the
-              lists below scroll. */}
-          <div className="max-h-72 overflow-y-auto pr-1">
+              lists below scroll. 192px ≈ two rows of 80px thumbs — enough
+              to see what's there at a glance without dominating the pane. */}
+          <div className="max-h-48 overflow-y-auto pr-1">
           {imageFiles.length > 0 && (
-            <div className="mb-2 grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2">
+            <div className="mb-2 grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
               {imageFiles.map((img, i) => (
                 <div key={img.paragraphId || i} className="group relative aspect-[4/3] overflow-hidden rounded-md border border-border bg-background">
                   <img src={img.url} alt={img.name || `Image ${i + 1}`} className="size-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
