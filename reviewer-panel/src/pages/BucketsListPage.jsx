@@ -82,7 +82,7 @@ function EditionTable({ editions, t, onRowClick, onEdit, onDelete, onStatusChang
       )}
     >
       <Table>
-        <TableHeader>
+        <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_var(--border)]">
           <TableRow>
             <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em]">
               {t('buckets.paperType')}
@@ -378,7 +378,10 @@ export default function BucketsListPage() {
   };
 
   return (
-    <div className="flex flex-col gap-5 max-w-[1400px] mx-auto p-6 lg:p-8 min-h-full">
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Fixed top: page header + filter bar. Only the editions list
+          scrolls below; the inner EditionTable headers stay sticky. */}
+      <div className="shrink-0 max-w-[1400px] mx-auto w-full px-6 lg:px-8 pt-6 lg:pt-8 pb-3 flex flex-col gap-4">
       <PageHeader
         icon={Columns3}
         title={t('buckets.title')}
@@ -457,7 +460,11 @@ export default function BucketsListPage() {
           />
         </div>
       </div>
+      </div>
 
+      {/* Scrollable region — only the editions list scrolls. */}
+      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="max-w-[1400px] mx-auto w-full px-6 lg:px-8 pb-6 lg:pb-8 pt-3">
       {/* Content */}
       {loading ? (
         <div className="flex items-center justify-center p-16 flex-1">
@@ -531,6 +538,8 @@ export default function BucketsListPage() {
           )}
         </div>
       )}
+      </div>
+      </div>
 
       {/* Create Edition Modal */}
       <Modal

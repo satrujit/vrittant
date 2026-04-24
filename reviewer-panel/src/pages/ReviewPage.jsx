@@ -57,6 +57,29 @@ function ReviewPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [s.handleSaveContent, s.saving]);
 
+  // Esc → close the review and go back to the list. Skipped when the
+  // user is typing in any editable surface (input, textarea, TipTap's
+  // contenteditable) so it never interrupts editing.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape') return;
+      const el = e.target;
+      const tag = el?.tagName;
+      const editable = el?.isContentEditable
+        || tag === 'INPUT'
+        || tag === 'TEXTAREA'
+        || tag === 'SELECT';
+      if (editable) return;
+      // Don't fight open dialogs/popovers — they use Esc to dismiss
+      // themselves first via Radix's own handlers.
+      if (document.querySelector('[data-state="open"][role="dialog"]')) return;
+      e.preventDefault();
+      navigate(-1);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [navigate]);
+
   // /review/new — pre-save shell. The story isn't in the DB yet, so the
   // side panel's settings (assignee, edition, comments) and the header's
   // status actions (approve/reject) don't apply. Hide them; just show
