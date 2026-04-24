@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Sparkles,
@@ -101,24 +101,31 @@ export default function AllStoriesPage() {
       });
   }, []);
 
-  // Debounce search input (300ms)
-  const debounceTimer = useRef(null);
+  // Search submits on Enter only (not on every keystroke). Semantic
+  // search hits an LLM endpoint and AI-translates non-Odia queries — both
+  // are slow and metered, so per-keystroke firing was burning quota and
+  // returning stale results. Reporters get instant local typing feedback;
+  // the actual fetch fires when they press Enter.
   const handleSearch = (e) => {
-    const value = e.target.value;
-    setSearchQuery(value);
-    setCurrentPage(1);
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => {
-      setDebouncedSearch(value);
-    }, 300);
+    setSearchQuery(e.target.value);
   };
 
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    };
-  }, []);
+  const submitSearch = () => {
+    setCurrentPage(1);
+    setDebouncedSearch(searchQuery.trim());
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitSearch();
+    }
+  };
+
+  // True when the user has typed something they haven't applied yet.
+  // Used to surface a small "press ↵" hint so the gap between input
+  // and results doesn't feel broken.
+  const hasPendingSearch = searchQuery.trim() !== debouncedSearch.trim();
 
   // Fetch stories when filters or page change — exclude drafts by default
   const loadStories = useCallback(async () => {
@@ -285,22 +292,9 @@ export default function AllStoriesPage() {
       />
 
       <div className="flex flex-col gap-3">
-        <div className="relative max-w-[420px]">
-          <SearchBar
-            value={searchQuery}
-            onChange={handleSearch}
-            placeholder={t('allStories.searchPlaceholder')}
-            icon={Sparkles}
-          />
-          {semanticLoading && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-primary">
-              <Sparkles size={14} className="animate-pulse" />
-              <span className="text-[11px] font-medium">AI searching...</span>
-            </div>
-          )}
-        </div>
-
-        {/* Filters Row — compact inline */}
+        {/* Filters Row — compact inline. Search bar now lives at the
+            far right of the same row (ml-auto pushes it over) so the
+            page header stays a single tidy strip instead of stacking. */}
         <div className="flex items-end gap-3 flex-wrap max-[900px]:flex-col max-[900px]:items-stretch">
           <div className="flex flex-col gap-0.5 max-[900px]:min-w-0">
             <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
@@ -400,6 +394,31 @@ export default function AllStoriesPage() {
               {t('allStories.clearFilters')}
             </Button>
           )}
+
+          {/* Search — right-aligned via ml-auto. Submits on Enter only
+              (semantic search is metered + slow). The "press ↵" hint and
+              "AI searching..." spinner are mutually exclusive: one shows
+              what hasn't been applied yet, the other shows what's in
+              flight. */}
+          <div className="relative ml-auto w-full max-w-[280px] max-[900px]:ml-0 max-[900px]:max-w-none">
+            <SearchBar
+              value={searchQuery}
+              onChange={handleSearch}
+              onKeyDown={handleSearchKeyDown}
+              placeholder={t('allStories.searchPlaceholder')}
+              icon={Sparkles}
+            />
+            {semanticLoading ? (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-primary">
+                <Sparkles size={12} className="animate-pulse" />
+                <span className="text-[10px] font-medium">AI…</span>
+              </div>
+            ) : hasPendingSearch ? (
+              <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                ↵
+              </kbd>
+            ) : null}
+          </div>
         </div>
       </div>
 

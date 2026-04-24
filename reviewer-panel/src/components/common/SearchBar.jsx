@@ -2,7 +2,7 @@ import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
-function SearchBar({ placeholder = '', value, onChange, icon: Icon = Search, className }) {
+function SearchBar({ placeholder = '', value, onChange, onKeyDown, icon: Icon = Search, className }) {
   return (
     <div className={cn('relative flex w-full', className)}>
       <Icon
@@ -14,6 +14,7 @@ function SearchBar({ placeholder = '', value, onChange, icon: Icon = Search, cla
         placeholder={placeholder}
         value={value}
         onChange={onChange}
+        onKeyDown={onKeyDown}
         className="h-8 w-full rounded-md pl-8 pr-3 text-[13px]"
       />
     </div>
