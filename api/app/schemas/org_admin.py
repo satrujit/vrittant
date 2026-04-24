@@ -99,11 +99,23 @@ class PriorityLevelItem(BaseModel):
     is_active: bool = True
 
 
+class EditionTemplatePage(BaseModel):
+    page_number: int = Field(..., ge=1, le=999)
+    page_name: str = Field(..., min_length=1, max_length=64)
+
+
+class EditionTemplate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
+    weekdays: list[int] = Field(default_factory=list)  # 0=Mon..6=Sun
+    pages: list[EditionTemplatePage]
+
+
 class UpdateOrgConfigRequest(BaseModel):
     categories: Optional[list[CategoryItem]] = None
     publication_types: Optional[list[PublicationTypeItem]] = None
     page_suggestions: Optional[list[PageSuggestionItem]] = None
     priority_levels: Optional[list[PriorityLevelItem]] = None
+    edition_schedule: Optional[list[EditionTemplate]] = None
     default_language: Optional[str] = None
 
 
@@ -112,6 +124,7 @@ class OrgConfigResponse(BaseModel):
     publication_types: list[dict] = []
     page_suggestions: list[dict] = []
     priority_levels: list[dict] = []
+    edition_schedule: list[EditionTemplate] = Field(default_factory=list)
     default_language: str = "odia"
 
     model_config = {"from_attributes": True}

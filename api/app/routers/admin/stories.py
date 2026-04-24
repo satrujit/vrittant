@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ...database import get_db
 from ...deps import get_current_org_id, require_org_admin, require_reviewer
+from ...models.edition import Edition, EditionPage, EditionPageStory
 from ...models.story import Story
 from ...models.story_revision import StoryRevision
 from ...models.user import User
@@ -918,3 +919,131 @@ def admin_create_story_comment(
         body=comment.body,
         created_at=comment.created_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# GET / PUT /admin/stories/{story_id}/placements
+#
+# Bulk read/replace edition-page placements for a single story. Used by the
+# matrix UI on the review page to set "this story goes on these pages of
+# these editions" in one call. Diff-based: server inserts missing rows,
+# deletes ones not in the new set, all in one transaction.
+#
+# Note: a story can sit on multiple pages by design — the join table has
+# no unique constraint on story_id.
+# ---------------------------------------------------------------------------
+
+
+class _Placement(BaseModel):
+    edition_id: str
+    page_id: str
+
+
+class _BulkPlacementRequest(BaseModel):
+    placements: list[_Placement]
+
+
+def _serialize_placements(db: Session, story_id: str, org_id: str) -> list[dict]:
+    rows = (
+        db.query(EditionPageStory, EditionPage, Edition)
+        .join(EditionPage, EditionPage.id == EditionPageStory.edition_page_id)
+        .join(Edition, Edition.id == EditionPage.edition_id)
+        .filter(
+            EditionPageStory.story_id == story_id,
+            Edition.organization_id == org_id,
+        )
+        .all()
+    )
+    return [
+        {
+            "edition_id": ed.id,
+            "edition_title": ed.title,
+            "page_id": ep.id,
+            "page_name": ep.page_name,
+        }
+        for _row, ep, ed in rows
+    ]
+
+
+def _load_owned_story_or_404(db: Session, story_id: str, org_id: str) -> Story:
+    story = (
+        db.query(Story)
+        .filter(Story.id == story_id, Story.deleted_at.is_(None))
+        .first()
+    )
+    # Use 404 for both "missing" and "wrong org" so we don't leak existence
+    # of stories from other orgs. Mirrors get_owned_or_404.
+    if not story or story.organization_id != org_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
+    return story
+
+
+@router.get("/stories/{story_id}/placements")
+def get_story_placements(
+    story_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
+):
+    _load_owned_story_or_404(db, story_id, org_id)
+    return _serialize_placements(db, story_id, org_id)
+
+
+@router.put("/stories/{story_id}/placements")
+def bulk_set_story_placements(
+    story_id: str,
+    body: _BulkPlacementRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_reviewer),
+    org_id: str = Depends(get_current_org_id),
+):
+    _load_owned_story_or_404(db, story_id, org_id)
+
+    # Validate every (edition_id, page_id) pair belongs to caller's org.
+    # Reject the whole request on the first bad pair — partial application
+    # would leave a confusing half-state on a UI that thinks it's atomic.
+    desired: set[tuple[str, str]] = set()
+    for p in body.placements:
+        ep = (
+            db.query(EditionPage)
+            .join(Edition, Edition.id == EditionPage.edition_id)
+            .filter(
+                EditionPage.id == p.page_id,
+                Edition.id == p.edition_id,
+                Edition.organization_id == org_id,
+            )
+            .first()
+        )
+        if not ep:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid edition/page: {p.edition_id}/{p.page_id}",
+            )
+        desired.add((p.edition_id, p.page_id))
+
+    current_rows = (
+        db.query(EditionPageStory, EditionPage, Edition)
+        .join(EditionPage, EditionPage.id == EditionPageStory.edition_page_id)
+        .join(Edition, Edition.id == EditionPage.edition_id)
+        .filter(
+            EditionPageStory.story_id == story_id,
+            Edition.organization_id == org_id,
+        )
+        .all()
+    )
+    current = {(ed.id, ep.id) for _row, ep, ed in current_rows}
+
+    for row, ep, ed in current_rows:
+        if (ed.id, ep.id) not in desired:
+            db.delete(row)
+
+    for ed_id, page_id in desired - current:
+        db.add(EditionPageStory(
+            edition_page_id=page_id,
+            story_id=story_id,
+            sort_order=0,
+        ))
+
+    db.commit()
+
+    return _serialize_placements(db, story_id, org_id)

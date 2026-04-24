@@ -16,7 +16,6 @@ import {
   MessageSquare,
   Send,
   UserCircle2,
-  X,
 } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { useAuth } from '../../contexts/AuthContext';
@@ -42,6 +41,7 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import ReassignPopover from '../assignment/ReassignPopover';
+import { EditionPlacementMatrix } from './EditionPlacementMatrix';
 
 const PRIORITY_COLORS = {
   normal: '#3B82F6',
@@ -391,66 +391,12 @@ export default function ReviewSidePanel({
           )}
           </Section>
 
-          {/* ─────────── Edition assignment ─────────── */}
+          {/* ─────────── Edition assignment (matrix) ─────────── */}
           <Section icon={BookOpen} title={t('review.assignEditionShort', 'Edition')}>
-          <div className="px-3 pb-1">
-            {editionAssignments.length > 0 && (
-              <div className="mb-2 flex flex-col gap-1">
-                {editionAssignments.map((a, i) => (
-                  <div
-                    key={`${a.edition_id}-${a.page_id}-${i}`}
-                    className="flex items-center justify-between gap-1 rounded-md bg-muted/50 px-2 py-1"
-                  >
-                    <span className="truncate text-xs text-foreground">
-                      {a.edition_title} &rarr; {a.page_name}
-                    </span>
-                    <button
-                      className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => handleRemoveFromEdition(a.edition_id, a.page_id)}
-                      title="Remove"
-                    >
-                      <X size={11} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <select
-              className="mb-1.5 w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring"
-              value={selectedEdition || ''}
-              onChange={(e) => setSelectedEdition(e.target.value || null)}
-            >
-              <option value="">{t('review.chooseEdition')}</option>
-              {editions.map((ed) => (
-                <option key={ed.id} value={ed.id}>
-                  {ed.title} ({ed.publication_date})
-                </option>
-              ))}
-            </select>
-            {selectedEdition && (
-              <select
-                className="mb-1.5 w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none focus:border-ring"
-                value={selectedPage || ''}
-                onChange={(e) => setSelectedPage(e.target.value || null)}
-              >
-                <option value="">{t('review.choosePage')}</option>
-                {editionPages.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.page_name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <Button
-              size="sm"
-              className="h-7 w-full text-xs"
-              disabled={!selectedEdition || !selectedPage || assigningToEdition}
-              onClick={handleAssignToEdition}
-            >
-              {assigningToEdition && <Loader2 size={12} className="animate-spin" />}
-              {assigningToEdition ? '...' : t('review.assignButton')}
-            </Button>
-          </div>
+            <EditionPlacementMatrix
+              storyId={id}
+              publicationDate={story?.publication_date}
+            />
           </Section>
 
           {/* ─────────── Assignment ─────────── */}

@@ -13,12 +13,14 @@ import os
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from ..config import settings
-from ..database import SessionLocal
+from ..database import SessionLocal, get_db
+from ..models.edition import Edition, EditionPage
+from ..models.org_config import OrgConfig
 from ..models.story import Story
 from ..services import stt as stt_service
 from ..services.categorizer import sweep_uncategorized
@@ -156,6 +158,71 @@ async def sweep_pending_categorization(
         db.close()
 
     return result
+
+
+@router.post("/seed-todays-editions")
+async def seed_todays_editions(
+    payload: Optional[dict] = Body(default=None),
+    x_internal_token: Optional[str] = Header(default=None, alias="X-Internal-Token"),
+    db: Session = Depends(get_db),
+):
+    """Stamp out today's editions for every org with a non-empty
+    ``edition_schedule``. Idempotent: a per-(org, date, title) pre-check
+    skips existing rows. The DB-level unique index from the editions
+    migration is defense-in-depth; this pre-check works in both Postgres
+    and the SQLite test DB.
+
+    Hit nightly (~00:05 IST) by Cloud Scheduler. Optional ``date``
+    override in the body (ISO string) is for back-fills and tests.
+    """
+    _require_internal_token(x_internal_token)
+
+    from datetime import date as _date
+
+    payload = payload or {}
+    if payload.get("date"):
+        target = _date.fromisoformat(payload["date"])
+    else:
+        target = now_ist().date()
+    weekday = target.weekday()  # Mon=0..Sun=6
+
+    created: list[str] = []
+    skipped: list[str] = []
+
+    cfgs = db.query(OrgConfig).all()
+    for cfg in cfgs:
+        schedule = cfg.edition_schedule or []
+        for tpl in schedule:
+            if weekday not in (tpl.get("weekdays") or []):
+                continue
+            tag = f"{cfg.organization_id}:{target}:{tpl['name']}"
+            existing = db.query(Edition).filter_by(
+                organization_id=cfg.organization_id,
+                publication_date=target,
+                title=tpl["name"],
+            ).first()
+            if existing:
+                skipped.append(tag)
+                continue
+            ed = Edition(
+                organization_id=cfg.organization_id,
+                publication_date=target,
+                paper_type="daily",
+                title=tpl["name"],
+                status="draft",
+            )
+            db.add(ed)
+            db.flush()
+            for p in tpl.get("pages", []):
+                db.add(EditionPage(
+                    edition_id=ed.id,
+                    page_number=p["page_number"],
+                    page_name=p.get("page_name", ""),
+                    sort_order=p["page_number"],
+                ))
+            created.append(tag)
+    db.commit()
+    return {"created": created, "skipped": skipped, "date": target.isoformat()}
 
 
 # ---------------------------------------------------------------------------

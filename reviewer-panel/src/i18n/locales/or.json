@@ -477,5 +477,11 @@
     "toggleFilters": "ଫିଲ୍ଟର ଟୋଗଲ",
     "storyNotFound": "ଖବର ମିଳିଲା ନାହିଁ।",
     "search": "ଖୋଜନ୍ତୁ..."
+  },
+  "placements": {
+    "allDaily": "ସବୁ ଦୈନିକ",
+    "clear": "ସଫା",
+    "drop": "ବାଦ",
+    "noEditions": "{date} ପାଇଁ କୌଣସି ସଂସ୍କରଣ ନାହିଁ"
   }
 }

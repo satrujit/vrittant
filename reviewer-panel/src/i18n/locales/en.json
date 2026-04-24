@@ -477,5 +477,11 @@
     "toggleFilters": "Toggle filters",
     "storyNotFound": "Story not found.",
     "search": "Search..."
+  },
+  "placements": {
+    "allDaily": "All daily",
+    "clear": "Clear",
+    "drop": "Drop",
+    "noEditions": "No editions for {date}"
   }
 }
