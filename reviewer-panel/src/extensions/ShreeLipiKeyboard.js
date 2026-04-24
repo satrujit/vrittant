@@ -178,6 +178,36 @@ export function createShreeLipiKeyboard(isEnabled) {
         return beforeText;
       }
 
+      /**
+       * Auto-reorder legacy "post-reph" typing.
+       *
+       * Reporters trained on Akruti / non-Unicode systems type reph AFTER the
+       * consonant it sits on:  ବର୍ଷା is typed as ବ ଷ ର ୍ ା  →  ବ ଷ ର ୍ ା
+       * which renders wrong.  Proper Unicode order requires reph BEFORE the
+       * consonant:  ବ ର ୍ ଷ ା.
+       *
+       * Whenever the cluster is about to close (matra, space, vowel, etc.),
+       * if the last 3 chars before the cursor are [consonant, ର, ୍], we
+       * rewrite them to [ର, ୍, consonant].  This converts the user's typed
+       * sequence into proper reph form without changing what they pressed.
+       *
+       * NOT called when the next char is a consonant — in that case the
+       * ର + ୍ legitimately starts a real conjunct (e.g. ର୍ର, ର୍କ).
+       */
+      function tryReorderReph(view) {
+        const { state } = view;
+        const pos = state.selection.from;
+        if (pos < 3) return;
+        const last3 = state.doc.textBetween(pos - 3, pos);
+        if (last3.length !== 3) return;
+        const c1 = last3.charAt(0);
+        const c2 = last3.charAt(1);
+        const c3 = last3.charAt(2);
+        if (isConsonant(c1) && c2 === '\u0B30' && c3 === VIRAMA) {
+          view.dispatch(state.tr.insertText('\u0B30\u0B4D' + c1, pos - 3, pos));
+        }
+      }
+
       return [
         new Plugin({
           key: pluginKey,
@@ -202,6 +232,7 @@ export function createShreeLipiKeyboard(isEnabled) {
                 // Flush pending before nav
                 flushEkar(view);
                 if (pendingReph) { insert(view, '\u0B30\u0B4D'); pendingReph = false; }
+                tryReorderReph(view);
                 return false;
               }
 
@@ -209,6 +240,7 @@ export function createShreeLipiKeyboard(isEnabled) {
               if (event.key === ' ') {
                 flushEkar(view);
                 if (pendingReph) { insert(view, '\u0B30\u0B4D'); pendingReph = false; }
+                tryReorderReph(view);
                 // Let PM handle the space naturally
                 return false;
               }
@@ -233,6 +265,7 @@ export function createShreeLipiKeyboard(isEnabled) {
                 // Unknown key — flush pending and let browser handle
                 flushEkar(view);
                 if (pendingReph) { insert(view, '\u0B30\u0B4D'); pendingReph = false; }
+                tryReorderReph(view);
                 return false;
               }
 
@@ -287,6 +320,8 @@ export function createShreeLipiKeyboard(isEnabled) {
                 flushEkar(view);
                 // Flush reph too (shouldn't normally happen but safety)
                 if (pendingReph) { insert(view, '\u0B30\u0B4D'); pendingReph = false; }
+                // Auto-fix legacy "post-reph" typing before the matra closes the cluster
+                tryReorderReph(view);
 
                 // Vowel + matra combining (e.g. ଅ + ା → ଆ)
                 const st = view.state;
@@ -309,6 +344,7 @@ export function createShreeLipiKeyboard(isEnabled) {
               // ── EVERYTHING ELSE (vowels, numbers, punctuation, etc.) ──
               flushEkar(view);
               if (pendingReph) { insert(view, '\u0B30\u0B4D'); pendingReph = false; }
+              tryReorderReph(view);
               insert(view, char);
               event.preventDefault();
               return true;
