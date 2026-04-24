@@ -1,6 +1,7 @@
 export { default as Avatar } from './Avatar';
 export { default as StatusBadge } from './StatusBadge';
 export { default as StatusStepper } from './StatusStepper';
+export { default as StatusProgress } from './StatusProgress';
 export { default as CategoryChip } from './CategoryChip';
 export { default as SearchBar } from './SearchBar';
 export { default as Modal } from './Modal';
