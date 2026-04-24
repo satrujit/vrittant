@@ -220,10 +220,11 @@ export default function DashboardPage() {
 
       {/* Table Card */}
       <div className="bg-card border border-border rounded-lg overflow-hidden">
-        {/* Toolbar — gap-3 + h-8 SearchBar matches the system-wide
-            filter-row pattern (AllStories, NewsFeed, Reporters). */}
+        {/* Toolbar — search right-aligned (ml-auto) for consistency
+            with other pages where filters live on the left. Dashboard
+            has no filters, so the search sits alone on the right. */}
         <div className="flex items-center gap-3 px-3 py-2 border-b border-border max-sm:px-2">
-          <div className="flex-1 max-w-xs">
+          <div className="ml-auto w-full max-w-[280px]">
             <SearchBar
               value={searchQuery}
               onChange={handleSearch}

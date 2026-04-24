@@ -162,18 +162,12 @@ function ReportersPage() {
         subtitle="Reporters ranked by score"
       />
 
-      {/* Toolbar — search · period · show deleted */}
+      {/* Toolbar — canonical: filter (period toggle) left, search right
+          (ml-auto). Mirrors AllStoriesPage / BucketsList / NewsFeed. */}
       <div className="flex items-center gap-3 mb-5 flex-wrap">
-        <SearchBar
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t('reporters.searchPlaceholder')}
-          className="max-w-[320px] flex-1 min-w-[200px]"
-        />
-
         {/* Segmented period toggle — kept as a deliberate "pill group"
             (not a SearchableSelect) because it's a single-purpose binary-ish
-            switch, but bumped to h-8 so it aligns vertically with the
+            switch, but sized to h-8 so it aligns vertically with the
             adjacent SearchBar and matches the system-wide field height. */}
         <div className="inline-flex items-center bg-muted rounded-lg p-1 h-8">
           {PERIODS.map((p) => (
@@ -192,6 +186,13 @@ function ReportersPage() {
           ))}
         </div>
 
+        <div className="ml-auto w-full max-w-[280px]">
+          <SearchBar
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('reporters.searchPlaceholder')}
+          />
+        </div>
       </div>
 
       {/* Table */}
