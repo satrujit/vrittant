@@ -37,7 +37,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import ReassignPopover from '../components/assignment/ReassignPopover';
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 100;
 
 const ALL_STATUSES = [
   'submitted',
