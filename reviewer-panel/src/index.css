@@ -45,6 +45,18 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  /* Global font stack with Noto Sans Oriya in the chain so Odia text
+     renders correctly across all elements, not just TipTap. List views
+     looked fine before because they happened to fall back to a font
+     with Odia coverage; the editor `<input>` did not, mangling
+     conjuncts on Windows. */
+  font-family: 'Plus Jakarta Sans', 'Noto Sans Oriya', 'Noto Sans Odia',
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+/* Form controls don't inherit font-family by default — force them to. */
+input, textarea, select, button {
+  font-family: inherit;
 }
 
 /* Hide the reCAPTCHA badge — only used for invisible phone auth on login */

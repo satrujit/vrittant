@@ -248,7 +248,11 @@ export default function ActivityHeatmap({ reporterId = null, onDateSelect, selec
   const avgDaily = data?.avg_daily || 1;
 
   const currentYear = new Date().getFullYear();
+  // Vrittant launched in 2026 — no submissions exist for earlier years,
+  // so don't let users navigate to empty grids.
+  const MIN_YEAR = 2026;
   const canGoForward = year < currentYear;
+  const canGoBack = year > MIN_YEAR;
 
   if (loading) {
     return (
@@ -299,8 +303,14 @@ export default function ActivityHeatmap({ reporterId = null, onDateSelect, selec
             )}
             {/* Year selector */}
             <button
-              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              onClick={() => setYear((y) => y - 1)}
+              className={cn(
+                'p-1 rounded-md transition-colors',
+                canGoBack
+                  ? 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  : 'text-muted-foreground/30 cursor-not-allowed'
+              )}
+              onClick={() => canGoBack && setYear((y) => y - 1)}
+              disabled={!canGoBack}
               aria-label="Previous year"
             >
               <ChevronLeft size={16} />

@@ -18,6 +18,13 @@ function ReporterDetailPage() {
   const [reporter, setReporter] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
+
+  // Reset to page 1 whenever the date filter changes so we don't land on
+  // an out-of-range page (e.g. page 3 of unfiltered → page 3 of filtered
+  // when filtered only has 1 page).
+  useEffect(() => { setPage(1); }, [selectedDate]);
 
   // Fetch reporter's stories on mount
   useEffect(() => {
@@ -170,6 +177,18 @@ function ReporterDetailPage() {
             })
           : stories;
 
+        // Latest-first by submission time so reviewers see new work at the top.
+        const sortedStories = [...filteredStories].sort((a, b) => {
+          const ta = new Date(a.submittedAt || a.createdAt || 0).getTime();
+          const tb = new Date(b.submittedAt || b.createdAt || 0).getTime();
+          return tb - ta;
+        });
+
+        const totalPages = Math.max(1, Math.ceil(sortedStories.length / PAGE_SIZE));
+        const safePage = Math.min(page, totalPages);
+        const pageStart = (safePage - 1) * PAGE_SIZE;
+        const visibleStories = sortedStories.slice(pageStart, pageStart + PAGE_SIZE);
+
         if (filteredStories.length === 0) return (
           <div className="flex items-center justify-center py-16 text-sm text-muted-foreground italic">
             {selectedDate ? `No stories found for ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : t('dashboard.noReports')}
@@ -199,10 +218,11 @@ function ReporterDetailPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredStories.map((story) => (
+                {visibleStories.map((story) => (
                   <TableRow
                     key={story.id}
-                    className="transition-colors duration-150 ease-in-out hover:bg-accent [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border"
+                    className="cursor-pointer transition-colors duration-150 ease-in-out hover:bg-accent [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border"
+                    onClick={() => navigate(`/review/${story.id}`)}
                   >
                     <TableCell className="py-3 px-4 text-sm text-foreground">
                       <div className="flex items-center gap-3">
@@ -237,7 +257,13 @@ function ReporterDetailPage() {
                         variant="ghost"
                         size="xs"
                         className="font-semibold text-primary bg-primary/10 border-none hover:bg-primary/40 hover:text-primary-foreground"
-                        onClick={() => navigate(`/review/${story.id}`)}
+                        onClick={(e) => {
+                          // Row already navigates — stopPropagation so we don't
+                          // fire navigate() twice (which causes a double history
+                          // entry the back button has to undo).
+                          e.stopPropagation();
+                          navigate(`/review/${story.id}`);
+                        }}
                       >
                         {t('actions.review')}
                       </Button>
@@ -246,6 +272,34 @@ function ReporterDetailPage() {
                 ))}
               </TableBody>
             </Table>
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-border bg-muted/20 px-4 py-3 text-sm">
+                <span className="text-muted-foreground">
+                  Showing {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, sortedStories.length)} of {sortedStories.length}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    Page {safePage} of {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}

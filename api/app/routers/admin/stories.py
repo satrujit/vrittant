@@ -185,7 +185,11 @@ def admin_list_stories(
     total = query.count()
     stories = (
         query.options(joinedload(Story.revision), joinedload(Story.reviewer), joinedload(Story.assignee))
-        .order_by(Story.updated_at.desc())
+        # Order by submission time (created_at), not last-modified — reviewers
+        # expect "latest reported" at the top of both the Review Queue and
+        # the All Stories archive. Sorting by updated_at would re-shuffle
+        # the list every time someone re-saved an old story.
+        .order_by(Story.created_at.desc())
         .offset(offset)
         .limit(limit)
         .all()
