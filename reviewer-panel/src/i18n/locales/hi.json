@@ -477,5 +477,11 @@
     "toggleFilters": "फ़िल्टर टॉगल करें",
     "storyNotFound": "खबर नहीं मिली।",
     "search": "खोजें..."
+  },
+  "placements": {
+    "allDaily": "सभी डेली",
+    "clear": "क्लियर",
+    "drop": "हटाएं",
+    "noEditions": "{date} के लिए कोई संस्करण नहीं"
   }
 }
