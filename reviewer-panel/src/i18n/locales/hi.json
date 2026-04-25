@@ -218,7 +218,11 @@
     "clearFilters": "सब साफ़ करें",
     "applyFilters": "लागू करें",
     "allCategories": "सभी श्रेणियाँ",
-    "allLocations": "सभी स्थान"
+    "allLocations": "सभी स्थान",
+    "deletePage": "पृष्ठ हटाएं",
+    "deletePageBlocked": "हटाने से पहले इस पृष्ठ से खबरें हटा दें",
+    "hasPhoto": "फोटो है",
+    "layoutCompleted": "लेआउट पूर्ण"
   },
   "stories": {
     "delete": {

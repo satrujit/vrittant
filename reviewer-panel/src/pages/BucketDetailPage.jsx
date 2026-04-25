@@ -22,6 +22,18 @@ import { buildEditionDisplayTitle } from '../components/buckets/editionTitle';
 const UNASSIGNED_ID = 'unassigned';
 
 /**
+ * #46 — A page counts as "layout completed" when it has at least one story
+ * and *every* assigned story has status === 'layout_completed'. Empty pages
+ * stay in their natural position (they aren't "done", they're "empty"). We
+ * use this to bubble done pages to the end of the kanban so the team's
+ * focus naturally lands on what still needs work.
+ */
+function isPageLayoutComplete(cards) {
+  if (!cards || cards.length === 0) return false;
+  return cards.every((s) => s?.status === 'layout_completed');
+}
+
+/**
  * Detail view for a single edition: kanban-style page columns + unassigned panel.
  * Mounted at `/buckets/:editionId`.
  */
@@ -231,12 +243,19 @@ export default function BucketDetailPage() {
 
   // ── Delete Page ──
   const handleDeletePage = useCallback(async (pageId) => {
+    // #43 — refuse to delete a page that still has stories on it. The
+    // BucketColumn already disables the trash UI, but a stale render or
+    // future caller (keyboard shortcut, etc.) could still dispatch — so
+    // re-check from the source of truth before hitting the API.
+    const storiesOnPage = assignments[pageId] || [];
+    if (storiesOnPage.length > 0) {
+      console.warn('Refusing to delete page with assigned stories:', pageId);
+      return;
+    }
     try {
       await deleteEditionPage(editionId, pageId);
       setAssignments((prev) => {
         const next = { ...prev };
-        const storiesOnPage = next[pageId] || [];
-        next[UNASSIGNED_ID] = [...(next[UNASSIGNED_ID] || []), ...storiesOnPage];
         delete next[pageId];
         return next;
       });
@@ -244,7 +263,7 @@ export default function BucketDetailPage() {
     } catch (err) {
       console.error('Failed to delete page:', err);
     }
-  }, [editionId]);
+  }, [editionId, assignments]);
 
   // ── Edit Page Title ──
   const startEditTitle = (pageId, currentTitle) => {
@@ -317,6 +336,19 @@ export default function BucketDetailPage() {
   const unassignedCards = filteredAssignments[UNASSIGNED_ID] || [];
   const hasActiveFilters = !!categoryFilter || !!locationFilter;
 
+  // #46 — Stable sort: incomplete pages first (preserve original sort_order
+  // among each group), completed pages at the bottom. Driven off `assignments`
+  // (the source of truth) rather than filteredAssignments so search/filter
+  // never reshuffles columns mid-interaction.
+  const sortedPages = useMemo(() => {
+    return [...pages].sort((a, b) => {
+      const aDone = isPageLayoutComplete(assignments[a.id]);
+      const bDone = isPageLayoutComplete(assignments[b.id]);
+      if (aDone !== bDone) return aDone ? 1 : -1;
+      return (a.sort_order || 0) - (b.sort_order || 0);
+    });
+  }, [pages, assignments]);
+
   const editionDisplayTitle = useMemo(
     () => buildEditionDisplayTitle(edition, t, t('buckets.editionTitle')),
     [edition, t]
@@ -378,7 +410,7 @@ export default function BucketDetailPage() {
           />
 
           <div className="flex gap-3 overflow-x-auto overflow-y-hidden flex-1 min-h-0 p-3 items-stretch scroll-smooth [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-muted-foreground [&::-webkit-scrollbar-thumb]:rounded-full">
-            {pages.map((page) => (
+            {sortedPages.map((page) => (
               <BucketColumn
                 key={page.id}
                 page={page}

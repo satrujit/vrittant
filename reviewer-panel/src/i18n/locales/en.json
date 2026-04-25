@@ -218,7 +218,11 @@
     "clearFilters": "Clear All",
     "applyFilters": "Apply",
     "allCategories": "All Categories",
-    "allLocations": "All Locations"
+    "allLocations": "All Locations",
+    "deletePage": "Delete page",
+    "deletePageBlocked": "Move stories off this page before deleting it",
+    "hasPhoto": "Has photo",
+    "layoutCompleted": "Layout completed"
   },
   "stories": {
     "delete": {

@@ -218,7 +218,11 @@
     "clearFilters": "ସବୁ ସଫା",
     "applyFilters": "ଲାଗୁ",
     "allCategories": "ସବୁ ବିଭାଗ",
-    "allLocations": "ସବୁ ସ୍ଥାନ"
+    "allLocations": "ସବୁ ସ୍ଥାନ",
+    "deletePage": "ପୃଷ୍ଠା ବିଲୋପ",
+    "deletePageBlocked": "ବିଲୋପ କରିବାକୁ ପୂର୍ବରୁ ଏହି ପୃଷ୍ଠାରୁ ଖବରଗୁଡ଼ିକ ସ୍ଥାନାନ୍ତର କରନ୍ତୁ",
+    "hasPhoto": "ଫଟୋ ଅଛି",
+    "layoutCompleted": "ଲେଆଉଟ୍ ସମ୍ପୂର୍ଣ୍ଣ"
   },
   "stories": {
     "delete": {
