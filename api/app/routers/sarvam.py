@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import re
@@ -32,7 +33,7 @@ from pydantic import BaseModel, Field
 from ..config import settings
 from ..deps import get_current_user
 from ..models.user import User
-from ..services import sarvam_client
+from ..services import name_registry, sarvam_client
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,49 @@ def _authenticate_ws(token: str) -> str:
 # ---------------------------------------------------------------------------
 # Task 2 – WebSocket STT proxy (transparent bidirectional relay)
 # ---------------------------------------------------------------------------
+
+# Sarvam emits text frames as JSON. Different message variants nest the
+# transcript under different keys (top-level or inside ``data``); we rewrite
+# any string we find at the known transcript fields. Unknown / unparseable
+# messages pass through verbatim so we never break a future Sarvam protocol.
+_TRANSCRIPT_FIELDS = ("transcript", "text")
+
+
+def _rewrite_transcript_message(raw: str) -> str:
+    """Run the name registry over any transcript fields inside a Sarvam frame.
+
+    Returns the (possibly re-serialised) message. Falls back to the original
+    string if the frame isn't JSON or doesn't carry a transcript field.
+    """
+    try:
+        payload = json.loads(raw)
+    except (ValueError, TypeError):
+        return raw
+    if not isinstance(payload, dict):
+        return raw
+
+    changed = False
+    for field in _TRANSCRIPT_FIELDS:
+        value = payload.get(field)
+        if isinstance(value, str) and value:
+            rewritten = name_registry.replace_english_names(value)
+            if rewritten != value:
+                payload[field] = rewritten
+                changed = True
+    nested = payload.get("data")
+    if isinstance(nested, dict):
+        for field in _TRANSCRIPT_FIELDS:
+            value = nested.get(field)
+            if isinstance(value, str) and value:
+                rewritten = name_registry.replace_english_names(value)
+                if rewritten != value:
+                    nested[field] = rewritten
+                    changed = True
+
+    if not changed:
+        return raw
+    return json.dumps(payload, ensure_ascii=False)
+
 
 @router.websocket("/ws/stt")
 async def websocket_stt_proxy(
@@ -148,7 +192,7 @@ async def websocket_stt_proxy(
                     if isinstance(message, bytes):
                         await ws.send_bytes(message)
                     else:
-                        await ws.send_text(message)
+                        await ws.send_text(_rewrite_transcript_message(message))
                 except Exception:
                     break
         except websockets.exceptions.ConnectionClosed:
