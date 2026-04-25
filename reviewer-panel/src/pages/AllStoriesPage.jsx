@@ -453,25 +453,20 @@ export default function AllStoriesPage() {
           </div>
         ) : (
           <div className="flex-1 min-h-0 overflow-auto">
-          {/* #51 — flatten the row: each piece of metadata gets its own
-              column instead of being stacked under the headline. Combined
-              with the taller px-4 py-3.5 padding (#52), rows feel like a
-              proper data grid rather than mini-cards.
+          {/* #54 — collapse Reporter, Location, Submission Time back into the
+              title cell as a stacked metadata strip beneath the headline.
+              The previous flat-grid layout (#51) made every row very wide and
+              forced reviewers to scan across many narrow columns; reverting
+              the personal-metadata trio under the headline keeps each story's
+              identifying info together while leaving the editorial signals
+              (Category, Status, Reviewed by, Assigned to) as their own
+              columns for at-a-glance scanning across rows.
               vr-table-spaced opts out of the global dense table preset. */}
           <Table className="vr-table-spaced">
             <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_var(--border)]">
               <TableRow>
                 <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
                   {t('table.storyTitle')}
-                </TableHead>
-                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
-                  {t('table.reporter', 'Reporter')}
-                </TableHead>
-                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
-                  {t('table.location', 'Location')}
-                </TableHead>
-                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
-                  {t('table.submissionTime')}
                 </TableHead>
                 <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
                   {t('table.category')}
@@ -501,55 +496,50 @@ export default function AllStoriesPage() {
                     className="cursor-pointer"
                     onClick={() => navigate(`/review/${story.id}`)}
                   >
-                    {/* Story title — single line, no stacked metadata.
-                        Whole row is clickable; the headline stays a real
-                        Link so cmd/middle-click still opens in a new tab.
-                        #52 — px-4 py-3.5 gives rows real breathing room. */}
-                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 max-w-[420px] align-middle">
-                      <Link
-                        to={`/review/${story.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-sm font-semibold text-foreground leading-tight line-clamp-2 hover:text-primary transition-colors no-underline"
-                      >
-                        {story.headline}
-                      </Link>
-                    </TableCell>
-
-                    {/* #51 — Reporter is its own column now */}
-                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle">
-                      <div className="flex items-center gap-1.5 whitespace-nowrap">
-                        <Avatar
-                          initials={story.reporter.initials}
-                          color={story.reporter.color}
-                          size="xs"
-                        />
-                        <span className="text-xs text-foreground font-medium">
-                          {story.reporter.name}
-                        </span>
-                      </div>
-                    </TableCell>
-
-                    {/* #51 — Location is its own column */}
-                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle">
-                      {story.location ? (
-                        <div className="flex items-center gap-1 whitespace-nowrap">
-                          <MapPin size={12} className="text-muted-foreground shrink-0" />
-                          <span className="text-xs text-muted-foreground">{story.location}</span>
+                    {/* #54 — Story title with stacked metadata strip
+                        underneath: reporter • location • time-ago. Whole
+                        row is clickable; the headline stays a real Link
+                        so cmd/middle-click still opens in a new tab.
+                        Each meta chip uses whitespace-nowrap and the
+                        wrapper allows wrap so on narrow screens they
+                        stack vertically rather than overflow.
+                        max-w-[480px] keeps long Odia headlines from
+                        squashing the editorial-signal columns to the right. */}
+                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 max-w-[480px] align-middle">
+                      <div className="flex flex-col gap-1.5">
+                        <Link
+                          to={`/review/${story.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-sm font-semibold text-foreground leading-tight line-clamp-2 hover:text-primary transition-colors no-underline"
+                        >
+                          {story.headline}
+                        </Link>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                            <Avatar
+                              initials={story.reporter.initials}
+                              color={story.reporter.color}
+                              size="xs"
+                            />
+                            <span className="font-medium text-foreground">
+                              {story.reporter.name}
+                            </span>
+                          </span>
+                          {story.location && (
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                              <MapPin size={11} className="shrink-0" />
+                              {story.location}
+                            </span>
+                          )}
+                          <span
+                            className="inline-flex items-center gap-1 whitespace-nowrap"
+                            title={timePrimary}
+                          >
+                            <Clock size={11} className="shrink-0" />
+                            {timeSecondary || timePrimary}
+                          </span>
                         </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-
-                    {/* Submission Time — relative only, absolute on hover */}
-                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle">
-                      <span
-                        className="inline-flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap"
-                        title={timePrimary}
-                      >
-                        <Clock size={11} className="shrink-0" />
-                        {timeSecondary || timePrimary}
-                      </span>
+                      </div>
                     </TableCell>
 
                     {/* Category — dot + label */}

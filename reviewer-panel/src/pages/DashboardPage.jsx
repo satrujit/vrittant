@@ -268,25 +268,16 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="flex-1 min-h-0 overflow-auto">
-            {/* #51 + #52 — flat-cell, single-line table; reporter and
-                location now have their own columns instead of being
-                stacked below the headline. Dropping vr-table-dense lets
-                the explicit Tailwind padding take effect (the dense class
-                forces 8/10px with !important). */}
+            {/* #54 — collapse Reporter, Location, Submission Time back
+                into the title cell as a stacked metadata strip beneath
+                the headline (matching the AllStoriesPage layout). The
+                editorial-signal columns (Category, Status, Assigned to)
+                stay separate so reviewers can scan them across rows. */}
             <table className="w-full border-collapse">
               <thead className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_var(--border)]">
                 <tr>
                   <th className="px-6 py-3.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2.5">
                     {t('table.storyTitle')}
-                  </th>
-                  <th className="px-6 py-3.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2.5">
-                    {t('table.reporter', 'Reporter')}
-                  </th>
-                  <th className="px-6 py-3.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2.5">
-                    {t('table.location', 'Location')}
-                  </th>
-                  <th className="px-6 py-3.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2.5">
-                    {t('table.submissionTime')}
                   </th>
                   <th className="px-6 py-3.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2.5">
                     {t('table.category')}
@@ -310,54 +301,46 @@ export default function DashboardPage() {
                       className="transition-colors hover:bg-accent cursor-pointer [&:last-child_td]:border-b-0"
                       onClick={() => navigate(`/review/${story.id}`)}
                     >
-                      {/* Story title — single line. Whole <tr> is clickable;
-                          we keep the headline as a real <Link> so middle/cmd-click
-                          still opens in a new tab and screen readers see a link. */}
-                      <td className="px-6 py-3.5 border-b border-border align-middle max-sm:px-3 max-sm:py-2.5 max-w-[420px]">
-                        <Link
-                          to={`/review/${story.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-[0.9375rem] font-semibold text-foreground leading-tight line-clamp-2 hover:text-primary transition-colors no-underline"
-                        >
-                          {story.headline}
-                        </Link>
-                      </td>
-
-                      {/* #51 — Reporter is its own column */}
-                      <td className="px-6 py-3.5 border-b border-border align-middle max-sm:px-3 max-sm:py-2.5">
-                        <div className="flex items-center gap-1.5 whitespace-nowrap">
-                          <Avatar
-                            initials={story.reporter.initials}
-                            color={story.reporter.color}
-                            size="xs"
-                          />
-                          <span className="text-xs text-foreground font-medium">
-                            {story.reporter.name}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* #51 — Location is its own column */}
-                      <td className="px-6 py-3.5 border-b border-border align-middle max-sm:px-3 max-sm:py-2.5">
-                        {story.location ? (
-                          <div className="flex items-center gap-1 whitespace-nowrap">
-                            <MapPin size={12} className="text-muted-foreground shrink-0" />
-                            <span className="text-xs text-muted-foreground">{story.location}</span>
+                      {/* #54 — Story title with stacked metadata strip
+                          underneath: reporter • location • time-ago.
+                          Whole <tr> is clickable; headline stays a real
+                          <Link> so middle/cmd-click still opens in a new
+                          tab and screen readers see a link. */}
+                      <td className="px-6 py-3.5 border-b border-border align-middle max-sm:px-3 max-sm:py-2.5 max-w-[480px]">
+                        <div className="flex flex-col gap-1.5">
+                          <Link
+                            to={`/review/${story.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-[0.9375rem] font-semibold text-foreground leading-tight line-clamp-2 hover:text-primary transition-colors no-underline"
+                          >
+                            {story.headline}
+                          </Link>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                              <Avatar
+                                initials={story.reporter.initials}
+                                color={story.reporter.color}
+                                size="xs"
+                              />
+                              <span className="font-medium text-foreground">
+                                {story.reporter.name}
+                              </span>
+                            </span>
+                            {story.location && (
+                              <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                                <MapPin size={11} className="shrink-0" />
+                                {story.location}
+                              </span>
+                            )}
+                            <span
+                              className="inline-flex items-center gap-1 whitespace-nowrap"
+                              title={timePrimary}
+                            >
+                              <Clock size={11} className="shrink-0" />
+                              {timeSecondary || timePrimary}
+                            </span>
                           </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </td>
-
-                      {/* Submission Time — relative w/ clock icon, absolute on hover */}
-                      <td className="px-6 py-3.5 border-b border-border align-middle max-sm:px-3 max-sm:py-2.5">
-                        <span
-                          className="inline-flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap"
-                          title={timePrimary}
-                        >
-                          <Clock size={11} className="shrink-0" />
-                          {timeSecondary || timePrimary}
-                        </span>
+                        </div>
                       </td>
 
                       {/* Category — dot + label */}

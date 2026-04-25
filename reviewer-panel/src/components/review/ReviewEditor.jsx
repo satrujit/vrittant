@@ -23,6 +23,7 @@ import RelatedStoriesPanel from './RelatedStoriesPanel';
 import ReviewToolbar from './ReviewToolbar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { getFontSizePref } from '../../utils/fontSizePreference';
 
 /**
  * ReviewEditor — content of the "Editor" tab.
@@ -76,6 +77,36 @@ export default function ReviewEditor({
 }) {
   const { t } = useI18n();
   const [dragActive, setDragActive] = useState(false);
+  // #55 — read the user's saved "comfortable size" pref once on mount and
+  // apply it as a CSS font-size on the editor wrapper. Cascades through the
+  // ProseMirror tree so paragraphs without an inline style="font-size: ..."
+  // pick it up; spans that DO carry an inline style still win via specificity.
+  // Read once (state) so toggling the dropdown updates immediately for the
+  // current story without forcing a remount of the EditorContent.
+  const [fontSizePref, setFontSizePrefState] = useState(() => getFontSizePref());
+  useEffect(() => {
+    // Re-sync from localStorage on focus so a change made in another tab
+    // (rare but cheap to support) doesn't leave the editor stuck on the
+    // old size until reload.
+    const onFocus = () => setFontSizePrefState(getFontSizePref());
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+  // Also re-read after every render of the toolbar's onChange — that
+  // handler writes via setFontSizePref() but doesn't bubble up. Polling
+  // on the editor's transaction is overkill; instead listen to the storage
+  // event AND fall back to a cheap re-read whenever the editor selection
+  // updates (which fires on every dropdown change because the toolbar
+  // calls editor.chain().focus()...).
+  useEffect(() => {
+    if (!editor) return;
+    const onUpdate = () => {
+      const next = getFontSizePref();
+      if (next !== fontSizePref) setFontSizePrefState(next);
+    };
+    editor.on('selectionUpdate', onUpdate);
+    return () => editor.off('selectionUpdate', onUpdate);
+  }, [editor, fontSizePref]);
   // #53 — lightbox preview state. Holds the index into imageFiles of the
   // currently open photo (null when closed). Indexed (not URL) so the
   // ←/→ arrows can walk through the attachment grid without re-deriving
@@ -211,6 +242,9 @@ export default function ReviewEditor({
               voiceMode === 'dictating' && 'editor-muted',
               voiceMode === 'sparkle-processing' && 'sparkle-processing'
             )}
+            // #55 — apply the saved per-user base size here so it cascades
+            // into every paragraph that doesn't carry an inline override.
+            style={fontSizePref ? { fontSize: fontSizePref } : undefined}
           >
             <EditorContent editor={editor} />
           </div>
