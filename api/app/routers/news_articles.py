@@ -406,12 +406,16 @@ async def research_story_from_article(
             {"role": "user", "content": user_prompt},
         ]
         payload = {
-            "model": "sarvam-30b",
+            # sarvam-105b is Sarvam's flagship — better Odia proper-noun
+            # handling than 30b at ~1.6x the cost (~₹0.03 vs ₹0.02 per
+            # research call). For editorial story drafting the quality
+            # delta is worth the trivial cost bump.
+            "model": "sarvam-105b",
             "messages": messages,
             "temperature": 0.6,
             "max_tokens": max_tokens,
-            # sarvam-30b is a reasoning model. Empirically tested matrix
-            # (2026-04-25) on a 400-word Odia generation prompt:
+            # Both 30b and 105b are reasoning models. Empirically tested
+            # matrix (2026-04-25) on a 400-word Odia generation prompt:
             #   reasoning_effort=null   → content=0 chars, reasoning=8.5K, cutoff
             #   reasoning_effort=low    → content=118,    reasoning=9.6K, cutoff
             #   reasoning_effort=medium → content=0,      reasoning=8.7K, cutoff
