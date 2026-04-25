@@ -39,6 +39,11 @@ class OrgInfo(BaseModel):
     slug: str
     logo_url: Optional[str] = None
     theme_color: Optional[str] = None
+    # Active category keys from org_configs.categories. Mobile (and any other
+    # client) should constrain the create-news category picker to these keys
+    # when non-empty; an empty list means "no master list configured — fall
+    # back to the client's hardcoded default".
+    categories: list[str] = []
 
     model_config = {"from_attributes": True}
 
