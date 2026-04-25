@@ -391,9 +391,11 @@ async def research_story_from_article(
     gen_category = article.category or "general"
     location = ""
 
-    # Odia uses ~4-6 tokens per word + buffer for JSON wrapper + thinking.
-    # Sarvam pro tier caps sarvam-30b output at 8192 tokens.
-    max_tokens = min(max(word_count * 7, 3072), 8192)
+    # Odia uses ~4-6 tokens per word + buffer for JSON wrapper. Reasoning is
+    # disabled on this call (see `reasoning_effort=None` below) so we no longer
+    # need to over-budget for chain-of-thought tokens. Sarvam pro tier caps
+    # sarvam-30b output at 8192 tokens.
+    max_tokens = min(max(word_count * 6, 2048), 8192)
 
     try:
         messages = [
@@ -405,6 +407,13 @@ async def research_story_from_article(
             "messages": messages,
             "temperature": 0.6,
             "max_tokens": max_tokens,
+            # Disable reasoning entirely for this call. sarvam-30b is a
+            # reasoning ("thinking") model; chain-of-thought tokens count
+            # toward `max_tokens`, so a verbose <think> block routinely ate
+            # the entire budget and left the JSON answer empty / cut off.
+            # We don't need reasoning for translate-and-summarize — a
+            # straight completion produces the JSON immediately.
+            "reasoning_effort": None,
         }
 
         # This is the "Research with AI" path — the user is creating a
@@ -465,10 +474,14 @@ async def research_story_from_article(
                     {"role": "user", "content": user_prompt},
                 ]
                 retry_payload = {**payload, "messages": retry_messages, "temperature": 0.4}
-                async with httpx.AsyncClient(timeout=180.0) as client:
-                    retry_resp = await client.post(url, json=retry_payload, headers=headers)
-                    retry_resp.raise_for_status()
-                    retry_raw = strip_think_tags(retry_resp.json()["choices"][0]["message"]["content"] or "")
+                # Use the shared sarvam_client.chat() so the retry attributes
+                # cost to the same bucket/story as the initial call. The
+                # earlier raw-httpx version referenced undefined `url` and
+                # `headers` (refactor leftover) and crashed every Odia retry —
+                # the outer try/except swallowed the NameError and the user
+                # silently got the article's English title back.
+                retry_data = await sarvam_client.chat(payload=retry_payload, timeout=180.0)
+                retry_raw = strip_think_tags(retry_data["choices"][0]["message"]["content"] or "")
                 retry_parsed = parse_sarvam_response(retry_raw)
                 if retry_parsed:
                     retry_body = retry_parsed.get("body", "").replace('\\n', '\n').strip()
