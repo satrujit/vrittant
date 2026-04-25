@@ -1103,47 +1103,12 @@ class NotepadNotifier extends Notifier<NotepadState> {
     );
 
     try {
-      final messages = [
-        const ChatMessage(
-          role: 'system',
-          content:
-              'You are a senior Odia news editor. The reporter has dictated '
-              'or typed raw notes for a news story. Your job is to weave '
-              'these notes into a publishable Odia article body:\n'
-              '1. Lead paragraph: who/what/when/where, in 1-2 sentences.\n'
-              '2. Follow with supporting paragraphs in logical order.\n'
-              '3. Use clean Odia, proper purna virama (।), and Odia numerals (୦-୯).\n'
-              '4. PROPER NOUNS — copy CHARACTER-FOR-CHARACTER from the input. '
-              'Names, places, organisations, designations: keep the exact '
-              'spelling the reporter used, even if it looks unusual or you '
-              'think it is a more common variant. Do NOT "correct" or '
-              'normalise. If the same name appears with different spellings '
-              'in the input, use the first occurrence consistently. Never '
-              'invent names, places, dates, or quotes.\n'
-              '5. SPEAKING FILLERS — strip dictation artifacts: hesitations '
-              '(ahh, umm, ehi… ehi…), discourse markers (matlab, yaani, '
-              'haan, to, achha, bujhilen, kahibaaku gale, thik achi), false '
-              'starts, and word/phrase repetitions. Write like an editor, '
-              'not a transcriber.\n'
-              '6. Keep it tight — newspapers, not blog posts.\n'
-              'Separate paragraphs with a blank line. Return ONLY the article '
-              'body. No headline, no byline, no commentary.',
-        ),
-        ChatMessage(role: 'user', content: raw),
-      ];
+      // The server owns the model (Claude Haiku 4.5 primary, Sarvam-30b
+      // fallback), the system prompt, and the digit/danda post-processing.
+      // We send raw notes and render whatever comes back. Prompt tweaks
+      // ship as a backend deploy — no APK release required.
+      final body = await _sarvam.generateStory(notes: raw);
 
-      final response = await _sarvam.chat(
-        messages: messages,
-        temperature: 0.3,
-        // 8192 = Sarvam Pro tier hard cap. Reasoning models burn most of the
-        // budget in `reasoning_content` before emitting the actual story; the
-        // backend pairs this with reasoning_effort=medium on /api/llm/chat to
-        // keep enough room for ~400 word Odia article bodies.
-        maxTokens: 8192,
-      );
-
-      var body = toOdiaDigits(response.firstMessageContent.trim());
-      body = body.replaceAll(RegExp(r'(?<!\s)।'), ' ।');
       if (body.isEmpty) {
         state = state.copyWith(isGeneratingStory: false);
         return;

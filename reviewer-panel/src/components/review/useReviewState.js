@@ -16,6 +16,7 @@ import TranscriptionMark from '../../extensions/TranscriptionMark';
 import ExternalInputCompat from '../../extensions/ExternalInputCompat';
 import { createShreeLipiKeyboard } from '../../extensions/ShreeLipiKeyboard';
 import { OdiaNormalize } from '../../extensions/OdiaNormalize';
+import FontSize from '../../extensions/FontSize';
 import { normalizeOdiaText } from '../../utils/odiaText';
 import {
   fetchStory,
@@ -160,6 +161,7 @@ export function useReviewState({ id, t }) {
       UnderlineExt.configure({ HTMLAttributes: {} }),
       TextStyle,
       FontFamily,
+      FontSize,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Placeholder.configure({ placeholder: t('review.editorPlaceholder') || 'Start writing...' }),
       Table.configure({ resizable: false }),
@@ -915,7 +917,7 @@ export function useReviewState({ id, t }) {
       // No story id yet — we can't attach images until the row exists.
       // Surface the friction inline instead of silently swallowing the
       // upload. The Save button is what creates the story.
-      setSaveError(t('review.saveBeforeUpload', 'Save the story before attaching images.'));
+      setSaveError(t('review.saveBeforeUpload', 'Save the story before attaching files.'));
       if (imageInputRef.current) imageInputRef.current.value = '';
       return;
     }

@@ -87,22 +87,37 @@ export default function BucketColumn({
         <span className="inline-flex items-center justify-center min-w-[22px] h-5 px-1 text-[11px] font-semibold text-muted-foreground bg-muted rounded-full shrink-0">
           {cards.length}
         </span>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className={cn(
-            'w-6 h-6',
-            'text-muted-foreground cursor-pointer shrink-0',
-            'opacity-0 transition-[opacity,background,color] duration-150',
-            'group-hover/colheader:opacity-100',
-            'hover:bg-[#FEE2E2] hover:text-[#EF4444]'
-          )}
-          onClick={() => onDeletePage(page.id)}
-          aria-label="Delete page"
-          title="Delete page"
-        >
-          <Trash2 size={14} />
-        </Button>
+        {(() => {
+          // #43 — Don't allow deleting a page that still has stories on it.
+          // Disabling (rather than hiding) keeps the affordance discoverable
+          // and surfaces *why* it's locked via the tooltip — a hidden button
+          // would just look broken to anyone hunting for delete.
+          const hasStories = cards.length > 0;
+          const deleteTitle = hasStories
+            ? (t('buckets.deletePageBlocked') || 'Move stories off this page before deleting it')
+            : (t('buckets.deletePage') || 'Delete page');
+          return (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              disabled={hasStories}
+              className={cn(
+                'w-6 h-6',
+                'text-muted-foreground shrink-0',
+                'opacity-0 transition-[opacity,background,color] duration-150',
+                'group-hover/colheader:opacity-100',
+                hasStories
+                  ? 'cursor-not-allowed opacity-40 group-hover/colheader:opacity-40'
+                  : 'cursor-pointer hover:bg-[#FEE2E2] hover:text-[#EF4444]'
+              )}
+              onClick={() => { if (!hasStories) onDeletePage(page.id); }}
+              aria-label={deleteTitle}
+              title={deleteTitle}
+            >
+              <Trash2 size={14} />
+            </Button>
+          );
+        })()}
       </div>
 
       <Droppable droppableId={String(page.id)}>

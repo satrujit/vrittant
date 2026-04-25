@@ -32,6 +32,8 @@
   "table": {
     "storyTitle": "खबर",
     "reporterSubject": "संवाददाता और विषय",
+    "reporter": "संवाददाता",
+    "location": "स्थान",
     "submissionTime": "प्रस्तुत",
     "category": "श्रेणी",
     "status": "स्थिति",
@@ -122,8 +124,12 @@
     "changesPlaceholder": "बताएं कि संवाददाता को क्या बदलाव करने चाहिए...",
     "attachments": "संलग्नक ({count})",
     "uploadImage": "इमेज अपलोड",
+    "attach": "संलग्न करें",
+    "fontSize": "फ़ॉन्ट आकार",
+    "previewImage": "इमेज प्रीव्यू",
+    "download": "डाउनलोड",
     "saveDisabledEmpty": "सेव करने के लिए शीर्षक जोड़ें",
-    "saveBeforeUpload": "इमेज जोड़ने से पहले स्टोरी सेव करें।",
+    "saveBeforeUpload": "फ़ाइल जोड़ने से पहले स्टोरी सेव करें।",
     "removeAttachment": "हटाएं",
     "voiceRecording": "रिकॉर्डिंग... हिंदी में बोलें",
     "editorPlaceholder": "लिखना शुरू करें...",
@@ -218,7 +224,11 @@
     "clearFilters": "सब साफ़ करें",
     "applyFilters": "लागू करें",
     "allCategories": "सभी श्रेणियाँ",
-    "allLocations": "सभी स्थान"
+    "allLocations": "सभी स्थान",
+    "deletePage": "पृष्ठ हटाएं",
+    "deletePageBlocked": "हटाने से पहले इस पृष्ठ से खबरें हटा दें",
+    "hasPhoto": "फोटो है",
+    "layoutCompleted": "लेआउट पूर्ण"
   },
   "stories": {
     "delete": {

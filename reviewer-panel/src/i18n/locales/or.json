@@ -32,6 +32,8 @@
   "table": {
     "storyTitle": "ଖବର",
     "reporterSubject": "ସାମ୍ବାଦିକ ଏବଂ ବିଷୟ",
+    "reporter": "ସାମ୍ବାଦିକ",
+    "location": "ସ୍ଥାନ",
     "submissionTime": "ଦାଖଲ",
     "category": "ଶ୍ରେଣୀ",
     "status": "ସ୍ଥିତି",
@@ -122,8 +124,12 @@
     "changesPlaceholder": "ସାମ୍ବାଦିକ କ'ଣ ପରିବର୍ତ୍ତନ କରିବା ଉଚିତ ବର୍ଣ୍ଣନା କରନ୍ତୁ...",
     "attachments": "ସଂଲଗ୍ନ ({count})",
     "uploadImage": "ଇମେଜ ଅପଲୋଡ",
+    "attach": "ସଂଲଗ୍ନ କରନ୍ତୁ",
+    "fontSize": "ଅକ୍ଷର ଆକାର",
+    "previewImage": "ଚିତ୍ର ପ୍ରିଭ୍ୟୁ",
+    "download": "ଡାଉନଲୋଡ",
     "saveDisabledEmpty": "ସେଭ କରିବାକୁ ଶୀର୍ଷକ ଯୋଡନ୍ତୁ",
-    "saveBeforeUpload": "ଇମେଜ ସଂଲଗ୍ନ କରିବା ପୂର୍ବରୁ ଖବର ସେଭ କରନ୍ତୁ।",
+    "saveBeforeUpload": "ଫାଇଲ ସଂଲଗ୍ନ କରିବା ପୂର୍ବରୁ ଖବର ସେଭ କରନ୍ତୁ।",
     "removeAttachment": "ହଟାନ୍ତୁ",
     "voiceRecording": "ରେକର୍ଡିଂ... ଓଡ଼ିଆରେ କୁହନ୍ତୁ",
     "editorPlaceholder": "ଲେଖିବା ଆରମ୍ଭ କରନ୍ତୁ...",
@@ -218,7 +224,11 @@
     "clearFilters": "ସବୁ ସଫା",
     "applyFilters": "ଲାଗୁ",
     "allCategories": "ସବୁ ବିଭାଗ",
-    "allLocations": "ସବୁ ସ୍ଥାନ"
+    "allLocations": "ସବୁ ସ୍ଥାନ",
+    "deletePage": "ପୃଷ୍ଠା ବିଲୋପ",
+    "deletePageBlocked": "ବିଲୋପ କରିବାକୁ ପୂର୍ବରୁ ଏହି ପୃଷ୍ଠାରୁ ଖବରଗୁଡ଼ିକ ସ୍ଥାନାନ୍ତର କରନ୍ତୁ",
+    "hasPhoto": "ଫଟୋ ଅଛି",
+    "layoutCompleted": "ଲେଆଉଟ୍ ସମ୍ପୂର୍ଣ୍ଣ"
   },
   "stories": {
     "delete": {

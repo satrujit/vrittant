@@ -32,6 +32,8 @@
   "table": {
     "storyTitle": "Story",
     "reporterSubject": "Reporter & Subject",
+    "reporter": "Reporter",
+    "location": "Location",
     "submissionTime": "Submitted",
     "category": "Category",
     "status": "Status",
@@ -122,8 +124,12 @@
     "changesPlaceholder": "Describe what changes the reporter should make...",
     "attachments": "Attachments ({count})",
     "uploadImage": "Upload Image",
+    "attach": "Attach",
+    "fontSize": "Font size",
+    "previewImage": "Preview image",
+    "download": "Download",
     "saveDisabledEmpty": "Add a headline to save",
-    "saveBeforeUpload": "Save the story before attaching images.",
+    "saveBeforeUpload": "Save the story before attaching files.",
     "removeAttachment": "Remove",
     "voiceRecording": "Recording... Speak in Odia",
     "editorPlaceholder": "Start writing...",
@@ -218,7 +224,11 @@
     "clearFilters": "Clear All",
     "applyFilters": "Apply",
     "allCategories": "All Categories",
-    "allLocations": "All Locations"
+    "allLocations": "All Locations",
+    "deletePage": "Delete page",
+    "deletePageBlocked": "Move stories off this page before deleting it",
+    "hasPhoto": "Has photo",
+    "layoutCompleted": "Layout completed"
   },
   "stories": {
     "delete": {
