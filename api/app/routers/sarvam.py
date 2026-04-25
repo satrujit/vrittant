@@ -597,6 +597,15 @@ async def llm_chat(
     payload = {
         "model": model,
         "messages": messages,
+        # sarvam-30b and sarvam-105b are reasoning models. Without an
+        # explicit effort setting they ramble in `reasoning_content` and
+        # the actual `content` comes back truncated. We picked "medium" as
+        # the cost/quality compromise for mobile chat (title gen, polish,
+        # short generations). NOTE: empirically "medium" can still cut off
+        # on long Odia generations (~400 words) — the research-story
+        # endpoint uses "high" for that reason. If story-generation from
+        # the mobile notepad starts coming back empty, bump this to "high".
+        "reasoning_effort": "medium",
     }
     if body.temperature is not None:
         payload["temperature"] = body.temperature
