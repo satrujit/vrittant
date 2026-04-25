@@ -15,7 +15,6 @@ import '../../../core/theme/theme_extensions.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/l10n/app_strings.dart';
 import '../../../core/l10n/language_provider.dart';
-import '../../../core/providers/auto_polish_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../home/providers/stories_provider.dart';
 import '../providers/voice_enrollment_provider.dart';
@@ -199,7 +198,6 @@ class ProfileScreen extends ConsumerWidget {
         : 'English';
     final enrollmentState = ref.watch(voiceEnrollmentProvider);
     final voiceSubtitle = enrollmentState.isEnrolled ? s.enrolled : s.notEnrolled;
-    final autoPolish = ref.watch(autoPolishProvider);
     // Resolve dynamically — falls back to "Vrittant" alone if the
     // platform call hasn't returned yet or fails.
     final appVersion = ref.watch(_appVersionProvider).asData?.value ?? '';
@@ -217,52 +215,6 @@ class ProfileScreen extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
       child: Column(
         children: [
-          // Auto-polish toggle
-          Container(
-            margin: const EdgeInsets.only(bottom: AppSpacing.md),
-            decoration: BoxDecoration(
-              color: t.cardBg,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
-              border: Border.all(color: AppColors.vrCardBorder),
-            ),
-            child: SwitchListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 4,
-              ),
-              secondary: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.vrCoralLight,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  LucideIcons.sparkles,
-                  size: 18,
-                  color: AppColors.vrCoral,
-                ),
-              ),
-              title: Text(
-                s.autoPolish,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.vrHeading,
-                ),
-              ),
-              subtitle: Text(
-                s.autoPolishDesc,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12,
-                  color: AppColors.vrBody,
-                ),
-              ),
-              value: autoPolish,
-              activeTrackColor: AppColors.vrCoral,
-              onChanged: (_) => ref.read(autoPolishProvider.notifier).toggle(),
-            ),
-          ),
           // Settings list
           Container(
             decoration: BoxDecoration(

@@ -13,7 +13,6 @@ import '../../../core/services/enrollment_storage.dart';
 import '../../../core/services/file_picker_service.dart';
 import '../../../core/services/sarvam_api.dart';
 import '../../../core/services/stt_service.dart';
-import '../../../core/providers/auto_polish_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../core/l10n/language_provider.dart';
 
@@ -166,10 +165,6 @@ class NotepadState {
   final int? improvingParagraphIndex; // which paragraph is being AI-improved
   final int? improvingSelStart; // selection start within paragraph (null = whole)
   final int? improvingSelEnd;   // selection end within paragraph
-  /// IDs (not indices) of paragraphs currently being auto-polished by the LLM.
-  /// Keyed by ID so reorders/deletes during the in-flight polish don't mis-attribute
-  /// the result to the wrong paragraph.
-  final Set<String> polishingParagraphIds;
   final bool isAudioSaveMode; // long-press: also save audio file
   final bool isNoisyEnvironment; // ambient noise is high
   final bool speakerFilterActive; // speaker verification is filtering audio
@@ -202,7 +197,6 @@ class NotepadState {
     this.improvingParagraphIndex,
     this.improvingSelStart,
     this.improvingSelEnd,
-    this.polishingParagraphIds = const {},
     this.isAudioSaveMode = false,
     this.isNoisyEnvironment = false,
     this.speakerFilterActive = false,
@@ -240,7 +234,6 @@ class NotepadState {
     bool clearImprovingParagraphIndex = false,
     int? improvingSelStart,
     int? improvingSelEnd,
-    Set<String>? polishingParagraphIds,
     bool? isAudioSaveMode,
     bool? isNoisyEnvironment,
     bool? speakerFilterActive,
@@ -285,7 +278,6 @@ class NotepadState {
       improvingSelEnd: clearImprovingParagraphIndex
           ? null
           : (improvingSelEnd ?? this.improvingSelEnd),
-      polishingParagraphIds: polishingParagraphIds ?? this.polishingParagraphIds,
       isAudioSaveMode: isAudioSaveMode ?? this.isAudioSaveMode,
       isNoisyEnvironment: isNoisyEnvironment ?? this.isNoisyEnvironment,
       speakerFilterActive: speakerFilterActive ?? this.speakerFilterActive,
@@ -775,9 +767,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
 
         _pushUndo();
 
-        // Track which paragraph to auto-polish after insertion
-        int? polishTargetIndex;
-
         if (_reRecordingIndex != null) {
           // Re-recording: replace existing paragraph's text
           final idx = _reRecordingIndex!;
@@ -790,7 +779,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
               isProcessing: false,
               clearEditingParagraphIndex: true,
             );
-            polishTargetIndex = idx;
             // Silent-backup audio upload — see comment in "new text paragraph"
             // branch below for why this fires for every recording.
             _queueSilentBackupAudio(updated[idx].id, wavBytes);
@@ -800,7 +788,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
         } else if (state.cursorInsertParagraphIndex != null &&
                    state.cursorInsertPosition != null) {
           // Cursor insertion: splice text into existing paragraph
-          // Skip auto-polish for cursor splices — it's partial insertion
           final pIdx = state.cursorInsertParagraphIndex!;
           final cursorPos = state.cursorInsertPosition!;
           if (pIdx >= 0 && pIdx < state.paragraphs.length) {
@@ -885,7 +872,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
             isProcessing: false,
             clearInsertAtIndex: true,
           );
-          polishTargetIndex = textInsertedAt;
         }
 
         _streamingStt?.dispose();
@@ -893,11 +879,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
 
         // Save paragraphs to server IMMEDIATELY (don't wait for title/metadata)
         _scheduleAutoSave();
-
-        // Auto-polish the newly transcribed paragraph (fire-and-forget)
-        if (polishTargetIndex != null && ref.read(autoPolishProvider)) {
-          polishTranscriptWithAI(polishTargetIndex);
-        }
 
         // Auto-generate headline ONLY for the first paragraph (when headline
         // is still empty). After that the user owns the headline — it should
@@ -1079,10 +1060,8 @@ class NotepadNotifier extends Notifier<NotepadState> {
 
     final updated = List<Paragraph>.from(state.paragraphs);
     final insertIdx = state.insertAtIndex;
-    int insertedAt;
     if (insertIdx != null && insertIdx >= 0 && insertIdx <= updated.length) {
       updated.insert(insertIdx, paragraph);
-      insertedAt = insertIdx;
       // Advance insert position so next auto-para goes below
       state = state.copyWith(
         paragraphs: updated,
@@ -1090,7 +1069,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
         insertAtIndex: insertIdx + 1,
       );
     } else {
-      insertedAt = updated.length;
       updated.add(paragraph);
       state = state.copyWith(paragraphs: updated, liveTranscript: '');
     }
@@ -1099,11 +1077,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
     _streamingStt?.resetAccumulation();
 
     _scheduleAutoSave();
-
-    // Fire-and-forget auto-polish on the committed paragraph
-    if (ref.read(autoPolishProvider)) {
-      polishTranscriptWithAI(insertedAt);
-    }
   }
 
   /// Take all current text paragraphs (raw STT + typed input) and ask the
@@ -1162,7 +1135,11 @@ class NotepadNotifier extends Notifier<NotepadState> {
       final response = await _sarvam.chat(
         messages: messages,
         temperature: 0.3,
-        maxTokens: 4096,
+        // 8192 = Sarvam Pro tier hard cap. Reasoning models burn most of the
+        // budget in `reasoning_content` before emitting the actual story; the
+        // backend pairs this with reasoning_effort=medium on /api/llm/chat to
+        // keep enough room for ~400 word Odia article bodies.
+        maxTokens: 8192,
       );
 
       var body = toOdiaDigits(response.firstMessageContent.trim());
@@ -1465,80 +1442,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
       state = state.copyWith(
         clearImprovingParagraphIndex: true,
         error: _err('AI polish failed: $e', 'AI ସୁଧାର ବିଫଳ: $e'),
-      );
-    }
-  }
-
-  /// Auto-polishes a freshly transcribed paragraph using LLM.
-  /// Fixes: Roman→Odia script, Arabic→Odia numerals, duplicate phrases,
-  /// punctuation, misplaced purna virama, grammar — without changing meaning.
-  Future<void> polishTranscriptWithAI(int index) async {
-    if (index < 0 || index >= state.paragraphs.length) return;
-    final paragraph = state.paragraphs[index];
-    if (paragraph.text.trim().length < 5) return;
-
-    // Pin to the paragraph's ID — by the time the LLM responds the user may
-    // have reordered or inserted around it, so trusting the original index
-    // would clobber the wrong paragraph.
-    final pid = paragraph.id;
-
-    state = state.copyWith(
-      polishingParagraphIds: {...state.polishingParagraphIds, pid},
-    );
-
-    try {
-      const systemPrompt =
-          'You are an Odia text polisher for raw speech-to-text output. Clean up the text:\n'
-          '1. Convert any Roman/English letters to equivalent Odia script\n'
-          '2. Convert Arabic numerals (0-9) to Odia numerals (୦-୯)\n'
-          '3. Remove duplicate words/phrases caused by STT stuttering\n'
-          '4. Add proper Odia punctuation (commas, purna virama ।)\n'
-          '5. Remove misplaced or excessive purna virama (।)\n'
-          '6. Fix grammatical errors while keeping natural spoken tone\n'
-          '7. Keep the SAME meaning and facts — do NOT add, remove, or embellish content\n'
-          '8. PROPER NOUNS: Preserve names of people, places, organizations, '
-          'rivers, temples, parties, schemes etc. EXACTLY as a careful Odia '
-          'reporter would spell them. The STT often mangles proper nouns into '
-          'phonetic approximations or non-words — when you see a token that is '
-          'clearly a proper noun (person/place/org), correct the spelling to '
-          'the canonical Odia form (e.g. ମୋଦୀ, ନବୀନ ପଟ୍ଟନାୟକ, ଭୁବନେଶ୍ୱର, '
-          'କଟକ, ବିଜେଡି, ବିଜେପି). Never invent new names — if unsure, leave the '
-          'token unchanged. Do NOT translate Indian names into other languages.\n'
-          'Return ONLY the cleaned text. No explanations, no quotes.';
-
-      final messages = [
-        const ChatMessage(role: 'system', content: systemPrompt),
-        ChatMessage(role: 'user', content: paragraph.text),
-      ];
-
-      final response = await _sarvam.chat(
-        messages: messages,
-        temperature: 0.2,
-        maxTokens: 2048,
-      );
-
-      var polished = toOdiaDigits(response.firstMessageContent.trim());
-      // Ensure space before Odia purnachheda (।) for readability
-      polished = polished.replaceAll(RegExp(r'(?<!\s)।'), ' ।');
-      // Re-locate the paragraph by ID — its index may have shifted.
-      final currentIdx = state.paragraphs.indexWhere((p) => p.id == pid);
-      if (polished.isNotEmpty && currentIdx >= 0) {
-        final updated = List<Paragraph>.from(state.paragraphs);
-        updated[currentIdx] = updated[currentIdx].copyWith(text: polished);
-        state = state.copyWith(
-          paragraphs: updated,
-          polishingParagraphIds: {...state.polishingParagraphIds}..remove(pid),
-        );
-        _scheduleAutoSave();
-      } else {
-        state = state.copyWith(
-          polishingParagraphIds: {...state.polishingParagraphIds}..remove(pid),
-        );
-      }
-    } catch (_) {
-      // Polish failed silently — keep raw text
-      state = state.copyWith(
-        polishingParagraphIds: {...state.polishingParagraphIds}..remove(pid),
       );
     }
   }

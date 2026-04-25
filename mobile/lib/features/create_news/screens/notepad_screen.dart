@@ -82,7 +82,6 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
   late AnimationController _waveformController;
   late AnimationController _typingDotsController;
   late AnimationController _pulseController;
-  late AnimationController _polishGlowController;
 
   @override
   void initState() {
@@ -104,11 +103,6 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
 
-    _polishGlowController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2500),
-    )..repeat();
-
     // Initialize story from server
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final notifier = ref.read(notepadProvider.notifier);
@@ -129,7 +123,6 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
     _waveformController.dispose();
     _typingDotsController.dispose();
     _pulseController.dispose();
-    _polishGlowController.dispose();
     super.dispose();
   }
 
@@ -392,7 +385,7 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop || _isClosing) return;
         // No confirm dialog. Back press just pops — any in-flight work (live
-        // STT, AI polish, title gen, WAV upload) keeps running on the
+        // STT, title gen, WAV upload) keeps running on the
         // notifier in the background until it completes. We do NOT call
         // reset() here, because reset() tears down the recording timer, the
         // STT subscription and the streaming WS, which would silently drop
@@ -502,7 +495,6 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                         inlineEditingIndex: isReadOnly ? null : _inlineEditingIndex,
                         inlineEditController: isReadOnly ? null : _inlineEditController,
                         typingDotsController: _typingDotsController,
-                        polishGlowController: _polishGlowController,
                         onTapParagraph: isReadOnly ? null : (index) {
                           if (_inlineEditingIndex != null &&
                               _inlineEditingIndex != index) {
@@ -1724,7 +1716,6 @@ class _NotepadBody extends StatelessWidget {
   final int? inlineEditingIndex;
   final TextEditingController? inlineEditController;
   final AnimationController typingDotsController;
-  final AnimationController polishGlowController;
   final ValueChanged<int>? onTapParagraph;
   final ValueChanged<int>? onDoubleTapParagraph;
   final ValueChanged<int>? onDeleteParagraph;
@@ -1744,7 +1735,6 @@ class _NotepadBody extends StatelessWidget {
     required this.inlineEditingIndex,
     required this.inlineEditController,
     required this.typingDotsController,
-    required this.polishGlowController,
     this.onTapParagraph,
     this.onDoubleTapParagraph,
     this.onDeleteParagraph,
@@ -1886,10 +1876,6 @@ class _NotepadBody extends StatelessWidget {
                         : null,
                     improvingSelEnd: state.improvingParagraphIndex == pIdx
                         ? state.improvingSelEnd
-                        : null,
-                    isPolishing: state.polishingParagraphIds.contains(paragraph.id),
-                    polishGlowAnimation: state.polishingParagraphIds.contains(paragraph.id)
-                        ? polishGlowController
                         : null,
                     isCursorInsertRecording: isCursorInsertMode &&
                         state.cursorInsertParagraphIndex == pIdx,
@@ -2039,62 +2025,6 @@ class _Slot {
   final int paragraphIndex;
 
   const _Slot(this.type, this.paragraphIndex);
-}
-
-// =============================================================================
-// Polishing glow — line-scanning animation for auto-polish after STT
-// =============================================================================
-
-class _PolishingGlow extends StatelessWidget {
-  final String text;
-  final TextStyle style;
-  final AnimationController animation;
-
-  const _PolishingGlow({
-    required this.text,
-    required this.style,
-    required this.animation,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, child) {
-        return ShaderMask(
-          shaderCallback: (bounds) {
-            // Sweep a soft coral band from top to bottom
-            final sweep = animation.value;
-            // Band center moves from -0.2 to 1.2 for smooth entry/exit
-            final center = -0.2 + sweep * 1.4;
-            final bandHalf = 0.08; // half-width of the glow band
-
-            return LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: const [
-                Color(0xFF333333),
-                Color(0xFFFA6C38),
-                Color(0xFFFF8F5E),
-                Color(0xFFFA6C38),
-                Color(0xFF333333),
-              ],
-              stops: [
-                (center - bandHalf * 2).clamp(0.0, 1.0),
-                (center - bandHalf).clamp(0.0, 1.0),
-                center.clamp(0.0, 1.0),
-                (center + bandHalf).clamp(0.0, 1.0),
-                (center + bandHalf * 2).clamp(0.0, 1.0),
-              ],
-            ).createShader(bounds);
-          },
-          blendMode: BlendMode.srcIn,
-          child: child!,
-        );
-      },
-      child: Text(text, style: style.copyWith(color: Colors.white)),
-    );
-  }
 }
 
 // =============================================================================
@@ -2286,8 +2216,6 @@ class _ParagraphBlock extends ConsumerWidget {
   final bool isImproving;
   final int? improvingSelStart;
   final int? improvingSelEnd;
-  final bool isPolishing;
-  final AnimationController? polishGlowAnimation;
   final bool isCursorInsertRecording;
   final int? cursorInsertPosition;
   final String? liveTranscript;
@@ -2306,8 +2234,6 @@ class _ParagraphBlock extends ConsumerWidget {
     this.isImproving = false,
     this.improvingSelStart,
     this.improvingSelEnd,
-    this.isPolishing = false,
-    this.polishGlowAnimation,
     this.isCursorInsertRecording = false,
     this.cursorInsertPosition,
     this.liveTranscript,
@@ -2423,13 +2349,6 @@ class _ParagraphBlock extends ConsumerWidget {
           onTapOutside: (_) => onInlineEditSubmit(),
         ),
       );
-    } else if (isPolishing && polishGlowAnimation != null) {
-      // Auto-polish after STT: line-scanning glow animation
-      content = _PolishingGlow(
-        text: paragraph.text,
-        style: textStyle,
-        animation: polishGlowAnimation!,
-      );
     } else if (isImproving) {
       // If we have a specific selection range, only shimmer that portion
       if (improvingSelStart != null &&
@@ -2499,19 +2418,17 @@ class _ParagraphBlock extends ConsumerWidget {
     }
 
     // Inline action row (retranscribe / edit) — visible when not in a transient
-    // state (recording / editing / improving / polishing) and at least one
-    // action is available.
+    // state (recording / editing / improving) and at least one action is
+    // available.
     final showRetranscribe = paragraph.canRetranscribe &&
         onRetranscribe != null &&
         !isCursorInsertRecording &&
         !isInlineEditing &&
-        !isImproving &&
-        !isPolishing;
+        !isImproving;
     final showEdit = onEdit != null &&
         !isCursorInsertRecording &&
         !isInlineEditing &&
         !isImproving &&
-        !isPolishing &&
         paragraph.text.trim().isNotEmpty;
 
     Widget body = content;
