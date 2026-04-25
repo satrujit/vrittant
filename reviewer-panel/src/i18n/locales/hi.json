@@ -32,6 +32,8 @@
   "table": {
     "storyTitle": "खबर",
     "reporterSubject": "संवाददाता और विषय",
+    "reporter": "संवाददाता",
+    "location": "स्थान",
     "submissionTime": "प्रस्तुत",
     "category": "श्रेणी",
     "status": "स्थिति",

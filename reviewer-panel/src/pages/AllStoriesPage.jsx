@@ -453,29 +453,40 @@ export default function AllStoriesPage() {
           </div>
         ) : (
           <div className="flex-1 min-h-0 overflow-auto">
-          <Table className="vr-table-dense">
+          {/* #51 — flatten the row: each piece of metadata gets its own
+              column instead of being stacked under the headline. Combined
+              with the taller px-4 py-3.5 padding (#52), rows feel like a
+              proper data grid rather than mini-cards.
+              vr-table-spaced opts out of the global dense table preset. */}
+          <Table className="vr-table-spaced">
             <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_var(--border)]">
               <TableRow>
-                <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
+                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
                   {t('table.storyTitle')}
                 </TableHead>
-                <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
+                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
+                  {t('table.reporter', 'Reporter')}
+                </TableHead>
+                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
+                  {t('table.location', 'Location')}
+                </TableHead>
+                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
                   {t('table.submissionTime')}
                 </TableHead>
-                <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
+                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
                   {t('table.category')}
                 </TableHead>
-                <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
+                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
                   {t('table.status')}
                 </TableHead>
-                <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
+                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
                   {t('stories.reviewedBy')}
                 </TableHead>
-                <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-1.5">
+                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
                   {t('assignment.assignedTo')}
                 </TableHead>
                 {isOrgAdmin && (
-                  <TableHead className="px-4 py-2 w-[50px]" aria-label="Row actions" />
+                  <TableHead className="px-4 py-3 w-[50px]" aria-label="Row actions" />
                 )}
               </TableRow>
             </TableHeader>
@@ -490,44 +501,48 @@ export default function AllStoriesPage() {
                     className="cursor-pointer"
                     onClick={() => navigate(`/review/${story.id}`)}
                   >
-                    {/* Story title + reporter/location metadata.
+                    {/* Story title — single line, no stacked metadata.
                         Whole row is clickable; the headline stays a real
-                        Link so cmd/middle-click still opens in a new tab. */}
-                    <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5 max-w-[420px]">
-                      <div className="flex flex-col gap-1 min-w-[200px]">
-                        <Link
-                          to={`/review/${story.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-sm font-semibold text-foreground leading-tight line-clamp-1 hover:text-primary transition-colors no-underline"
-                        >
-                          {story.headline}
-                        </Link>
-                        <div className="flex items-center gap-[5px]">
-                          <Avatar
-                            initials={story.reporter.initials}
-                            color={story.reporter.color}
-                            size="xs"
-                          />
-                          <span className="text-[11px] text-muted-foreground font-medium">
-                            {story.reporter.name}
-                          </span>
-                          {story.location && (
-                            <>
-                              <span className="text-[11px] text-muted-foreground">
-                                &middot;
-                              </span>
-                              <MapPin size={12} className="text-muted-foreground shrink-0" />
-                              <span className="text-[11px] text-muted-foreground">
-                                {story.location}
-                              </span>
-                            </>
-                          )}
-                        </div>
+                        Link so cmd/middle-click still opens in a new tab.
+                        #52 — px-4 py-3.5 gives rows real breathing room. */}
+                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 max-w-[420px] align-middle">
+                      <Link
+                        to={`/review/${story.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-sm font-semibold text-foreground leading-tight line-clamp-2 hover:text-primary transition-colors no-underline"
+                      >
+                        {story.headline}
+                      </Link>
+                    </TableCell>
+
+                    {/* #51 — Reporter is its own column now */}
+                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle">
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <Avatar
+                          initials={story.reporter.initials}
+                          color={story.reporter.color}
+                          size="xs"
+                        />
+                        <span className="text-xs text-foreground font-medium">
+                          {story.reporter.name}
+                        </span>
                       </div>
                     </TableCell>
 
+                    {/* #51 — Location is its own column */}
+                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle">
+                      {story.location ? (
+                        <div className="flex items-center gap-1 whitespace-nowrap">
+                          <MapPin size={12} className="text-muted-foreground shrink-0" />
+                          <span className="text-xs text-muted-foreground">{story.location}</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+
                     {/* Submission Time — relative only, absolute on hover */}
-                    <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
+                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle">
                       <span
                         className="inline-flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap"
                         title={timePrimary}
@@ -538,23 +553,20 @@ export default function AllStoriesPage() {
                     </TableCell>
 
                     {/* Category — dot + label */}
-                    <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
+                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle">
                       <CategoryChip category={story.category} minimal />
                     </TableCell>
 
                     {/* Status — dot + label */}
-                    <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
+                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle">
                       <StatusBadge status={story.status} minimal />
                     </TableCell>
 
-                    {/* Reviewed by — stacked name / date */}
-                    <TableCell className="px-4 py-2 max-sm:px-3 max-sm:py-1.5">
+                    {/* Reviewed by — single-line first name + date */}
+                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle">
                       {story.reviewer_name ? (
-                        <div
-                          className="flex flex-col gap-0.5 whitespace-nowrap leading-tight"
-                          title={story.reviewer_name}
-                        >
-                          <span className="text-xs text-foreground font-medium">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap">
+                          <span className="text-xs text-foreground font-medium" title={story.reviewer_name}>
                             {story.reviewer_name.split(' ')[0]}
                           </span>
                           {story.reviewed_at && (
@@ -572,7 +584,7 @@ export default function AllStoriesPage() {
                         stopPropagation so opening the popover or picking a
                         reviewer doesn't also navigate the row. */}
                     <TableCell
-                      className="px-4 py-2 max-sm:px-3 max-sm:py-1.5"
+                      className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <ReassignPopover
@@ -587,7 +599,7 @@ export default function AllStoriesPage() {
                     {/* Row actions — org_admin only */}
                     {isOrgAdmin && (
                       <TableCell
-                        className="px-4 py-2 max-sm:px-3 max-sm:py-1.5"
+                        className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <DropdownMenu>

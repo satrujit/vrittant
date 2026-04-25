@@ -32,6 +32,8 @@
   "table": {
     "storyTitle": "Story",
     "reporterSubject": "Reporter & Subject",
+    "reporter": "Reporter",
+    "location": "Location",
     "submissionTime": "Submitted",
     "category": "Category",
     "status": "Status",

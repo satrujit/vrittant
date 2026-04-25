@@ -229,11 +229,13 @@ def admin_list_stories(
     total = query.count()
     stories = (
         query.options(joinedload(Story.revision), joinedload(Story.reviewer), joinedload(Story.assignee))
-        # Order by submission time (created_at), not last-modified — reviewers
-        # expect "latest reported" at the top of both the Review Queue and
-        # the All Stories archive. Sorting by updated_at would re-shuffle
-        # the list every time someone re-saved an old story.
-        .order_by(Story.created_at.desc())
+        # #50 — Order by reporter-supplied submission time, not created_at.
+        # `submitted_at` is when the reporter actually filed the story (it
+        # may differ from created_at for offline-collected drafts that get
+        # uploaded later). Coalesce to created_at so legacy rows that
+        # never set submitted_at still sort correctly. Sorting by
+        # updated_at would re-shuffle every time someone re-saved.
+        .order_by(func.coalesce(Story.submitted_at, Story.created_at).desc())
         .offset(offset)
         .limit(limit)
         .all()

@@ -32,6 +32,8 @@
   "table": {
     "storyTitle": "ଖବର",
     "reporterSubject": "ସାମ୍ବାଦିକ ଏବଂ ବିଷୟ",
+    "reporter": "ସାମ୍ବାଦିକ",
+    "location": "ସ୍ଥାନ",
     "submissionTime": "ଦାଖଲ",
     "category": "ଶ୍ରେଣୀ",
     "status": "ସ୍ଥିତି",
