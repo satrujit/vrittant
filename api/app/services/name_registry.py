@@ -164,9 +164,17 @@ def replace_english_names(text: Optional[str]) -> str:
     arbitrary English (proper nouns the dataset doesn't cover, English loan
     words, etc.) survives untouched. Matching is case-insensitive and prefers
     the longest known phrase ("Cuttack Sadar" wins over "Cuttack").
+
+    Guardrail: if the text contains zero Odia characters we return it as-is.
+    The dataset now includes generic loan words ("school", "monday",
+    "phone") that would otherwise mangle a fully English transcript or an
+    English translation pasted back into the editor. This protects that case
+    while still letting the registry rewrite mixed-script Odia STT output.
     """
     if not text:
         return text or ""
+    if not _ODIA_RE.search(text):
+        return text
     registry = get_registry()
     if not registry:
         return text

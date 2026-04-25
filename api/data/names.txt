@@ -958,3 +958,435 @@ Kamara କମାର
 Gudia ଗୁଡ଼ିଆ
 Sutar ସୁତାର
 Bania ବଣିଆ
+# ============================================================
+# Extended dictionary appended 2026-04-26 — expands STT coverage
+# beyond the original places-only set: states, cities, surnames,
+# female names, days/months, loan words, gov/political terms,
+# festivals, brands, time/direction. Lines without an Odia char are
+# treated as comments by the parser.
+# ============================================================
+
+# === Indian states & UTs ===
+
+states
+Odisha ଓଡ଼ିଶା
+Orissa ଓଡ଼ିଶା
+Bihar ବିହାର
+Jharkhand ଝାଡ଼ଖଣ୍ଡ
+Chhattisgarh ଛତିଶଗଡ଼
+Andhra Pradesh ଆନ୍ଧ୍ର ପ୍ରଦେଶ
+Telangana ତେଲେଙ୍ଗାନା
+Tamil Nadu ତାମିଲନାଡୁ
+Karnataka କର୍ଣ୍ଣାଟକ
+Kerala କେରଳ
+Maharashtra ମହାରାଷ୍ଟ୍ର
+Gujarat ଗୁଜରାଟ
+Rajasthan ରାଜସ୍ଥାନ
+Madhya Pradesh ମଧ୍ୟ ପ୍ରଦେଶ
+Uttar Pradesh ଉତ୍ତର ପ୍ରଦେଶ
+Uttarakhand ଉତ୍ତରାଖଣ୍ଡ
+Haryana ହରିଆଣା
+Punjab ପଞ୍ଜାବ
+Himachal Pradesh ହିମାଚଳ ପ୍ରଦେଶ
+Jammu Kashmir ଜାମ୍ମୁ କାଶ୍ମୀର
+Kashmir କାଶ୍ମୀର
+Assam ଆସାମ
+Manipur ମଣିପୁର
+Meghalaya ମେଘାଳୟ
+Mizoram ମିଜୋରାମ
+Nagaland ନାଗାଲାଣ୍ଡ
+Sikkim ସିକ୍କିମ
+Tripura ତ୍ରିପୁରା
+Arunachal Pradesh ଅରୁଣାଚଳ ପ୍ରଦେଶ
+Goa ଗୋଆ
+Delhi ଦିଲ୍ଲୀ
+New Delhi ନୂଆ ଦିଲ୍ଲୀ
+West Bengal ପଶ୍ଚିମବଙ୍ଗ
+Bengal ବଙ୍ଗ
+
+# === Indian cities ===
+
+cities
+Mumbai ମୁମ୍ବାଇ
+Bombay ବମ୍ବେ
+Kolkata କୋଲକାତା
+Calcutta କଲିକତା
+Chennai ଚେନ୍ନାଇ
+Madras ମାଡ୍ରାସ
+Bangalore ବାଙ୍ଗାଲୋର
+Bengaluru ବେଙ୍ଗାଲୁରୁ
+Hyderabad ହାଇଦ୍ରାବାଦ
+Pune ପୁଣେ
+Ahmedabad ଅହମ୍ଦାବାଦ
+Jaipur ଜୟପୁର
+Lucknow ଲକ୍ଷ୍ନୌ
+Ranchi ରାଞ୍ଚି
+Raipur ରାୟପୁର
+Visakhapatnam ବିଶାଖାପଟଣମ
+Vizag ବିଜାଗ
+Vijayawada ବିଜୟୱାଡ଼ା
+Kanpur କାନପୁର
+Nagpur ନାଗପୁର
+Indore ଇନ୍ଦୋର
+Bhopal ଭୋପାଳ
+Surat ସୁରଟ
+Vadodara ଭଡ଼ୋଦରା
+Coimbatore କୋଇମ୍ବଟୋର
+Kochi କୋଚି
+Thiruvananthapuram ତିରୁବନନ୍ତପୁରମ
+Mysore ମୈସୁର
+Dehradun ଦେରାଦୂନ
+Shimla ଶିମଳା
+Guwahati ଗୁୱାହାଟି
+Imphal ଇମ୍ଫାଳ
+Shillong ଶିଲଙ୍ଗ
+Gangtok ଗ୍ୟାଙ୍ଗଟୋକ
+Varanasi ବାରାଣସୀ
+Amritsar ଅମୃତସର
+Chandigarh ଚଣ୍ଡୀଗଡ଼
+Agra ଆଗ୍ରା
+Allahabad ଆଲାହାବାଦ
+Prayagraj ପ୍ରୟାଗରାଜ
+Noida ନୋଏଡ଼ା
+Gurgaon ଗୁରୁଗ୍ରାମ
+Gurugram ଗୁରୁଗ୍ରାମ
+Faridabad ଫରିଦାବାଦ
+Ghaziabad ଗାଜିଆବାଦ
+Howrah ହାୱଡ଼ା
+Siliguri ଶିଳିଗୁଡ଼ି
+Durgapur ଦୁର୍ଗାପୁର
+
+# === Countries ===
+
+countries
+India ଭାରତ
+America ଆମେରିକା
+USA ଆମେରିକା
+England ଇଂଲଣ୍ଡ
+Britain ବ୍ରିଟେନ
+UK ୟୁକେ
+China ଚୀନ
+Pakistan ପାକିସ୍ତାନ
+Bangladesh ବାଂଲାଦେଶ
+Nepal ନେପାଳ
+Bhutan ଭୁଟାନ
+Sri Lanka ଶ୍ରୀଲଙ୍କା
+Russia ରୁଷିଆ
+Japan ଜାପାନ
+Korea କୋରିଆ
+Germany ଜର୍ମାନୀ
+France ଫ୍ରାନ୍ସ
+Australia ଅଷ୍ଟ୍ରେଲିଆ
+Canada କାନାଡ଼ା
+Italy ଇଟାଲୀ
+Singapore ସିଙ୍ଗାପୁର
+Dubai ଦୁବାଇ
+Afghanistan ଆଫଗାନିସ୍ତାନ
+Iran ଇରାନ
+Iraq ଇରାକ
+Israel ଇସ୍ରାଏଲ
+Ukraine ୟୁକ୍ରେନ
+
+# === Common Odia surnames ===
+
+surnames
+Pattanayak ପଟ୍ଟନାୟକ
+Pattnaik ପଟ୍ଟନାୟକ
+Mahanty ମହାନ୍ତି
+Pal ପାଲ
+Tripathi ତ୍ରିପାଠୀ
+Pati ପତି
+Mahapatra ମହାପାତ୍ର
+Tarai ତରେଇ
+Choudhary ଚୌଧୁରୀ
+Kar କର
+Sahani ସାହାଣୀ
+Bisoyi ବିଶୋୟୀ
+
+# === Common Odia female first names ===
+
+female_names
+Manisha ମନୀଷା
+Pinki ପିଙ୍କି
+Lipsa ଲିପ୍ସା
+Manjusha ମଞ୍ଜୁଷା
+Bandita ବନ୍ଦିତା
+Charulata ଚାରୁଲତା
+Hema ହେମା
+Jharana ଝରଣା
+Kabita କବିତା
+Meera ମୀରା
+Mira ମୀରା
+Nibedita ନିବେଦିତା
+Nikita ନିକିତା
+Nirmala ନିର୍ମଳା
+Padma ପଦ୍ମା
+Purnima ପୂର୍ଣ୍ଣିମା
+Rajshree ରାଜଶ୍ରୀ
+Rashmita ରଶ୍ମିତା
+Rituparna ରିତୁପର୍ଣ୍ଣା
+Subhadra ସୁଭଦ୍ରା
+Subhashree ସୁଭାଶ୍ରୀ
+Sudipta ସୁଦୀପ୍ତା
+Susmita ସୁସ୍ମିତା
+Swati ସ୍ୱାତୀ
+Renuka ରେଣୁକା
+Snigdha ସ୍ନିଗ୍ଧା
+Aruna ଅରୁଣା
+Bijaya Laxmi ବିଜୟ ଲକ୍ଷ୍ମୀ
+Lakshmi ଲକ୍ଷ୍ମୀ
+Mukta ମୁକ୍ତା
+
+# === Days of week ===
+
+days
+Monday ସୋମବାର
+Tuesday ମଙ୍ଗଳବାର
+Wednesday ବୁଧବାର
+Thursday ଗୁରୁବାର
+Friday ଶୁକ୍ରବାର
+Saturday ଶନିବାର
+Sunday ରବିବାର
+
+# === Months ===
+
+months
+January ଜାନୁଆରୀ
+February ଫେବ୍ରୁଆରୀ
+March ମାର୍ଚ୍ଚ
+April ଅପ୍ରେଲ
+June ଜୁନ
+July ଜୁଲାଇ
+August ଅଗଷ୍ଟ
+September ସେପ୍ଟେମ୍ବର
+October ଅକ୍ଟୋବର
+November ନଭେମ୍ବର
+December ଡିସେମ୍ବର
+
+# === Money / measurements ===
+
+money
+rupee ଟଙ୍କା
+rupees ଟଙ୍କା
+Rs ଟଙ୍କା
+lakh ଲକ୍ଷ
+lakhs ଲକ୍ଷ
+crore କୋଟି
+crores କୋଟି
+thousand ହଜାର
+hundred ଶହ
+million ମିଲିୟନ
+billion ବିଲିୟନ
+percent ପ୍ରତିଶତ
+kilometer କିଲୋମିଟର
+kilometre କିଲୋମିଟର
+meter ମିଟର
+kilogram କିଲୋଗ୍ରାମ
+
+# === Common loan words ===
+
+loan
+phone ଫୋନ
+mobile ମୋବାଇଲ
+computer କମ୍ପ୍ୟୁଟର
+laptop ଲାପଟପ
+internet ଇଣ୍ଟରନେଟ
+email ଇମେଲ
+website ୱେବସାଇଟ
+school ସ୍କୁଲ
+college କଲେଜ
+university ବିଶ୍ୱବିଦ୍ୟାଳୟ
+student ଛାତ୍ର
+teacher ଶିକ୍ଷକ
+office କାର୍ଯ୍ୟାଳୟ
+company କମ୍ପାନୀ
+bank ବ୍ୟାଙ୍କ
+business ବ୍ୟବସାୟ
+hospital ହସ୍ପିଟାଲ
+doctor ଡାକ୍ତର
+medicine ଔଷଧ
+ambulance ଆମ୍ବୁଲାନ୍ସ
+patient ରୋଗୀ
+police ପୋଲିସ
+station ଷ୍ଟେସନ
+court କୋର୍ଟ
+judge ବିଚାରପତି
+lawyer ଓକିଲ
+market ବଜାର
+shop ଦୋକାନ
+customer ଗ୍ରାହକ
+money ଟଙ୍କା
+government ସରକାର
+news ଖବର
+newspaper ଖବରକାଗଜ
+media ମିଡିଆ
+channel ଚ୍ୟାନେଲ
+water ପାଣି
+electricity ବିଦ୍ୟୁତ
+gas ଗ୍ୟାସ
+road ରାସ୍ତା
+bridge ସେତୁ
+building କୋଠା
+house ଘର
+village ଗାଁ
+town ସହର
+city ସହର
+district ଜିଲ୍ଲା
+state ରାଜ୍ୟ
+country ଦେଶ
+bus ବସ
+car କାର
+train ଟ୍ରେନ
+ticket ଟିକଟ
+airport ବିମାନ ବନ୍ଦର
+flight ବିମାନ
+ship ଜାହାଜ
+port ବନ୍ଦର
+church ଚର୍ଚ୍ଚ
+mosque ମସଜିଦ
+school bus ସ୍କୁଲ ବସ
+petrol ପେଟ୍ରୋଲ
+diesel ଡିଜେଲ
+school children ସ୍କୁଲ ପିଲା
+village panchayat ଗ୍ରାମ ପଞ୍ଚାୟତ
+panchayat ପଞ୍ଚାୟତ
+block ବ୍ଲକ
+tehsil ତହସିଲ
+zone ଜୋନ
+
+# === Government & politics ===
+
+gov
+BJP ବିଜେପି
+BJD ବିଜେଡି
+Congress କଂଗ୍ରେସ
+CPI ସିପିଆଇ
+CPM ସିପିଏମ
+AAP ଆପ୍
+MLA ବିଧାୟକ
+MP ସାଂସଦ
+Sarpanch ସରପଞ୍ଚ
+Collector କଲେକ୍ଟର
+DM ଡିଏମ
+SP ଏସପି
+DGP ଡିଜିପି
+IAS ଆଇଏଏସ
+IPS ଆଇପିଏସ
+OAS ଓଏଏସ
+Chief Minister ମୁଖ୍ୟମନ୍ତ୍ରୀ
+Prime Minister ପ୍ରଧାନମନ୍ତ୍ରୀ
+President ରାଷ୍ଟ୍ରପତି
+minister ମନ୍ତ୍ରୀ
+election ନିର୍ବାଚନ
+vote ଭୋଟ
+voter ଭୋଟର
+party ଦଳ
+assembly ବିଧାନସଭା
+parliament ସଂସଦ
+Lok Sabha ଲୋକସଭା
+Rajya Sabha ରାଜ୍ୟସଭା
+budget ବଜେଟ
+policy ନୀତି
+scheme ଯୋଜନା
+law ଆଇନ
+
+# === Festivals ===
+
+festivals
+Diwali ଦୀପାବଳି
+Deepavali ଦୀପାବଳି
+Holi ହୋଲି
+Durga Puja ଦୁର୍ଗା ପୂଜା
+Rath Yatra ରଥଯାତ୍ରା
+Christmas କ୍ରିସମାସ
+Eid ଈଦ
+Janmashtami ଜନ୍ମାଷ୍ଟମୀ
+Kumar Purnima କୁମାର ପୂର୍ଣ୍ଣିମା
+Nuakhai ନୂଆଖାଇ
+Kartik Purnima କାର୍ତ୍ତିକ ପୂର୍ଣ୍ଣିମା
+Makar Sankranti ମକର ସଂକ୍ରାନ୍ତି
+Saraswati Puja ସରସ୍ୱତୀ ପୂଜା
+Ganesh Puja ଗଣେଶ ପୂଜା
+Bali Yatra ବାଲିଯାତ୍ରା
+
+# === Tech & social media brands ===
+
+tech
+WhatsApp ୱାଟ୍ସଆପ
+Facebook ଫେସବୁକ
+Google ଗୁଗଲ
+YouTube ୟୁଟ୍ୟୁବ
+Instagram ଇନଷ୍ଟାଗ୍ରାମ
+Twitter ଟ୍ୱିଟର
+Telegram ଟେଲିଗ୍ରାମ
+Microsoft ମାଇକ୍ରୋସଫ୍ଟ
+Apple ଆପଲ
+Amazon ଆମାଜନ
+Netflix ନେଟଫ୍ଲିକ୍ସ
+Zoom ଜୁମ
+SMS ଏସଏମଏସ
+ATM ଏଟିଏମ
+UPI ୟୁପିଆଇ
+
+# === Time & directions ===
+
+time
+today ଆଜି
+tomorrow ଆସନ୍ତାକାଲି
+yesterday ଗତକାଲି
+morning ସକାଳ
+evening ସନ୍ଧ୍ୟା
+night ରାତି
+noon ମଧ୍ୟାହ୍ନ
+midnight ମଧ୍ୟରାତ୍ର
+week ସପ୍ତାହ
+month ମାସ
+year ବର୍ଷ
+east ପୂର୍ବ
+west ପଶ୍ଚିମ
+north ଉତ୍ତର
+south ଦକ୍ଷିଣ
+
+# === Common Odia male first names not yet covered ===
+
+more_male
+Akshay ଅକ୍ଷୟ
+Aditya ଆଦିତ୍ୟ
+Aryan ଆର୍ଯ୍ୟନ
+Bibhu Prasad ବିଭୁ ପ୍ରସାଦ
+Biswanath ବିଶ୍ୱନାଥ
+Birendra ବୀରେନ୍ଦ୍ର
+Brundaban ବୃନ୍ଦାବନ
+Brajesh ବ୍ରଜେଶ
+Debendra ଦେବେନ୍ଦ୍ର
+Debaraj ଦେବରାଜ
+Dharmendra ଧର୍ମେନ୍ଦ୍ର
+Dibyajyoti ଦିବ୍ୟଜ୍ୟୋତି
+Hrushikesh ହୃଷୀକେଶ
+Itish ଇତିଶ
+Jagdish ଜଗଦୀଶ
+Jayadeb ଜୟଦେବ
+Jayaram ଜୟରାମ
+Kalandi କାଳନ୍ଦୀ
+Karunakar କରୁଣାକର
+Lokanath ଲୋକନାଥ
+Maheswar ମହେଶ୍ୱର
+Maheshwar ମହେଶ୍ୱର
+Mrutyunjay ମୃତ୍ୟୁଞ୍ଜୟ
+Nilakantha ନୀଳକଣ୍ଠ
+Nilamadhab ନୀଳମାଧବ
+Nrupesh ନୃପେଶ
+Pranay ପ୍ରଣୟ
+Pramod Kumar ପ୍ରମୋଦ କୁମାର
+Rajeev ରାଜୀବ
+Rajkumar ରାଜକୁମାର
+Ranjit ରଞ୍ଜିତ
+Rashmiranjan ରଶ୍ମିରଞ୍ଜନ
+Sanatan ସନାତନ
+Saroj Kumar ସରୋଜ କୁମାର
+Sushant ସୁଶାନ୍ତ
+Sushil ସୁଶୀଳ
+Suvendu ଶୁଭେନ୍ଦୁ
+Umesh ଉମେଶ
+Yudhishthir ଯୁଧିଷ୍ଠିର
+

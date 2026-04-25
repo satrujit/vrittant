@@ -116,9 +116,11 @@ def test_replaces_single_word_match(monkeypatch):
 
 def test_replacement_is_case_insensitive(monkeypatch):
     _seed(monkeypatch, "Cuttack କଟକ\n")
-    assert name_registry.replace_english_names("cuttack") == "କଟକ"
-    assert name_registry.replace_english_names("CUTTACK") == "କଟକ"
-    assert name_registry.replace_english_names("CutTaCk") == "କଟକ"
+    # Add an Odia anchor character so the guardrail (skip pure-English text)
+    # doesn't kick in — real STT output always has some Odia content.
+    assert name_registry.replace_english_names("ଆଜି cuttack") == "ଆଜି କଟକ"
+    assert name_registry.replace_english_names("ଆଜି CUTTACK") == "ଆଜି କଟକ"
+    assert name_registry.replace_english_names("ଆଜି CutTaCk") == "ଆଜି କଟକ"
 
 
 def test_prefers_longest_phrase_match(monkeypatch):
@@ -131,15 +133,24 @@ def test_prefers_longest_phrase_match(monkeypatch):
 
 def test_leaves_unmatched_english_untouched(monkeypatch):
     _seed(monkeypatch, "Cuttack କଟକ\n")
-    out = name_registry.replace_english_names("Donald Trump visited Cuttack today")
-    assert out == "Donald Trump visited କଟକ today"
+    out = name_registry.replace_english_names("ଆଜି Donald Trump visited Cuttack today")
+    assert out == "ଆଜି Donald Trump visited କଟକ today"
 
 
 def test_does_not_match_substring(monkeypatch):
     """'Cuttack' must not match inside 'Cuttacking' or 'MyCuttack'."""
     _seed(monkeypatch, "Cuttack କଟକ\n")
-    out = name_registry.replace_english_names("Cuttacking is a verb")
-    assert out == "Cuttacking is a verb"
+    out = name_registry.replace_english_names("ଆଜି Cuttacking is a verb")
+    assert out == "ଆଜି Cuttacking is a verb"
+
+
+def test_skips_replacement_when_no_odia_in_text(monkeypatch):
+    """Pure-English input passes through untouched — protects English
+    translations and English-only paragraphs from over-correction now that
+    the dataset includes generic loan words like 'school' or 'monday'."""
+    _seed(monkeypatch, "Cuttack କଟକ\nschool ସ୍କୁଲ\n")
+    sentence = "I went to school in Cuttack last Monday"
+    assert name_registry.replace_english_names(sentence) == sentence
 
 
 def test_handles_punctuation_around_token(monkeypatch):
@@ -180,9 +191,9 @@ def test_ws_rewriter_replaces_nested_data_transcript(monkeypatch):
     from app.routers.sarvam import _rewrite_transcript_message
 
     _seed(monkeypatch, "Cuttack କଟକ\n")
-    msg = '{"type":"data","data":{"transcript":"Cuttack today"}}'
+    msg = '{"type":"data","data":{"transcript":"ଆଜି Cuttack today"}}'
     out = _rewrite_transcript_message(msg)
-    assert json.loads(out)["data"]["transcript"] == "କଟକ today"
+    assert json.loads(out)["data"]["transcript"] == "ଆଜି କଟକ today"
 
 
 def test_ws_rewriter_passes_through_non_json(monkeypatch):
@@ -214,9 +225,47 @@ def test_real_dataset_loads_without_errors():
     registry. Catches accidental file corruption / encoding regressions."""
     name_registry.reset_cache()
     registry = name_registry.get_registry()
-    # Should comfortably hold hundreds of entries (file has ~959 lines).
-    assert len(registry) > 500
+    # After the 2026-04-26 expansion the file ships well over a thousand
+    # entries — places, surnames, female names, days/months, loan words,
+    # gov/political terms, festivals, brands.
+    assert len(registry) > 1200
     # Spot-check a few well-known entries (case-insensitive lookup).
     assert registry.get("cuttack") == "କଟକ"
     assert registry.get("bhubaneswar") == "ଭୁବନେଶ୍ୱର"
     assert registry.get("cuttack sadar") == "କଟକ ସଦର"
+
+
+def test_real_dataset_covers_new_categories():
+    """Pin a representative entry from each newly-added category so a future
+    edit can't silently drop a whole bucket."""
+    name_registry.reset_cache()
+    registry = name_registry.get_registry()
+    # state, city, country, surname, female name, day, month, loan word,
+    # multi-word loan phrase, gov term, festival, tech brand, time word.
+    expected = {
+        "odisha": "ଓଡ଼ିଶା",
+        "mumbai": "ମୁମ୍ବାଇ",
+        "india": "ଭାରତ",
+        "patnaik": "ପଟ୍ଟନାୟକ",
+        "sangita": "ସଙ୍ଗୀତା",
+        "monday": "ସୋମବାର",
+        "january": "ଜାନୁଆରୀ",
+        "school": "ସ୍କୁଲ",
+        "chief minister": "ମୁଖ୍ୟମନ୍ତ୍ରୀ",
+        "bjp": "ବିଜେପି",
+        "diwali": "ଦୀପାବଳି",
+        "whatsapp": "ୱାଟ୍ସଆପ",
+        "today": "ଆଜି",
+    }
+    for english, odia in expected.items():
+        assert registry.get(english) == odia, f"missing dataset entry for {english!r}"
+
+
+def test_real_dataset_replaces_full_newsroom_sentence():
+    """End-to-end smoke: a realistic mixed-script transcript from a Sarvam
+    output should come back almost-pure Odia. Catches regressions where a
+    refactor breaks the wiring without obviously failing unit tests."""
+    name_registry.reset_cache()
+    raw = "BJD party ର MLA Sundargarh ରେ vote ମାଗିଛନ୍ତି"
+    out = name_registry.replace_english_names(raw)
+    assert out == "ବିଜେଡି ଦଳ ର ବିଧାୟକ ସୁନ୍ଦରଗଡ଼ ରେ ଭୋଟ ମାଗିଛନ୍ତି"
