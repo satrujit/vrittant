@@ -116,14 +116,18 @@ export default function DashboardPage() {
     try {
       const offset = (currentPage - 1) * PAGE_SIZE;
       const params = {
-        status: 'submitted',
         offset,
         limit: PAGE_SIZE,
       };
-      // Reviewers see only their own queue; org_admins see everyone's
-      // pending work (matches the stats card scoping in /admin/stats).
-      if (!isOrgAdmin) {
+      // Reviewers see ALL open stories assigned to them (submitted, approved,
+      // flagged, layout_completed) so manually-reassigned non-submitted work
+      // shows up too. Org admins see only the pending-review queue (status=submitted)
+      // to match the stats card scoping in /admin/stats.
+      if (isOrgAdmin) {
+        params.status = 'submitted';
+      } else {
         params.assigned_to = 'me';
+        params.exclude_status = 'draft,published,rejected';
       }
       if (searchQuery.trim()) {
         params.search = searchQuery.trim();

@@ -241,7 +241,12 @@ def _build_story_query(
     if status_filter:
         query = query.filter(Story.status == status_filter)
     if exclude_status:
-        query = query.filter(Story.status != exclude_status)
+        # Accept either a single status or a comma-separated list
+        excluded = [s.strip() for s in exclude_status.split(",") if s.strip()]
+        if len(excluded) == 1:
+            query = query.filter(Story.status != excluded[0])
+        elif excluded:
+            query = query.filter(~Story.status.in_(excluded))
     # Auto-exclude drafts from admin views unless explicitly requesting them
     if exclude_drafts and not status_filter and not exclude_status:
         query = query.filter(Story.status != "draft")
