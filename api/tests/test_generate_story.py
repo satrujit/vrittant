@@ -283,9 +283,14 @@ def test_generate_story_rejects_empty_notes(client, reporter, auth_reporter_head
 
 
 def test_generate_story_requires_auth(client):
-    """No bearer token → 401."""
+    """No bearer token → unauthorized.
+
+    FastAPI's HTTPBearer dependency returns 403 by default when the
+    Authorization header is missing; some auth setups return 401 instead.
+    Either is fine — the point is "not 200" without credentials.
+    """
     r = client.post("/api/llm/generate-story", json={"notes": "ଖବର"})
-    assert r.status_code == 401
+    assert r.status_code in (401, 403)
 
 
 def test_generate_story_response_is_post_processed(client, reporter, auth_reporter_header, monkeypatch):
