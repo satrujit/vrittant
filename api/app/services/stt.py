@@ -21,7 +21,7 @@ from typing import Optional
 import httpx
 
 from ..config import settings
-from . import sarvam_client
+from . import name_registry, sarvam_client
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,9 @@ async def transcribe_audio(
     if transcript is None:
         # Some Sarvam responses use 'text' or nest under 'data'. Be lenient.
         transcript = body.get("text") or (body.get("data") or {}).get("transcript", "")
-    return (transcript or "").strip()
+    # Sarvam often emits Odia place / personal names in romanised English; rewrite
+    # them to Odia script using the in-memory registry (api/data/names.txt).
+    return name_registry.replace_english_names((transcript or "").strip())
 
 
 def _content_type_for_filename(filename: str) -> Optional[str]:
