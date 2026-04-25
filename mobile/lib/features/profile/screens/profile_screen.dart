@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/services/api_config.dart';
 import '../../../core/services/api_service.dart';
@@ -18,6 +19,18 @@ import '../../../core/providers/auto_polish_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../home/providers/stories_provider.dart';
 import '../providers/voice_enrollment_provider.dart';
+
+/// App version (e.g. "1.0.4") read from native package metadata.
+/// Returns empty string on the rare failure path so the About row
+/// just shows "Vrittant" without a misleading hardcoded version.
+final _appVersionProvider = FutureProvider<String>((ref) async {
+  try {
+    final info = await PackageInfo.fromPlatform();
+    return info.version;
+  } catch (_) {
+    return '';
+  }
+});
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -187,12 +200,16 @@ class ProfileScreen extends ConsumerWidget {
     final enrollmentState = ref.watch(voiceEnrollmentProvider);
     final voiceSubtitle = enrollmentState.isEnrolled ? s.enrolled : s.notEnrolled;
     final autoPolish = ref.watch(autoPolishProvider);
+    // Resolve dynamically — falls back to "Vrittant" alone if the
+    // platform call hasn't returned yet or fails.
+    final appVersion = ref.watch(_appVersionProvider).asData?.value ?? '';
+    final aboutSubtitle =
+        appVersion.isEmpty ? 'Vrittant' : 'Version $appVersion';
     final items = [
       (LucideIcons.languages, s.language, langSubtitle, 'language'),
       (LucideIcons.mic, s.voiceEnrollment, voiceSubtitle, 'voice_enrollment'),
       (LucideIcons.shield, s.privacyPolicy, s.privacyPolicySubtitle, 'privacy_policy'),
-      (LucideIcons.info, s.about, 'Version 1.0.0', 'about'),
-      (LucideIcons.userX, s.deleteAccount, s.deleteAccountSubtitle, 'delete_account'),
+      (LucideIcons.info, s.about, aboutSubtitle, 'about'),
       (LucideIcons.logOut, s.logout, s.signOut, 'logout'),
     ];
 
@@ -257,7 +274,7 @@ class ProfileScreen extends ConsumerWidget {
               children: items.asMap().entries.map((entry) {
                 final (icon, title, subtitle, action) = entry.value;
                 final isLast = entry.key == items.length - 1;
-                final isLogout = action == 'logout' || action == 'delete_account';
+                final isLogout = action == 'logout';
 
                 return Column(
                   children: [
@@ -332,7 +349,11 @@ class ProfileScreen extends ConsumerWidget {
         _showLogoutConfirmation(context, ref);
         break;
       case 'about':
-        _showAboutDialog(context, s: AppStrings.of(ref));
+        _showAboutDialog(
+          context,
+          s: AppStrings.of(ref),
+          version: ref.read(_appVersionProvider).asData?.value ?? '',
+        );
         break;
       case 'language':
         _showLanguagePicker(context, ref);
@@ -342,9 +363,6 @@ class ProfileScreen extends ConsumerWidget {
         break;
       case 'privacy_policy':
         _openPrivacyPolicy(context, ref);
-        break;
-      case 'delete_account':
-        _showDeleteAccountConfirmation(context, ref);
         break;
       case 'notifications':
       case 'help':
@@ -428,80 +446,11 @@ class ProfileScreen extends ConsumerWidget {
     }
   }
 
-  void _showDeleteAccountConfirmation(BuildContext context, WidgetRef ref) {
-    final s = AppStrings.of(ref);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          s.deleteAccountTitle,
-          style: GoogleFonts.plusJakartaSans(
-            fontWeight: FontWeight.w700,
-            color: AppColors.vrHeading,
-          ),
-        ),
-        content: Text(
-          s.deleteAccountBody,
-          style: GoogleFonts.plusJakartaSans(color: AppColors.vrBody),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              s.cancel,
-              style: GoogleFonts.plusJakartaSans(
-                fontWeight: FontWeight.w600,
-                color: AppColors.vrSection,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final messenger = ScaffoldMessenger.of(context);
-              try {
-                await ref.read(apiServiceProvider).requestAccountDeletion();
-                if (!context.mounted) return;
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(s.deleteAccountRequestSent),
-                    backgroundColor: AppColors.vrCoral,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                );
-                await ref.read(authProvider.notifier).logout();
-                if (context.mounted) context.go('/login');
-              } catch (_) {
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(s.deleteAccountError),
-                    backgroundColor: AppColors.error,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                );
-              }
-            },
-            child: Text(
-              s.deleteAccountConfirm,
-              style: GoogleFonts.plusJakartaSans(
-                fontWeight: FontWeight.w600,
-                color: AppColors.error,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAboutDialog(BuildContext context, {required AppStrings s}) {
+  void _showAboutDialog(
+    BuildContext context, {
+    required AppStrings s,
+    required String version,
+  }) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -517,14 +466,15 @@ class ProfileScreen extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Version 1.0.0',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 14,
-                color: AppColors.vrBody,
+            if (version.isNotEmpty)
+              Text(
+                'Version $version',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14,
+                  color: AppColors.vrBody,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
+            if (version.isNotEmpty) const SizedBox(height: 8),
             Text(
               s.isOdia
                   ? '\u0B2C\u0B43\u0B24\u0B4D\u0B24\u0B3E\u0B28\u0B4D\u0B24 \u0B39\u0B47\u0B09\u0B1B\u0B3F \u0B0F\u0B15 \u0B38\u0B4D\u0B2E\u0B3E\u0B30\u0B4D\u0B1F \u0B28\u0B4D\u0B5F\u0B41\u0B1C\u0B4D \u0B30\u0B3F\u0B2A\u0B4B\u0B30\u0B4D\u0B1F\u0B3F\u0B02 \u0B1F\u0B41\u0B32\u0B4D \u0B2F\u0B3E\u0B39\u0B3E \u0B38\u0B3E\u0B2E\u0B4D\u0B2C\u0B3E\u0B26\u0B3F\u0B15\u0B2E\u0B3E\u0B28\u0B19\u0B4D\u0B15\u0B41 \u0B16\u0B2C\u0B30 \u0B38\u0B02\u0B17\u0B4D\u0B30\u0B39, \u0B38\u0B2E\u0B4D\u0B2A\u0B3E\u0B26\u0B28\u0B3E \u0B0F\u0B2C\u0B02 \u0B2A\u0B4D\u0B30\u0B15\u0B3E\u0B36\u0B28\u0B3E\u0B30\u0B47 \u0B38\u0B3E\u0B39\u0B3E\u0B2F\u0B4D\u0B5F \u0B15\u0B30\u0B47\u0964'  // ବୃତ୍ତାନ୍ତ ହେଉଛି ଏକ ସ୍ମାର୍ଟ ନ୍ୟୁଜ୍ ରିପୋର୍ଟିଂ ଟୁଲ୍ ଯାହା ସାମ୍ବାଦିକମାନଙ୍କୁ ଖବର ସଂଗ୍ରହ, ସମ୍ପାଦନା ଏବଂ ପ୍ରକାଶନାରେ ସାହାଯ୍ୟ କରେ।
