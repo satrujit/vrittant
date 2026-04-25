@@ -1,20 +1,16 @@
 import { useEffect, useState, useRef } from 'react';
 import {
-  AlertTriangle,
   BookOpen,
-  Calendar,
-  Check,
   ChevronDown,
   ChevronUp,
-  Clock,
   ExternalLink,
-  FileText,
   History,
   Info,
   Loader2,
-  MapPin,
   MessageSquare,
+  Pencil,
   Send,
+  Sparkles,
   UserCircle2,
 } from 'lucide-react';
 import { useI18n } from '../../i18n';
@@ -27,7 +23,8 @@ import {
   reassignStory,
   updateStory,
 } from '../../services/api';
-import { Avatar, StatusBadge, StatusStepper, CategoryChip } from '../common';
+import { StatusProgress } from '../common';
+import { getCategoryColor } from '../../utils/helpers';
 import { formatDate, formatTimeAgo } from '../../utils/helpers';
 import { assignableReviewers } from '../../utils/users';
 import {
@@ -50,6 +47,44 @@ const PRIORITY_COLORS = {
 };
 
 /**
+ * One metadata row — label on the left, value (optionally with a colored dot
+ * for color-bearing fields) on the right. Every row uses the same font size,
+ * the same foreground color, and the same vertical rhythm so DETAILS reads
+ * as a calm key/value list rather than a fight between filled pills.
+ */
+function MetaRow({ label, dotColor, value, onClick, title }) {
+  const Inner = (
+    <span className="inline-flex min-w-0 items-center gap-1.5 truncate text-xs text-foreground">
+      {dotColor && (
+        <span
+          className="size-1.5 shrink-0 rounded-full"
+          style={{ backgroundColor: dotColor }}
+          aria-hidden
+        />
+      )}
+      <span className="truncate">{value}</span>
+    </span>
+  );
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-1 text-xs">
+      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
+      {onClick ? (
+        <button
+          type="button"
+          onClick={onClick}
+          title={title}
+          className="min-w-0 max-w-[60%] cursor-pointer rounded border-none bg-transparent p-0 text-right hover:opacity-80"
+        >
+          {Inner}
+        </button>
+      ) : (
+        <span className="min-w-0 max-w-[60%] text-right" title={title}>{Inner}</span>
+      )}
+    </div>
+  );
+}
+
+/**
  * Card-style section wrapper. Groups related controls under a small
  * uppercase header so the side panel reads as a stack of self-contained
  * blocks rather than one continuous scroll.
@@ -70,18 +105,6 @@ function Section({ icon: Icon, title, children, className }) {
       </header>
       <div className="pb-1.5">{children}</div>
     </section>
-  );
-}
-
-/**
- * One settings row — label on the left, value/control on the right.
- */
-function Row({ label, children }) {
-  return (
-    <div className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <div className="flex min-w-0 items-center gap-1 text-foreground">{children}</div>
-    </div>
   );
 }
 
@@ -270,59 +293,69 @@ export default function ReviewSidePanel({
         {!settingsCollapsed && (
         <div className="overflow-y-auto border-b border-border pt-3">
           <Section icon={Info} title={t('review.sidePanel.details', 'Details')}>
-          {/* Pipeline progress: Reported → Approved → Layout Placed → Published.
-              Off-path statuses (rejected/flagged) still get the StatusBadge below. */}
-          <div className="px-1 pb-3">
-            <StatusStepper status={status} />
-          </div>
-          <Row label={t('table.status', 'Status')}>
-            <StatusBadge status={status} size="sm" />
-          </Row>
+            {/* Status pill on top + thin progress bar = single-glance pipeline
+                position. Replaces the four-circle stepper with truncated labels. */}
+            <div className="px-3 pb-2">
+              <StatusProgress status={status} />
+            </div>
 
-          {/* Category */}
-          <Row label={t('table.category', 'Category')}>
+            {/* Category — dot + text, popover on click. */}
+            {(() => {
+              const catKey = category || story.category;
+              const { color: catColor } = getCategoryColor(catKey);
+              const catLabel = (() => {
+                const k = (catKey || '').toLowerCase().replace(/[\s]+/g, '_');
+                const localized = t(`categories.${k}`);
+                return localized !== `categories.${k}` ? localized : (catKey || '—');
+              })();
+              return (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <div>
+                      <MetaRow
+                        label={t('table.category', 'Category')}
+                        dotColor={catColor}
+                        value={catLabel}
+                        onClick={() => {}}
+                      />
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="max-h-60 w-48 overflow-y-auto p-2">
+                    {(config?.categories?.filter((c) => c.is_active) || []).map((c) => (
+                      <button
+                        key={c.key}
+                        className={cn(
+                          'flex w-full rounded-md border-none bg-transparent px-2 py-1 text-left text-xs transition-colors hover:bg-accent',
+                          category === c.key && 'bg-primary/10 font-semibold'
+                        )}
+                        onClick={async () => {
+                          setCategory(c.key);
+                          try {
+                            await updateStory(id, { category: c.key });
+                          } catch (err) {
+                            console.error('Failed to update category:', err);
+                          }
+                        }}
+                      >
+                        {t(`categories.${c.key}`, c.label || c.key)}
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              );
+            })()}
+
+            {/* Priority — dot + text, popover on click. */}
             <Popover>
               <PopoverTrigger asChild>
-                <button className="cursor-pointer border-none bg-transparent p-0">
-                  <CategoryChip category={category || story.category} />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="max-h-60 w-48 overflow-y-auto p-2">
-                {(config?.categories?.filter((c) => c.is_active) || []).map((c) => (
-                  <button
-                    key={c.key}
-                    className={cn(
-                      'flex w-full rounded-md border-none bg-transparent px-2 py-1 text-left text-xs transition-colors hover:bg-accent',
-                      category === c.key && 'bg-primary/10 font-semibold'
-                    )}
-                    onClick={async () => {
-                      setCategory(c.key);
-                      try {
-                        await updateStory(id, { category: c.key });
-                      } catch (err) {
-                        console.error('Failed to update category:', err);
-                      }
-                    }}
-                  >
-                    {t(`categories.${c.key}`, c.label || c.key)}
-                  </button>
-                ))}
-              </PopoverContent>
-            </Popover>
-          </Row>
-
-          {/* Priority */}
-          <Row label={t('review.priority', 'Priority')}>
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
-                  style={{ backgroundColor: PRIORITY_COLORS[priority] || PRIORITY_COLORS.normal }}
-                >
-                  {priority === 'breaking' && <AlertTriangle size={10} />}
-                  {priority === 'urgent' && <Clock size={10} />}
-                  {t(`priority.${priority}`, priority)}
-                </button>
+                <div>
+                  <MetaRow
+                    label={t('review.priority', 'Priority')}
+                    dotColor={PRIORITY_COLORS[priority] || PRIORITY_COLORS.normal}
+                    value={t(`priority.${priority}`, priority)}
+                    onClick={() => {}}
+                  />
+                </div>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-36 p-2">
                 {activePriorities.map((level) => (
@@ -342,7 +375,7 @@ export default function ReviewSidePanel({
                     }}
                   >
                     <span
-                      className="size-2.5 rounded-full"
+                      className="size-2 rounded-full"
                       style={{ backgroundColor: PRIORITY_COLORS[level] }}
                     />
                     {t(`priority.${level}`, level)}
@@ -350,76 +383,108 @@ export default function ReviewSidePanel({
                 ))}
               </PopoverContent>
             </Popover>
-          </Row>
 
-          {story.location && (
-            <Row label={t('review.locationLabel', 'Location')}>
-              <MapPin size={11} className="text-muted-foreground" />
-              <span className="truncate">{story.location}</span>
-            </Row>
-          )}
+            {story.location && (
+              <MetaRow
+                label={t('review.locationLabel', 'Location')}
+                value={story.location}
+                title={story.location}
+              />
+            )}
 
-          <Row label={t('review.dateLabel', 'Submitted')}>
-            <Calendar size={11} className="text-muted-foreground" />
-            <span className="truncate">{formatDate(story.submittedAt)}</span>
-          </Row>
+            <MetaRow
+              label={t('review.dateLabel', 'Submitted')}
+              value={formatDate(story.submittedAt)}
+            />
 
-          {story.source && (
-            <Row label={t('review.sourceLabel', 'Source')}>
-              {story.source.startsWith('http') ? (
-                <a
-                  href={story.source}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 truncate text-primary hover:underline"
-                  title={story.source}
-                >
-                  <ExternalLink size={11} />
-                  {t('review.source', 'Source')}
-                </a>
-              ) : (
-                <span className="inline-flex items-center gap-1 truncate">
-                  <FileText size={11} className="text-muted-foreground" />
-                  {story.source === 'Reporter Submitted'
-                    ? t('review.reporterSubmitted', 'Reporter Submitted')
-                    : story.source === 'Editor Created'
+            {story.source && (() => {
+              const isUrl = story.source.startsWith('http');
+              const label = isUrl
+                ? t('review.source', 'Source')
+                : story.source === 'Reporter Submitted'
+                  ? t('review.reporterSubmitted', 'Reporter Submitted')
+                  : story.source === 'Editor Created'
                     ? t('review.editorCreated', 'Editor Created')
-                    : story.source}
-                </span>
-              )}
-            </Row>
-          )}
+                    : story.source;
+              if (isUrl) {
+                return (
+                  <div className="flex items-center justify-between gap-2 px-3 py-1 text-xs">
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {t('review.sourceLabel', 'Source')}
+                    </span>
+                    <a
+                      href={story.source}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex min-w-0 max-w-[60%] items-center justify-end gap-1 truncate text-xs text-primary hover:underline"
+                      title={story.source}
+                    >
+                      <ExternalLink size={10} />
+                      <span className="truncate">{label}</span>
+                    </a>
+                  </div>
+                );
+              }
+              return (
+                <MetaRow
+                  label={t('review.sourceLabel', 'Source')}
+                  value={label}
+                  title={story.source}
+                />
+              );
+            })()}
           </Section>
 
           {/* ─────────── Edition assignment (matrix) ─────────── */}
           <Section icon={BookOpen} title={t('review.assignEditionShort', 'Edition')}>
-            <EditionPlacementMatrix
-              storyId={id}
-              publicationDate={story?.publication_date}
-            />
+            <EditionPlacementMatrix storyId={id} />
           </Section>
 
-          {/* ─────────── Assignment ─────────── */}
-          <Section icon={UserCircle2} title={t('assignment.assignedTo', 'Assigned to')}>
-            <div className="flex items-center justify-between gap-2 px-3 pb-1">
+          {/* ─────────── Assignment ───────────
+              Compact: person icon + name (click → reassign popover) +
+              subtle method symbol + history clock. No section header, no
+              "Manual" chip — that information is conveyed by the icon. */}
+          <div className="mx-3 mb-3 flex items-center gap-1.5 rounded-lg border border-border bg-background/50 px-3 py-2">
+            <UserCircle2 size={14} className="shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
               <ReassignPopover
                 assigneeId={currentAssigneeId}
                 assigneeName={story?.assignee_name}
-                matchReason={story?.assigned_match_reason}
+                matchReason={null /* hide the badge — we render an icon instead */}
                 reviewers={reviewers}
                 onReassign={handleReassign}
               />
-              <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-                <DialogTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 gap-1 px-1.5 text-[11px]"
-                    title={t('assignment.history')}
-                  >
-                    <History size={12} />
-                  </Button>
-                </DialogTrigger>
+            </div>
+            {story?.assigned_match_reason === 'manual' ? (
+              <Pencil
+                size={10}
+                className="shrink-0 text-muted-foreground/70"
+                aria-label={t('assignment.matchReason.manual', 'Manually assigned')}
+                role="img"
+              />
+            ) : story?.assigned_match_reason ? (
+              <Sparkles
+                size={10}
+                className="shrink-0 text-muted-foreground/70"
+                aria-label={t(
+                  `assignment.matchReason.${story.assigned_match_reason}`,
+                  'Auto assigned'
+                )}
+                role="img"
+              />
+            ) : null}
+            <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                  title={t('assignment.history')}
+                  aria-label={t('assignment.history')}
+                >
+                  <History size={12} />
+                </Button>
+              </DialogTrigger>
                 <DialogContent className="sm:max-w-md">
                   <DialogHeader>
                     <DialogTitle>{t('assignment.history')}</DialogTitle>
@@ -478,8 +543,7 @@ export default function ReviewSidePanel({
                   </div>
                 </DialogContent>
               </Dialog>
-            </div>
-          </Section>
+          </div>
         </div>
         )}
 

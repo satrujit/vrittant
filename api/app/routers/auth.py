@@ -6,10 +6,12 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db
 from ..deps import create_access_token, get_current_user
+from ..models.org_config import OrgConfig
 from ..models.otp_send_log import OtpSendLog
 from ..models.user import User
 from ..schemas.auth import (
     MSG91LoginRequest,
+    OrgInfo,
     OTPRequest,
     OTPResend,
     OTPVerify,
@@ -397,7 +399,25 @@ async def msg91_login(body: MSG91LoginRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     db.refresh(user, ["org", "entitlements"])
-    return user
+
+    # Enrich org payload with the active category keys from org_configs so
+    # mobile (and any other client) can constrain the create-news category
+    # picker to the org's master list. The Organization model itself has no
+    # `categories` column — that lives in the sibling OrgConfig row.
+    response = UserResponse.model_validate(user)
+    if user.org and response.org is not None:
+        cfg = (
+            db.query(OrgConfig)
+            .filter(OrgConfig.organization_id == user.org.id)
+            .first()
+        )
+        if cfg and isinstance(cfg.categories, list):
+            response.org.categories = [
+                c.get("key")
+                for c in cfg.categories
+                if isinstance(c, dict) and c.get("is_active") and c.get("key")
+            ]
+    return response
 
 
 # ── Account deletion (store-compliance) ──

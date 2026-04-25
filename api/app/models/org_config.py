@@ -9,13 +9,13 @@ from ..utils.tz import now_ist
 
 DEFAULT_CATEGORIES = [
     {"key": "politics", "label": "Politics", "label_local": "ରାଜନୀତି", "is_active": True},
-    {"key": "sports", "label": "Sports", "label_local": "କ୍ରୀଡ଼ା", "is_active": True},
     {"key": "crime", "label": "Crime", "label_local": "ଅପରାଧ", "is_active": True},
-    {"key": "business", "label": "Business", "label_local": "ବ୍ୟବସାୟ", "is_active": True},
+    {"key": "accident", "label": "Accident", "label_local": "ଦୁର୍ଘଟଣା", "is_active": True},
+    {"key": "governance", "label": "Governance", "label_local": "ଶାସନ", "is_active": True},
     {"key": "entertainment", "label": "Entertainment", "label_local": "ମନୋରଞ୍ଜନ", "is_active": True},
-    {"key": "education", "label": "Education", "label_local": "ଶିକ୍ଷା", "is_active": True},
-    {"key": "health", "label": "Health", "label_local": "ସ୍ୱାସ୍ଥ୍ୟ", "is_active": True},
-    {"key": "technology", "label": "Technology", "label_local": "ପ୍ରଯୁକ୍ତି", "is_active": True},
+    {"key": "science", "label": "Science", "label_local": "ବିଜ୍ଞାନ", "is_active": True},
+    {"key": "sports", "label": "Sports", "label_local": "କ୍ରୀଡ଼ା", "is_active": True},
+    {"key": "general", "label": "General", "label_local": "ସାଧାରଣ", "is_active": True},
 ]
 
 DEFAULT_PUBLICATION_TYPES = [

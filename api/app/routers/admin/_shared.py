@@ -276,14 +276,26 @@ def _build_story_query(
         cutoff = now_ist() - timedelta(hours=24)
         query = query.filter(Story.created_at >= cutoff)
 
-    # Exclude stories already assigned to OTHER editions (keep those in the given edition)
+    # Exclude stories placed exclusively on OTHER editions. With multi-edition
+    # placements a single story may live on Ed 1, Ed 2, Ed 6 simultaneously —
+    # each bucket view must still show it. So we only drop stories that are on
+    # some other edition AND not on this one.
     if available_for_edition:
+        current_edition_story_ids = (
+            db.query(EditionPageStory.story_id)
+            .join(EditionPage, EditionPage.id == EditionPageStory.edition_page_id)
+            .filter(EditionPage.edition_id == available_for_edition)
+            .subquery()
+        )
         other_edition_story_ids = (
             db.query(EditionPageStory.story_id)
             .join(EditionPage, EditionPage.id == EditionPageStory.edition_page_id)
             .filter(EditionPage.edition_id != available_for_edition)
             .subquery()
         )
-        query = query.filter(~Story.id.in_(other_edition_story_ids))
+        query = query.filter(
+            ~Story.id.in_(other_edition_story_ids)
+            | Story.id.in_(current_edition_story_ids)
+        )
 
     return query

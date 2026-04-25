@@ -10,6 +10,25 @@ import { cn } from '@/lib/utils';
 
 const AVIMAT = 'Avimat';
 
+/** Today's date in IST as YYYY-MM-DD. The day editor's clock matters,
+ *  not the browser's UTC offset. */
+function todayIST() {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return fmt.format(new Date()); // en-CA gives YYYY-MM-DD
+}
+
+function shiftDate(iso, days) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
 /**
  * EditionPlacementMatrix — one row of cells, one per edition for the
  * story's publication date. Clicking a cell opens a popover to pick a
@@ -26,9 +45,13 @@ const AVIMAT = 'Avimat';
  *     mount; cells in the override set are immune to fan-out
  *   - All mutations PUT the full placement set in one call
  */
-export function EditionPlacementMatrix({ storyId, publicationDate }) {
+export function EditionPlacementMatrix({ storyId }) {
   const { t } = useI18n();
-  const today = publicationDate || new Date().toISOString().slice(0, 10);
+  // Default to today (IST), not the story's submission date — a story
+  // submitted yesterday can still be slated for tomorrow's edition.
+  // The reviewer can step the date forward/back to navigate days that
+  // have editions; un-placed stories simply stay in review status.
+  const [activeDate, setActiveDate] = useState(() => todayIST());
 
   const [editions, setEditions] = useState([]);
   const [placements, setPlacements] = useState([]);
@@ -36,12 +59,12 @@ export function EditionPlacementMatrix({ storyId, publicationDate }) {
   const [saving, setSaving] = useState(false);
   const [overrides, setOverrides] = useState(() => new Set());
 
-  // Initial load: editions for the date + current placements.
+  // Initial load + reload when active date changes.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     Promise.all([
-      listTodaysEditions(today),
+      listTodaysEditions(activeDate),
       storyId ? getStoryPlacements(storyId) : Promise.resolve([]),
     ])
       .then(([edData, plData]) => {
@@ -60,7 +83,22 @@ export function EditionPlacementMatrix({ storyId, publicationDate }) {
     return () => {
       cancelled = true;
     };
-  }, [today, storyId]);
+  }, [activeDate, storyId]);
+
+  // Sort: daily editions first by numeric suffix (Ed 1, Ed 2, …), Avimat last.
+  // Backend ordering is unstable; without this the cells render right-to-left
+  // which reads weirdly when reviewers think in "Ed 1 → Ed 6" terms.
+  const sortedEditions = useMemo(() => {
+    const numOf = (title) => {
+      const m = String(title || '').match(/(\d+)/);
+      return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
+    };
+    return [...editions].sort((a, b) => {
+      if (a.title === AVIMAT) return 1;
+      if (b.title === AVIMAT) return -1;
+      return numOf(a.title) - numOf(b.title);
+    });
+  }, [editions]);
 
   const placementByEdition = useMemo(() => {
     const m = new Map();
@@ -148,50 +186,87 @@ export function EditionPlacementMatrix({ storyId, publicationDate }) {
     commit(next);
   }, [editions, commit]);
 
-  if (loading) {
-    return <div className="px-3 pb-2 text-xs text-muted-foreground">{t('common.loading', 'Loading...')}</div>;
-  }
-  if (!editions.length) {
-    return (
-      <div className="px-3 pb-2 text-xs text-muted-foreground">
-        {t('placements.noEditions', { date: today })}
-      </div>
-    );
-  }
+  const isToday = activeDate === todayIST();
 
   return (
     <div className="px-3 pb-2">
-      <div className="mb-2 flex items-center gap-1.5">
+      {/* Row 1: date stepper. Stays on one line — no wrapping date. */}
+      <div className="mb-1.5 flex items-center gap-1">
         <button
           type="button"
-          onClick={applyAllDaily}
-          className="rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
+          onClick={() => setActiveDate((d) => shiftDate(d, -1))}
+          className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background text-[12px] leading-none hover:bg-accent"
+          aria-label="Previous day"
         >
-          {t('placements.allDaily')}
+          ‹
         </button>
+        <span className="whitespace-nowrap text-[11px] font-medium tabular-nums">
+          {activeDate}
+          {isToday && <span className="ml-1 text-[10px] font-normal text-muted-foreground">(today)</span>}
+        </span>
         <button
           type="button"
-          onClick={clearAll}
-          className="rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
+          onClick={() => setActiveDate((d) => shiftDate(d, 1))}
+          className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background text-[12px] leading-none hover:bg-accent"
+          aria-label="Next day"
         >
-          {t('placements.clear')}
+          ›
         </button>
-        {saving && (
-          <span className="text-[10px] text-muted-foreground">…</span>
+        {!isToday && (
+          <button
+            type="button"
+            onClick={() => setActiveDate(todayIST())}
+            className="ml-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
+          >
+            Today
+          </button>
         )}
+        <span className="flex-1" />
+        {saving && <span className="text-[10px] text-muted-foreground">saving…</span>}
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {editions.map((ed) => (
-          <Cell
-            key={ed.id}
-            edition={ed}
-            current={placementByEdition.get(ed.id)}
-            onPick={(p) => pickPage(ed.id, p)}
-            onDrop={() => dropFromEdition(ed.id)}
-            dropLabel={t('placements.drop')}
-          />
-        ))}
-      </div>
+
+      {/* Row 2: action chips. Separate row so they never collide with the date. */}
+      {editions.length > 0 && (
+        <div className="mb-2 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={applyAllDaily}
+            className="whitespace-nowrap rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
+          >
+            {t('placements.allDaily')}
+          </button>
+          <button
+            type="button"
+            onClick={clearAll}
+            className="whitespace-nowrap rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
+          >
+            {t('placements.clear')}
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-xs text-muted-foreground">{t('common.loading', 'Loading...')}</div>
+      ) : !editions.length ? (
+        <div className="text-xs text-muted-foreground">
+          {t('placements.noEditions', { date: activeDate })}
+        </div>
+      ) : (
+        // Fixed 4-column grid keeps cells aligned. Trailing slots stay empty
+        // rather than centring an orphan row, which reads cleaner.
+        <div className="grid grid-cols-4 gap-1.5">
+          {sortedEditions.map((ed) => (
+            <Cell
+              key={ed.id}
+              edition={ed}
+              current={placementByEdition.get(ed.id)}
+              onPick={(p) => pickPage(ed.id, p)}
+              onDrop={() => dropFromEdition(ed.id)}
+              dropLabel={t('placements.drop')}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -199,8 +274,8 @@ export function EditionPlacementMatrix({ storyId, publicationDate }) {
 function Cell({ edition, current, onPick, onDrop, dropLabel }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="flex flex-col items-center">
-      <div className="mb-0.5 max-w-[72px] truncate text-[10px] font-medium text-muted-foreground">
+    <div className="flex min-w-0 flex-col items-stretch">
+      <div className="mb-0.5 truncate text-center text-[10px] font-medium text-muted-foreground">
         {edition.title}
       </div>
       <Popover open={open} onOpenChange={setOpen}>
@@ -208,7 +283,7 @@ function Cell({ edition, current, onPick, onDrop, dropLabel }) {
           <button
             type="button"
             className={cn(
-              'min-w-[60px] rounded border border-border bg-background px-2 py-1 text-xs hover:bg-accent',
+              'w-full rounded border border-border bg-background px-1 py-1 text-center text-xs hover:bg-accent',
               current?.pageName && 'border-primary/40 bg-primary/5 font-medium text-foreground'
             )}
           >
