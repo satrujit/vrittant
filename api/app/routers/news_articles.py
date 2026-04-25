@@ -391,11 +391,14 @@ async def research_story_from_article(
     gen_category = article.category or "general"
     location = ""
 
-    # Odia uses ~4-6 tokens per word + buffer for JSON wrapper. Reasoning is
-    # disabled on this call (see `reasoning_effort=None` below) so we no longer
-    # need to over-budget for chain-of-thought tokens. Sarvam pro tier caps
-    # sarvam-30b output at 8192 tokens.
-    max_tokens = min(max(word_count * 6, 2048), 8192)
+    # Odia uses ~4-6 tokens per word + buffer for JSON wrapper + reasoning.
+    # We set `reasoning_effort="high"` below — counter-intuitively, that's
+    # the ONLY setting that produces a clean answer. With low/medium/null
+    # the model rambles in `reasoning_content` until it hits max_tokens and
+    # the actual `content` comes back empty. High effort budgets reasoning
+    # efficiently and leaves room for the JSON answer. Sarvam pro tier caps
+    # sarvam-30b output at 8192 tokens; we stay well below to avoid runaway.
+    max_tokens = min(max(word_count * 8, 4000), 8192)
 
     try:
         messages = [
@@ -407,13 +410,16 @@ async def research_story_from_article(
             "messages": messages,
             "temperature": 0.6,
             "max_tokens": max_tokens,
-            # Disable reasoning entirely for this call. sarvam-30b is a
-            # reasoning ("thinking") model; chain-of-thought tokens count
-            # toward `max_tokens`, so a verbose <think> block routinely ate
-            # the entire budget and left the JSON answer empty / cut off.
-            # We don't need reasoning for translate-and-summarize — a
-            # straight completion produces the JSON immediately.
-            "reasoning_effort": None,
+            # sarvam-30b is a reasoning model. Empirically tested matrix
+            # (2026-04-25) on a 400-word Odia generation prompt:
+            #   reasoning_effort=null   → content=0 chars, reasoning=8.5K, cutoff
+            #   reasoning_effort=low    → content=118,    reasoning=9.6K, cutoff
+            #   reasoning_effort=medium → content=0,      reasoning=8.7K, cutoff
+            #   reasoning_effort=high   → content=1217,   reasoning=4.2K, clean stop
+            # High forces tight, goal-directed reasoning that leaves room
+            # for the final JSON answer. The reasoning text itself goes to
+            # the separate `reasoning_content` field — we ignore it.
+            "reasoning_effort": "high",
         }
 
         # This is the "Research with AI" path — the user is creating a

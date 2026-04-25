@@ -1,9 +1,10 @@
 """Lock in two regressions in /admin/news-articles/{id}/research-story:
 
-1. The Sarvam call must send `reasoning_effort=None`. sarvam-30b is a
-   reasoning model — chain-of-thought tokens count toward `max_tokens`, so a
-   verbose <think> block routinely consumed the entire budget and left the
-   JSON answer empty / cut off mid-sentence. Disabling reasoning kills that.
+1. The Sarvam call must send `reasoning_effort="high"`. sarvam-30b is a
+   reasoning model and — counter-intuitively — only `high` effort produces a
+   clean answer. With low/medium/null the model rambles in `reasoning_content`
+   until `max_tokens` is hit and the actual `content` returns empty. High
+   effort budgets reasoning tightly and leaves room for the JSON answer.
 
 2. When the first response is Romanised Odia (`_odia_ratio < 0.6`), the
    retry path must not crash with `NameError`. The previous version called
@@ -64,7 +65,7 @@ def _ok_response(content: str) -> dict:
     }
 
 
-def test_research_story_sends_reasoning_effort_none(client, db, reviewer_with_token, article):
+def test_research_story_sends_reasoning_effort_high(client, db, reviewer_with_token, article):
     _, headers = reviewer_with_token
 
     valid_odia = '{"headline": "ମୁମ୍ବାଇର ଜଣେ ବ୍ୟକ୍ତି ଲଟେରୀ ଜିତିଲେ", "body": "ବାନ୍ଦ୍ରାର ୪୨ ବର୍ଷୀୟ ଅଟୋ ଚାଳକ ଏକ କୋଟି ଟଙ୍କା ଜିତିଲେ।", "category": "general", "location": "Mumbai"}'
@@ -81,7 +82,10 @@ def test_research_story_sends_reasoning_effort_none(client, db, reviewer_with_to
     assert mock_chat.await_count == 1
     payload = mock_chat.await_args.kwargs["payload"]
     assert "reasoning_effort" in payload, "Must send reasoning_effort to Sarvam"
-    assert payload["reasoning_effort"] is None, "reasoning_effort must be None to disable thinking"
+    assert payload["reasoning_effort"] == "high", (
+        "reasoning_effort must be 'high' — empirically the only setting that "
+        "produces non-empty content from sarvam-30b for this prompt size"
+    )
 
 
 def test_research_story_retry_does_not_crash_on_romanised_output(
@@ -110,9 +114,9 @@ def test_research_story_retry_does_not_crash_on_romanised_output(
         f"Retry path likely crashed."
     )
 
-    # Retry payload must also disable reasoning
+    # Retry payload must also use high reasoning effort
     retry_payload = chat_mock.await_args_list[1].kwargs["payload"]
-    assert retry_payload["reasoning_effort"] is None
+    assert retry_payload["reasoning_effort"] == "high"
     assert retry_payload["temperature"] == 0.4  # stricter retry temperature
 
     # Final response must be the valid Odia one (retry won)
