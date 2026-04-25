@@ -72,7 +72,11 @@ export default function BucketDetailPage() {
 
     Promise.all([
       fetchEdition(editionId),
-      fetchStories({ status: 'approved', limit: 500, available_for_edition: editionId }),
+      // #56 — include layout_completed alongside approved so stories don't
+      // vanish from the kanban the moment a layout is marked complete. The
+      // story is still part of the edition workflow until the edition is
+      // published; reviewers expect to see it in the assigned page bucket.
+      fetchStories({ status: 'approved,layout_completed', limit: 500, available_for_edition: editionId }),
     ])
       .then(([editionData, storiesData]) => {
         if (cancelled) return;

@@ -18,6 +18,7 @@ import { useI18n } from '../../i18n';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { setFontSizePref } from '../../utils/fontSizePreference';
 
 const BASE_FONTS = [
   { label: 'Default', value: '' },
@@ -106,6 +107,13 @@ export default function ReviewToolbar({
           className="h-7 w-16 rounded-md border border-border bg-card px-1.5 text-xs text-foreground outline-none ml-px"
           value={editor?.getAttributes('textStyle').fontSize || ''}
           onChange={(e) => {
+            // #55 — persist the user's pick as a personal preference so the
+            // *next* story they open also opens at this size. The mark below
+            // still stamps the inline style on the current selection (legacy
+            // behaviour reviewers depend on for callouts), and the wrapper
+            // CSS in ReviewEditor reads the preference on mount to set the
+            // base size for paragraphs without an inline override.
+            setFontSizePref(e.target.value);
             if (e.target.value) {
               editor?.chain().focus().setFontSize(e.target.value).run();
             } else {

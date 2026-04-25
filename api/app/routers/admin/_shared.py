@@ -239,7 +239,17 @@ def _build_story_query(
     if assigned_to:
         query = query.filter(Story.assigned_to == assigned_to)
     if status_filter:
-        query = query.filter(Story.status == status_filter)
+        # #56 — accept either a single status or a comma-separated list, mirroring
+        # exclude_status. The kanban view passes "approved,layout_completed" so
+        # stories don't disappear from the board the moment a layout is marked
+        # complete; layout_completed is still part of the editorial workflow
+        # (the editor can drag it back, swap it onto another page, etc.) so it
+        # belongs on the board until the edition is published.
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        if len(statuses) == 1:
+            query = query.filter(Story.status == statuses[0])
+        elif statuses:
+            query = query.filter(Story.status.in_(statuses))
     if exclude_status:
         # Accept either a single status or a comma-separated list
         excluded = [s.strip() for s in exclude_status.split(",") if s.strip()]
