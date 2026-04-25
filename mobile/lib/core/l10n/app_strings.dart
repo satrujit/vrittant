@@ -313,14 +313,6 @@ class AppStrings {
   }
 
   // ===========================================================================
-  // Auto-Polish
-  // ===========================================================================
-  String get autoPolish => isOdia ? 'ସ୍ୱୟଂଚାଳିତ ପରିଷ୍କାର' : 'Auto-Polish';
-  String get autoPolishDesc => isOdia
-      ? 'ରେକର୍ଡିଂ ପରେ AI ସ୍ୱୟଂଚାଳିତ ଭାବରେ ଲେଖାକୁ ଠିକ୍ କରିବ'
-      : 'AI automatically refines text after recording';
-
-  // ===========================================================================
   // Voice Enrollment
   // ===========================================================================
   String get voiceEnrollment => isOdia ? '\u0B38\u0B4D\u0B2C\u0B30 \u0B28\u0B3F\u0B2C\u0B28\u0B4D\u0B27\u0B28' : 'Voice Enrollment';
