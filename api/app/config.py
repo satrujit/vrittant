@@ -25,6 +25,15 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"
 
+    # Anthropic — used for /api/llm/generate-story (Haiku 4.5). The Sarvam
+    # backend stays primary for everything else; Anthropic was added because
+    # an A/B run on the generateStory prompt showed Haiku is faithful, fast,
+    # and obeys formatting rules where Sarvam-30b hallucinates and corrupts
+    # numeral scripts. See docs/ai-model-routing.md (TODO if we add more
+    # routing decisions). Empty key = endpoint falls back to Sarvam-only.
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_BASE_URL: str = "https://api.anthropic.com"
+
     # OTP provider — "twilio" (default) or "msg91". Switch via env without code changes.
     OTP_PROVIDER: str = "twilio"
 

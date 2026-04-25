@@ -320,6 +320,52 @@ class SarvamApiService {
   }
 
   // ---------------------------------------------------------------------------
+  // Server-driven story generation
+  // ---------------------------------------------------------------------------
+
+  /// Asks the backend to weave the reporter's raw notes into a publishable
+  /// Odia article body.
+  ///
+  /// This endpoint owns the model choice (Claude Haiku 4.5 with Sarvam
+  /// fallback), the system prompt, and post-processing (Odia digit
+  /// normalization, danda spacing). The mobile client passes only the
+  /// raw notes — no model name, no prompt scaffolding.
+  ///
+  /// Pass [storyId] when generating for a specific story so the LLM call
+  /// is attributed to it in the cost ledger; omit for ad-hoc generation.
+  ///
+  /// Returns the polished article body. The model that actually served
+  /// (primary vs fallback) is logged server-side; we don't surface it to
+  /// the user. Throws [SarvamApiException] on failure (502 from server
+  /// when both providers fail).
+  Future<String> generateStory({
+    required String notes,
+    String? storyId,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/api/llm/generate-story',
+        data: {
+          'notes': notes,
+          if (storyId != null) 'story_id': storyId,
+        },
+        options: Options(
+          contentType: 'application/json',
+          // Story generation can take ~5–12 s in steady state. Give the
+          // primary call ~30 s, then if Anthropic times out the backend
+          // still has its own 60 s budget for the Sarvam fallback.
+          receiveTimeout: const Duration(seconds: 90),
+        ),
+      );
+      return (response.data?['body'] as String?) ?? '';
+    } on DioException catch (e) {
+      throw _handleDioError(e, 'Generate story');
+    } catch (e) {
+      throw SarvamApiException(message: 'Generate story failed: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // OCR via Sarvam Document Intelligence (backend proxy)
   // ---------------------------------------------------------------------------
 
