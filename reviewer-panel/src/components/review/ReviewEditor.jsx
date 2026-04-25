@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   FileText,
   Loader2,
@@ -13,6 +13,8 @@ import {
   Languages,
   SendHorizonal,
   Download,
+  ChevronLeft,
+  ChevronRight,
   X,
 } from 'lucide-react';
 import { EditorContent } from '@tiptap/react';
@@ -74,6 +76,52 @@ export default function ReviewEditor({
 }) {
   const { t } = useI18n();
   const [dragActive, setDragActive] = useState(false);
+  // #53 — lightbox preview state. Holds the index into imageFiles of the
+  // currently open photo (null when closed). Indexed (not URL) so the
+  // ←/→ arrows can walk through the attachment grid without re-deriving
+  // position from the URL on each press.
+  const [previewIdx, setPreviewIdx] = useState(null);
+  const closePreview = () => setPreviewIdx(null);
+  const previewImage = previewIdx != null ? imageFiles[previewIdx] : null;
+  const showPrev = () => {
+    if (previewIdx == null || imageFiles.length === 0) return;
+    setPreviewIdx((i) => (i - 1 + imageFiles.length) % imageFiles.length);
+  };
+  const showNext = () => {
+    if (previewIdx == null || imageFiles.length === 0) return;
+    setPreviewIdx((i) => (i + 1) % imageFiles.length);
+  };
+  // Keyboard nav: Esc to close, ←/→ to step. Only wired while a preview
+  // is open so it doesn't fight the editor's own arrow handling.
+  useEffect(() => {
+    if (previewIdx == null) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') closePreview();
+      else if (e.key === 'ArrowLeft') showPrev();
+      else if (e.key === 'ArrowRight') showNext();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [previewIdx, imageFiles.length]);
+
+  // Force-download a photo via blob fetch so the browser doesn't just
+  // navigate to it (GCS serves photos with inline content-disposition).
+  const downloadImage = async (img, fallbackIndex) => {
+    try {
+      const res = await fetch(img.url);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = img.name || `image-${fallbackIndex + 1}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(img.url, '_blank');
+    }
+  };
 
   // Forward dropped/pasted files into the same upload pipeline as the
   // file input, by synthesising a minimal `e.target.files` shape.
@@ -140,8 +188,8 @@ export default function ReviewEditor({
         {dragActive && (
           <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/10 backdrop-blur-[1px]">
             <div className="flex items-center gap-2 rounded-md bg-card px-4 py-2 text-sm font-semibold text-primary shadow-lg">
-              <ImageIcon size={16} />
-              {t('review.dropToUpload', 'Drop images to upload')}
+              <Paperclip size={16} />
+              {t('review.dropToUpload', 'Drop files to attach')}
             </div>
           </div>
         )}
@@ -208,10 +256,13 @@ export default function ReviewEditor({
               <ImageIcon size={14} />
               {mediaFiles.length > 0 ? mediaFiles.length : t('review.attachments', 'Attachments ({count})').replace('{count}', '0')}
             </span>
+            {/* #44 — accept document types alongside images. The backend
+                /upload-image endpoint discriminates by extension and stores
+                photo/document accordingly, so the same handler covers both. */}
             <input
               ref={imageInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf"
               multiple
               className="hidden"
               onChange={handleImageUpload}
@@ -221,8 +272,8 @@ export default function ReviewEditor({
               onClick={() => imageInputRef.current?.click()}
               disabled={uploadingImage}
             >
-              {uploadingImage ? <Loader2 size={10} className="animate-spin" /> : <ImageIcon size={10} />}
-              {t('review.uploadImage', 'Upload Image')}
+              {uploadingImage ? <Loader2 size={10} className="animate-spin" /> : <Paperclip size={10} />}
+              {t('review.attach', 'Attach')}
             </button>
           </h4>
           {/* Cap the combined attachment region so a long photo grid or a
@@ -236,39 +287,36 @@ export default function ReviewEditor({
               {imageFiles.map((img, i) => (
                 <div key={img.paragraphId || i} className="group relative aspect-[4/3] overflow-hidden rounded-md border border-border bg-background">
                   <img src={img.url} alt={img.name || `Image ${i + 1}`} className="size-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
-                  {/* Download overlay covers the IMAGE area but stops short of
-                      the top-right corner where the X button lives, so the
-                      button can't be eaten by the link's hit area regardless
-                      of stacking quirks. */}
-                  <a
-                    href={img.url}
-                    download={img.name || `image-${i + 1}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
-                    style={handleAttachmentDelete && img.paragraphId
-                      ? { clipPath: 'polygon(0 0, calc(100% - 28px) 0, calc(100% - 28px) 28px, 100% 28px, 100% 100%, 0 100%)' }
-                      : undefined}
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      try {
-                        const res = await fetch(img.url);
-                        const blob = await res.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = img.name || `image-${i + 1}.jpg`;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                        URL.revokeObjectURL(url);
-                      } catch {
-                        window.open(img.url, '_blank');
-                      }
-                    }}
+                  {/* #53 — Click the image to open a fullscreen lightbox
+                      (was: click downloads). Download moved to its own
+                      icon button next to X so reporters can still grab a
+                      copy without waiting on the preview. The button
+                      overlay sits BELOW the corner controls (z-10 vs z-30)
+                      and is clipped away from the corners so the controls
+                      stay clickable. */}
+                  <button
+                    type="button"
+                    aria-label={t('review.previewImage', 'Preview image')}
+                    title={t('review.previewImage', 'Preview image')}
+                    className="absolute inset-0 z-10 flex cursor-zoom-in items-center justify-center border-none bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+                    style={{ clipPath: 'polygon(0 0, calc(100% - 60px) 0, calc(100% - 60px) 28px, 100% 28px, 100% 100%, 0 100%)' }}
+                    onClick={() => setPreviewIdx(i)}
                   >
-                    <Download size={20} className="text-white" />
-                  </a>
+                    <ImageIcon size={20} className="text-white" />
+                  </button>
+                  <button
+                    type="button"
+                    title={t('review.download', 'Download')}
+                    aria-label={t('review.download', 'Download')}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      downloadImage(img, i);
+                    }}
+                    className="absolute right-8 top-1 z-30 inline-flex size-6 cursor-pointer items-center justify-center rounded-full border border-white/40 bg-black/70 text-white shadow-md transition-colors hover:bg-primary"
+                  >
+                    <Download size={12} />
+                  </button>
                   {handleAttachmentDelete && img.paragraphId && (
                     <button
                       type="button"
@@ -463,6 +511,83 @@ export default function ReviewEditor({
 
       {/* Related stories panel — collapsed by default */}
       <RelatedStoriesPanel storyId={story?.id} headline={story?.headline} />
+
+      {/* #53 — Image preview lightbox. Renders inline (no portal) since
+          the editor pane already establishes a high-stacking context;
+          z-[100] keeps it above the bottom-bar FAB. Backdrop click
+          closes; ←/→/Esc handled by the keydown effect above. */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-4"
+          onClick={closePreview}
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('review.previewImage', 'Preview image')}
+        >
+          <button
+            type="button"
+            title={t('common.close', 'Close')}
+            aria-label={t('common.close', 'Close')}
+            className="absolute right-4 top-4 inline-flex size-10 items-center justify-center rounded-full border border-white/30 bg-black/60 text-white transition-colors hover:bg-red-500"
+            onClick={(e) => { e.stopPropagation(); closePreview(); }}
+          >
+            <X size={20} />
+          </button>
+          <a
+            href={previewImage.url}
+            target="_blank"
+            rel="noreferrer"
+            title={t('review.download', 'Download')}
+            aria-label={t('review.download', 'Download')}
+            className="absolute right-16 top-4 inline-flex size-10 items-center justify-center rounded-full border border-white/30 bg-black/60 text-white transition-colors hover:bg-primary"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              downloadImage(previewImage, previewIdx);
+            }}
+          >
+            <Download size={18} />
+          </a>
+          {imageFiles.length > 1 && (
+            <>
+              <button
+                type="button"
+                title={t('common.previous', 'Previous')}
+                aria-label={t('common.previous', 'Previous')}
+                className="absolute left-4 top-1/2 inline-flex size-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-black/60 text-white transition-colors hover:bg-primary"
+                onClick={(e) => { e.stopPropagation(); showPrev(); }}
+              >
+                <ChevronLeft size={24} />
+              </button>
+              <button
+                type="button"
+                title={t('common.next', 'Next')}
+                aria-label={t('common.next', 'Next')}
+                className="absolute right-4 top-1/2 inline-flex size-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-black/60 text-white transition-colors hover:bg-primary"
+                onClick={(e) => { e.stopPropagation(); showNext(); }}
+              >
+                <ChevronRight size={24} />
+              </button>
+            </>
+          )}
+          <img
+            src={previewImage.url}
+            alt={previewImage.name || `Image ${previewIdx + 1}`}
+            className="max-h-full max-w-full select-none object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          {(previewImage.name || imageFiles.length > 1) && (
+            <div
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-black/60 px-3 py-1 text-xs font-medium text-white"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {previewImage.name ? `${previewImage.name}` : ''}
+              {previewImage.name && imageFiles.length > 1 ? ' · ' : ''}
+              {imageFiles.length > 1 ? `${previewIdx + 1} / ${imageFiles.length}` : ''}
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 }

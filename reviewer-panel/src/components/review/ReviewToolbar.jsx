@@ -32,6 +32,21 @@ const BASE_FONTS = [
   { label: 'Courier New', value: 'Courier New' },
 ];
 
+// Font sizes — covers comfortable reading sizes for users who need
+// larger text without going overboard (anything past 32px starts
+// breaking the column layout in the editor pane).
+const FONT_SIZES = [
+  { label: 'Size', value: '' },
+  { label: '12', value: '12px' },
+  { label: '14', value: '14px' },
+  { label: '16', value: '16px' },
+  { label: '18', value: '18px' },
+  { label: '20', value: '20px' },
+  { label: '24', value: '24px' },
+  { label: '28', value: '28px' },
+  { label: '32', value: '32px' },
+];
+
 const PRAGATIVADI_FONTS = [
   { label: 'Pragativadi 1', value: 'Pragativadi 1' },
   { label: 'Pragativadi 2', value: 'Pragativadi 2' },
@@ -85,6 +100,22 @@ export default function ReviewToolbar({
         >
           {FONT_FAMILIES.map((f) => (
             <option key={f.value} value={f.value}>{f.label}</option>
+          ))}
+        </select>
+        <select
+          className="h-7 w-16 rounded-md border border-border bg-card px-1.5 text-xs text-foreground outline-none ml-px"
+          value={editor?.getAttributes('textStyle').fontSize || ''}
+          onChange={(e) => {
+            if (e.target.value) {
+              editor?.chain().focus().setFontSize(e.target.value).run();
+            } else {
+              editor?.chain().focus().unsetFontSize().run();
+            }
+          }}
+          title={t('review.fontSize') || 'Font size'}
+        >
+          {FONT_SIZES.map((s) => (
+            <option key={s.value} value={s.value}>{s.label}</option>
           ))}
         </select>
         <div className="mx-1 h-5 w-px bg-border" />

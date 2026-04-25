@@ -669,6 +669,25 @@ def admin_delete_story(
 # POST /admin/stories/{story_id}/upload-image
 # ---------------------------------------------------------------------------
 
+# Allowed extensions per attachment kind. Driven off file extension because
+# UploadFile.content_type is set by the client and unreliable (browsers send
+# application/octet-stream for unknown types, mobile uploaders sometimes
+# omit the field entirely).
+#
+# Issue #44 — was image-only; we now accept the document formats that
+# reporters routinely forward over WhatsApp (PDF / Word / spreadsheets /
+# plain text). Audio + video stay rejected here because they have separate
+# upload paths and different storage/quota tradeoffs.
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+_DOC_EXTS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv", ".rtf"}
+_ALLOWED_EXTS = _IMAGE_EXTS | _DOC_EXTS
+
+# 10 MB worked fine when this only handled phone photos, but PDFs from a
+# reporter's scan/print workflow routinely run larger. Bump to 25 MB which
+# still fits comfortably in a single Cloud Run request and one GCS PUT.
+_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
 @router.post("/stories/{story_id}/upload-image")
 async def upload_story_image(
     story_id: str,
@@ -677,6 +696,14 @@ async def upload_story_image(
     user: User = Depends(require_reviewer),
     org_id: str = Depends(get_current_org_id),
 ):
+    """Attach a file to a story.
+
+    Route name is ``upload-image`` for backwards compatibility with older
+    panel/mobile builds, but the endpoint accepts both images *and*
+    documents — see _ALLOWED_EXTS above. The stored ``media_type``
+    discriminates ("photo" vs "document") so the rendering UI can pick
+    the right thumbnail/icon.
+    """
     from ...services.storage import save_file
 
     story = db.query(Story).filter(Story.id == story_id, Story.organization_id == org_id, Story.deleted_at.is_(None)).first()
@@ -684,14 +711,22 @@ async def upload_story_image(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
 
     ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
-        raise HTTPException(status_code=400, detail=f"File type {ext} not allowed")
+    if ext not in _ALLOWED_EXTS:
+        raise HTTPException(status_code=400, detail=f"File type {ext or '(none)'} not allowed")
 
     contents = await file.read()
-    if len(contents) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
+    if len(contents) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large (max {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB)",
+        )
 
-    media_url = save_file(contents, file.filename or "image.jpg", subfolder="story-images")
+    is_image = ext in _IMAGE_EXTS
+    media_type = "photo" if is_image else "document"
+    subfolder = "story-images" if is_image else "story-documents"
+    fallback_name = "image.jpg" if is_image else f"document{ext or '.bin'}"
+
+    media_url = save_file(contents, file.filename or fallback_name, subfolder=subfolder)
 
     # Append as a new paragraph with media_path. Generate an `id` so the
     # reviewer-panel attachment-delete UI can target this paragraph
@@ -702,8 +737,8 @@ async def upload_story_image(
         "text": "",
         "type": "media",
         "media_path": media_url,
-        "media_type": "photo",
-        "media_name": file.filename or "image",
+        "media_type": media_type,
+        "media_name": file.filename or fallback_name,
     })
     story.paragraphs = paragraphs
     story.updated_at = now_ist()
@@ -711,7 +746,7 @@ async def upload_story_image(
     db.commit()
     db.refresh(story)
 
-    return {"media_url": media_url, "message": "Image uploaded"}
+    return {"media_url": media_url, "message": "Attachment uploaded", "media_type": media_type}
 
 
 # ---------------------------------------------------------------------------
