@@ -110,6 +110,11 @@ class EditionTemplate(BaseModel):
     pages: list[EditionTemplatePage]
 
 
+class WhitelistedContributorItem(BaseModel):
+    email: str = Field(..., min_length=3, max_length=320)
+    name: str = Field("", max_length=200)
+
+
 class UpdateOrgConfigRequest(BaseModel):
     categories: Optional[list[CategoryItem]] = None
     publication_types: Optional[list[PublicationTypeItem]] = None
@@ -119,6 +124,9 @@ class UpdateOrgConfigRequest(BaseModel):
     # Geographic edition names (e.g. ["Bhubaneswar", "Coastal Odisha"]).
     # See OrgConfig.edition_names for the full contract.
     edition_names: Optional[list[str]] = None
+    # Inbound-email allowlists. See OrgConfig docstrings on each.
+    email_forwarders: Optional[list[str]] = None
+    whitelisted_contributors: Optional[list[WhitelistedContributorItem]] = None
     default_language: Optional[str] = None
 
 
@@ -129,6 +137,8 @@ class OrgConfigResponse(BaseModel):
     priority_levels: list[dict] = []
     edition_schedule: list[EditionTemplate] = Field(default_factory=list)
     edition_names: list[str] = Field(default_factory=list)
+    email_forwarders: list[str] = Field(default_factory=list)
+    whitelisted_contributors: list[WhitelistedContributorItem] = Field(default_factory=list)
     default_language: str = "odia"
 
     model_config = {"from_attributes": True}

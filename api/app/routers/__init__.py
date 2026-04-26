@@ -1,6 +1,6 @@
 """All routers, exposed as a single mount-table for main.py."""
 from . import (
-    admin, auth, editions, files, generate_story, internal,
+    admin, auth, editions, email_intake, files, generate_story, internal,
     news_articles, sarvam, speaker, stories, templates,
     version, webhooks_whatsapp, widgets,
 )
@@ -21,4 +21,5 @@ ROUTERS = [
     (widgets.router,          None,        None),
     (webhooks_whatsapp.router, None,       None),
     (internal.router,         None,        None),
+    (email_intake.router,     None,        None),
 ]

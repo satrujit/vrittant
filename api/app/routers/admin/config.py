@@ -73,6 +73,34 @@ def update_org_config(
                 seen.add(name)
                 cleaned.append(name)
         config.edition_names = cleaned
+    if body.email_forwarders is not None:
+        # Lower-case + strip + de-dupe. Email comparison is
+        # case-insensitive in practice; keeping a single canonical form
+        # prevents "Pragativadi@Gmail.com" from accidentally bypassing
+        # the allowlist when the same gateway forwards in lower-case.
+        seen = set()
+        cleaned = []
+        for raw in body.email_forwarders:
+            addr = (raw or "").strip().lower()
+            if addr and "@" in addr and addr not in seen:
+                seen.add(addr)
+                cleaned.append(addr)
+        config.email_forwarders = cleaned
+    if body.whitelisted_contributors is not None:
+        # Same lower-case + dedupe rule applied per-entry email. Empty
+        # name is allowed (gets backfilled on first matched email).
+        seen = set()
+        cleaned = []
+        for entry in body.whitelisted_contributors:
+            email = (entry.email or "").strip().lower()
+            if not email or "@" not in email or email in seen:
+                continue
+            seen.add(email)
+            cleaned.append({
+                "email": email,
+                "name": (entry.name or "").strip(),
+            })
+        config.whitelisted_contributors = cleaned
     if body.default_language is not None:
         config.default_language = body.default_language
     db.commit()

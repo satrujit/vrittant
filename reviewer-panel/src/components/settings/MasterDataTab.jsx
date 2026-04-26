@@ -145,9 +145,35 @@ function MasterDataTab() {
     { key: 'is_active', label: t('settings.masterData.active'), type: 'boolean' },
   ], [t]);
 
+  // Email Forwarders: backend stores List[str] but the editor is the
+  // generic row-of-fields component, so we wrap each string in a
+  // {email: …} row and unwrap before sending. Lets us reuse the same
+  // add/remove UX as the other tabs.
+  const forwarderColumns = useMemo(() => [
+    { key: 'email', label: t('settings.masterData.forwarderEmail'), type: 'text', addLabel: t('settings.masterData.addRow') },
+  ], [t]);
+
+  const contributorColumns = useMemo(() => [
+    { key: 'email', label: t('settings.masterData.contributorEmail'), type: 'text', addLabel: t('settings.masterData.addRow') },
+    { key: 'name', label: t('settings.masterData.contributorName'), type: 'text' },
+  ], [t]);
+
   useEffect(() => {
     fetchOrgConfig()
-      .then(setConfig)
+      .then((cfg) => {
+        if (!cfg) {
+          setConfig(cfg);
+          return;
+        }
+        // Wrap email_forwarders strings as {email} rows so EditableTable
+        // can edit them. We unwrap before save in handleSave.
+        setConfig({
+          ...cfg,
+          email_forwarders: (cfg.email_forwarders || []).map((s) =>
+            typeof s === 'string' ? { email: s } : s
+          ),
+        });
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -156,7 +182,24 @@ function MasterDataTab() {
     setSaving(true);
     setMessage({ type: '', text: '' });
     try {
-      const updated = await updateOrgConfig(config);
+      // Unwrap the {email} row format used by the table editor back
+      // into the plain List[str] the backend expects for forwarders.
+      // Drop empty rows so an admin who clicked "+ Add" without
+      // typing doesn't end up with a junk allowlist entry.
+      const payload = {
+        ...config,
+        email_forwarders: (config.email_forwarders || [])
+          .map((row) => (typeof row === 'string' ? row : row?.email || ''))
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean),
+        whitelisted_contributors: (config.whitelisted_contributors || [])
+          .map((row) => ({
+            email: (row?.email || '').trim().toLowerCase(),
+            name: (row?.name || '').trim(),
+          }))
+          .filter((row) => row.email && row.email.includes('@')),
+      };
+      const updated = await updateOrgConfig(payload);
       setConfig(updated);
       await refreshUser();
       await refreshConfig();
@@ -195,6 +238,8 @@ function MasterDataTab() {
           <TabsTrigger value="publication_types">{t('settings.masterData.publicationTypes')}</TabsTrigger>
           <TabsTrigger value="page_suggestions">{t('settings.masterData.pageSuggestions')}</TabsTrigger>
           <TabsTrigger value="priority_levels">{t('settings.masterData.priorityLevels')}</TabsTrigger>
+          <TabsTrigger value="email_forwarders">{t('settings.masterData.emailForwarders')}</TabsTrigger>
+          <TabsTrigger value="contributors">{t('settings.masterData.whitelistedContributors')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="categories">
@@ -243,6 +288,38 @@ function MasterDataTab() {
                 columns={priorityColumns}
                 rows={config.priority_levels || []}
                 onChange={(rows) => setConfig((c) => ({ ...c, priority_levels: rows }))}
+                emptyMessage={t('settings.masterData.noItems')}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="email_forwarders">
+          <Card>
+            <CardContent className="pt-6 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                {t('settings.masterData.emailForwardersHelp', 'Gateway addresses we trust to forward inbound reporter email into Vrittant. A message is dropped silently if the forwarding gateway (extracted from the Received: chain) is not in this list.')}
+              </p>
+              <EditableTable
+                columns={forwarderColumns}
+                rows={config.email_forwarders || []}
+                onChange={(rows) => setConfig((c) => ({ ...c, email_forwarders: rows }))}
+                emptyMessage={t('settings.masterData.noItems')}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="contributors">
+          <Card>
+            <CardContent className="pt-6 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                {t('settings.masterData.whitelistedContributorsHelp', 'Email addresses of non-reporter contributors (columnists, external editorial writers) whose stories should be accepted. The first email from each new address auto-creates a passive reporter record so attribution and history work the same as for a regular reporter.')}
+              </p>
+              <EditableTable
+                columns={contributorColumns}
+                rows={config.whitelisted_contributors || []}
+                onChange={(rows) => setConfig((c) => ({ ...c, whitelisted_contributors: rows }))}
                 emptyMessage={t('settings.masterData.noItems')}
               />
             </CardContent>
