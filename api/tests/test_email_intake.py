@@ -83,6 +83,7 @@ def org_setup(db):
 def _payload(*, msg_id="<msg-1@gmail.com>", subject="Test story",
              from_addr=REPORTER_EMAIL, from_name="Subash Sahoo",
              to_addr=f"{ORG_SLUG}@desk.vrittant.in",
+             to_header=None,
              forwarder=FORWARDER, text="Hello world",
              spam_score="0.1"):
     """Build a SendGrid-shaped multipart payload mirroring the real
@@ -95,7 +96,13 @@ def _payload(*, msg_id="<msg-1@gmail.com>", subject="Test story",
     The parser must skip line (1) (matches our INBOUND_EMAIL_DOMAIN)
     and return line (2)'s gateway. Tests would have falsely passed
     with a single-line fixture, which is what masked the original bug.
+
+    The default ``to_header`` mirrors real Gmail-forwarded mail: the
+    HEADER To: still names the original recipient (the gateway
+    inbox), while the SMTP envelope carries our subdomain address.
+    Tests can override ``to_header`` for direct-send cases.
     """
+    effective_to_header = to_header if to_header is not None else f"{forwarder}"
     headers = (
         f"Received: by mx.sendgrid.net with SMTP id sg1; "
         f"for <{to_addr}>; Sat, 26 Apr 2026 12:00:00 +0000\r\n"
@@ -103,10 +110,11 @@ def _payload(*, msg_id="<msg-1@gmail.com>", subject="Test story",
         f"for <{forwarder}>; Sat, 26 Apr 2026 11:59:50 +0000\r\n"
         f"Message-ID: {msg_id}\r\n"
         f"From: {from_name} <{from_addr}>\r\n"
-        f"To: {to_addr}\r\n"
+        f"To: {effective_to_header}\r\n"
     )
     return {
-        "to": to_addr,
+        "to": effective_to_header,
+        "envelope": f'{{"to":["{to_addr}"],"from":"{from_addr}"}}',
         "from": f"{from_name} <{from_addr}>",
         "subject": subject,
         "text": text,
@@ -331,3 +339,46 @@ def test_org_slug_from_to_handles_display_name_and_case():
         "desk.vrittant.in",
     ) == "pragativadi"
     assert org_slug_from_to("foo@otherdomain.com", "desk.vrittant.in") is None
+
+
+def test_candidate_destinations_prefers_envelope_over_header():
+    """SendGrid's `to` header on forwarded mail is the original
+    recipient (gateway inbox); the envelope carries the real
+    SendGrid-bound address. The router must try envelope first so
+    Gmail-forwarded mail routes to the right org instead of being
+    dropped as dropped_org (which is exactly the bug this fixes)."""
+    from app.services.email_intake import candidate_destinations
+    envelope = '{"to":["pragativadi@desk.vrittant.in"],"from":"x@y.com"}'
+    header = "satrujitm5@gmail.com"
+    result = candidate_destinations(envelope, header)
+    assert result == ["pragativadi@desk.vrittant.in", "satrujitm5@gmail.com"]
+
+
+def test_candidate_destinations_falls_back_to_header_on_bad_envelope():
+    """Malformed envelope JSON shouldn't crash intake — fall through
+    to the header so direct-send mail still works."""
+    from app.services.email_intake import candidate_destinations
+    assert candidate_destinations("not-json", "x@desk.vrittant.in") == ["x@desk.vrittant.in"]
+    assert candidate_destinations("", "x@desk.vrittant.in") == ["x@desk.vrittant.in"]
+    assert candidate_destinations(None, "x@desk.vrittant.in") == ["x@desk.vrittant.in"]
+
+
+def test_routes_forwarded_mail_via_envelope_destination(
+    client, db, org_setup
+):
+    """End-to-end: a Gmail-forwarded email whose To: header is the
+    gateway inbox but whose SMTP envelope is our subdomain. Without
+    the envelope-first routing this would drop as dropped_org."""
+    payload = _payload(
+        # Header To: points at the original gateway (Gmail's behaviour
+        # when forwarding). Envelope.to (default in _payload) is the
+        # real desk.vrittant.in destination.
+        to_header="satrujitm5@gmail.com",
+    )
+    resp = client.post(f"/internal/email/inbound?token={TOKEN}", data=payload)
+    assert resp.status_code == 200
+
+    log = db.query(EmailIntakeLog).one()
+    assert log.status == "accepted"
+    assert log.organization_id == ORG_ID
+    assert db.query(Story).count() == 1
