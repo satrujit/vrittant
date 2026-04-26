@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import {
@@ -7,7 +7,6 @@ import {
   listTodaysEditions,
 } from '../../services/api/editions.js';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 const AVIMAT = 'Avimat';
@@ -81,7 +80,22 @@ export function EditionPlacementMatrix({ storyId }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [overrides, setOverrides] = useState(() => new Set());
-  const [datePopoverOpen, setDatePopoverOpen] = useState(false);
+  // Hidden native date input drives the calendar; clicking the visible
+  // date label calls .showPicker() so the OS picker appears anchored
+  // to the label without a custom popover overlay (which previously
+  // drew over the edition cells and looked awkward).
+  const dateInputRef = useRef(null);
+  const openDatePicker = () => {
+    const el = dateInputRef.current;
+    if (!el) return;
+    if (typeof el.showPicker === 'function') {
+      el.showPicker();
+    } else {
+      // Fallback for browsers without showPicker (older Safari/FF).
+      el.focus();
+      el.click();
+    }
+  };
 
   // Initial load + reload when active date changes.
   useEffect(() => {
@@ -211,45 +225,34 @@ export function EditionPlacementMatrix({ storyId }) {
 
   return (
     <div className="px-4 pb-3">
-      {/* Header row: clickable date (opens calendar) + Clear All link.
-          Date sits in primary colour so it reads as the focal point. */}
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <Popover open={datePopoverOpen} onOpenChange={setDatePopoverOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-md border-none bg-transparent p-0 text-sm font-semibold text-primary transition-opacity hover:opacity-80"
-              title={t('placements.changeDate', 'Change date')}
-            >
-              <CalendarIcon size={14} />
-              <span>{formatLongDate(activeDate)}</span>
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-auto p-2">
-            <Input
-              type="date"
-              autoFocus
-              className="h-8 w-[160px] text-xs"
-              value={activeDate}
-              onChange={(e) => {
-                if (e.target.value) {
-                  setActiveDate(e.target.value);
-                  setDatePopoverOpen(false);
-                }
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setActiveDate(todayIST());
-                setDatePopoverOpen(false);
-              }}
-              className="mt-1.5 w-full rounded-md border border-border bg-background px-2 py-1 text-[11px] hover:bg-accent"
-            >
-              {t('placements.today', 'Today')}
-            </button>
-          </PopoverContent>
-        </Popover>
+      {/* Header row: clickable date (opens native calendar) + Clear All
+          link. The hidden input anchors the OS picker visually next to
+          the date label. */}
+      <div className="relative mb-3 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={openDatePicker}
+          className="inline-flex items-center gap-1.5 rounded-md border-none bg-transparent p-0 text-sm font-semibold text-primary transition-opacity hover:opacity-80"
+          title={t('placements.changeDate', 'Change date')}
+        >
+          <CalendarIcon size={14} />
+          <span>{formatLongDate(activeDate)}</span>
+        </button>
+        <input
+          ref={dateInputRef}
+          type="date"
+          value={activeDate}
+          onChange={(e) => {
+            if (e.target.value) setActiveDate(e.target.value);
+          }}
+          // Visually hidden but kept in flow under the label so the
+          // browser's calendar overlay anchors to roughly the right
+          // spot. tabIndex=-1 keeps it out of keyboard focus order;
+          // the visible button is the focusable trigger.
+          tabIndex={-1}
+          aria-hidden="true"
+          className="pointer-events-none absolute left-0 top-0 h-0 w-0 opacity-0"
+        />
 
         <div className="flex items-center gap-2">
           {saving && (
@@ -296,27 +299,34 @@ function Cell({ edition, current, onPick, onDrop, dropLabel }) {
   const display = shortPageLabel(current?.pageName);
   const isPlaced = !!current?.pageId;
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'group flex min-w-0 cursor-pointer flex-col items-start gap-0.5 rounded border-none bg-transparent p-0 text-left transition-opacity hover:opacity-80',
-          )}
-        >
-          <span className="truncate text-[13px] font-semibold text-foreground" title={edition.title}>
-            {edition.title}
-          </span>
-          <span
-            className={cn(
-              'text-[26px] font-semibold leading-none tabular-nums',
-              isPlaced ? 'text-foreground' : 'text-muted-foreground/60',
-            )}
+    // The wrapper enforces the grid column width so the title can
+    // truncate without spilling over its neighbour. Without
+    // `min-w-0` the flex item refuses to shrink past its content
+    // (CSS default), which is what caused "Daily - 26 Apr 2026" to
+    // bleed into the next two cells.
+    <div className="flex min-w-0 max-w-full flex-col">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="group flex w-full min-w-0 max-w-full cursor-pointer flex-col items-start gap-0.5 rounded border-none bg-transparent p-0 text-left transition-opacity hover:opacity-80"
           >
-            {display || '–'}
-          </span>
-        </button>
-      </PopoverTrigger>
+            <span
+              className="block w-full truncate text-[13px] font-semibold text-foreground"
+              title={edition.title}
+            >
+              {edition.title}
+            </span>
+            <span
+              className={cn(
+                'text-[26px] font-semibold leading-none tabular-nums',
+                isPlaced ? 'text-foreground' : 'text-muted-foreground/60',
+              )}
+            >
+              {display || '–'}
+            </span>
+          </button>
+        </PopoverTrigger>
       <PopoverContent align="start" className="max-h-60 w-44 overflow-y-auto p-1">
         {edition.pages?.map((p) => (
           <button
@@ -351,6 +361,7 @@ function Cell({ edition, current, onPick, onDrop, dropLabel }) {
         )}
       </PopoverContent>
     </Popover>
+    </div>
   );
 }
 
