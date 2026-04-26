@@ -85,11 +85,22 @@ def _payload(*, msg_id="<msg-1@gmail.com>", subject="Test story",
              to_addr=f"{ORG_SLUG}@desk.vrittant.in",
              forwarder=FORWARDER, text="Hello world",
              spam_score="0.1"):
-    """Build a SendGrid-shaped multipart payload as a dict of form
-    fields. Headers must be a single multi-line string with the
-    Received: chain that points to the gateway and the Message-ID."""
+    """Build a SendGrid-shaped multipart payload mirroring the real
+    Received: chain Gmail forwarding produces:
+
+        1. SendGrid's own hop at the top — "for <slug@desk.vrittant.in>"
+        2. Gmail's hop right below — "for <gateway@gmail.com>"
+        3. Original sender's MTA at the bottom
+
+    The parser must skip line (1) (matches our INBOUND_EMAIL_DOMAIN)
+    and return line (2)'s gateway. Tests would have falsely passed
+    with a single-line fixture, which is what masked the original bug.
+    """
     headers = (
-        f"Received: by 2002:abc:def with SMTP id xyz; for <{forwarder}>;\r\n"
+        f"Received: by mx.sendgrid.net with SMTP id sg1; "
+        f"for <{to_addr}>; Sat, 26 Apr 2026 12:00:00 +0000\r\n"
+        f"Received: by mail.gmail.com with SMTP id gm1; "
+        f"for <{forwarder}>; Sat, 26 Apr 2026 11:59:50 +0000\r\n"
         f"Message-ID: {msg_id}\r\n"
         f"From: {from_name} <{from_addr}>\r\n"
         f"To: {to_addr}\r\n"
@@ -262,6 +273,24 @@ def test_extract_forwarder_pulls_for_address_from_received_chain():
         "Subject: hi\r\n"
     )
     assert extract_forwarder(headers) == "pragativadi@gmail.com"
+
+
+def test_extract_forwarder_skips_our_own_sendgrid_hop():
+    """Top-most Received line is SendGrid's own — its 'for' address
+    points at our INBOUND_EMAIL_DOMAIN. The parser must skip past it
+    and return the next 'for' (the actual gateway). This test would
+    catch the regression we shipped initially where every real email
+    failed the forwarder allowlist check because the parser returned
+    SendGrid's hop instead of Gmail's."""
+    from app.services.email_intake import extract_forwarder
+    headers = (
+        "Received: by mx.sendgrid.net with SMTP id sg1; "
+        "for <pragativadi@desk.vrittant.in>; Sat, 26 Apr 2026 12:00\r\n"
+        "Received: by mail.gmail.com with SMTP id gm1; "
+        "for <pragativadi@gmail.com>; Sat, 26 Apr 2026 11:59\r\n"
+        "Subject: hi\r\n"
+    )
+    assert extract_forwarder(headers, "desk.vrittant.in") == "pragativadi@gmail.com"
 
 
 def test_org_slug_from_to_handles_display_name_and_case():
