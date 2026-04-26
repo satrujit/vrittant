@@ -105,6 +105,13 @@
       "settings": "सेटिंग्स"
     },
     "pageAssignment": "पृष्ठ निर्धारण",
+    "peopleReportedBy": "रिपोर्ट किया",
+    "peopleReviewedBy": "समीक्षा की",
+    "peopleApprovedBy": "स्वीकृत किया",
+    "peopleLayoutBy": "लेआउट",
+    "peoplePublishedBy": "प्रकाशित किया",
+    "peopleRejectedBy": "अस्वीकृत किया",
+    "peopleFlaggedBy": "फ्लैग किया",
     "comments": {
       "title": "टिप्पणियाँ",
       "empty": "अभी तक कोई टिप्पणी नहीं",

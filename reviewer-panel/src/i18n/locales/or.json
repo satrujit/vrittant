@@ -105,6 +105,13 @@
       "settings": "ସେଟିଂସ୍"
     },
     "pageAssignment": "ପୃଷ୍ଠା ନିର୍ଦ୍ଧାରଣ",
+    "peopleReportedBy": "ରିପୋର୍ଟ କରିଛନ୍ତି",
+    "peopleReviewedBy": "ସମୀକ୍ଷା କରିଛନ୍ତି",
+    "peopleApprovedBy": "ଅନୁମୋଦନ କରିଛନ୍ତି",
+    "peopleLayoutBy": "ଲେଆଉଟ୍",
+    "peoplePublishedBy": "ପ୍ରକାଶିତ କରିଛନ୍ତି",
+    "peopleRejectedBy": "ପ୍ରତ୍ୟାଖ୍ୟାନ କରିଛନ୍ତି",
+    "peopleFlaggedBy": "ଚିହ୍ନିତ କରିଛନ୍ତି",
     "comments": {
       "title": "ମନ୍ତବ୍ୟ",
       "empty": "ଏ ପର୍ଯ୍ୟନ୍ତ କୌଣସି ମନ୍ତବ୍ୟ ନାହିଁ",

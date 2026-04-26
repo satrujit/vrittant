@@ -105,6 +105,13 @@
       "settings": "Settings"
     },
     "pageAssignment": "Page Assignment",
+    "peopleReportedBy": "Reported by",
+    "peopleReviewedBy": "Reviewed by",
+    "peopleApprovedBy": "Approved by",
+    "peopleLayoutBy": "Layout by",
+    "peoplePublishedBy": "Published by",
+    "peopleRejectedBy": "Rejected by",
+    "peopleFlaggedBy": "Flagged by",
     "comments": {
       "title": "Comments",
       "empty": "No comments yet",

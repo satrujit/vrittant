@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import {
   ExternalLink,
+  Flag,
   History,
   Loader2,
   MapPin,
@@ -8,6 +9,7 @@ import {
   Send,
   Sparkles,
   Tag as TagIcon,
+  UserCircle2,
 } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { useAuth } from '../../contexts/AuthContext';
@@ -22,6 +24,7 @@ import {
 import { Avatar, StatusProgress } from '../common';
 import { getCategoryColor, getInitials } from '../../utils/helpers';
 import { formatDate, formatTimeAgo } from '../../utils/helpers';
+import { getAvatarColor } from '../../services/api';
 import { assignableReviewers } from '../../utils/users';
 import {
   Dialog,
@@ -36,13 +39,26 @@ import { cn } from '@/lib/utils';
 import ReassignPopover from '../assignment/ReassignPopover';
 import { EditionPlacementMatrix } from './EditionPlacementMatrix';
 
-// Priority swatches drive the URGENT-style pill in the top right.
-// Solid fills (vs. the muted dot used elsewhere) because reviewers
-// rely on this colour to make split-second triage decisions.
+// Priority chip tint (icon-color + tinted background) — matches the
+// shape of getCategoryColor so the priority chip composes with the
+// other tag chips in the same row. The dropdown row uses `dot` as a
+// solid swatch.
 const PRIORITY_PRESETS = {
-  normal:   { bg: '#E5E7EB', fg: '#374151' },
-  urgent:   { bg: '#DC2626', fg: '#FFFFFF' },
-  breaking: { bg: '#7F1D1D', fg: '#FFFFFF' },
+  normal:   { color: '#6B7280', bg: '#F3F4F6', dot: '#9CA3AF' },
+  urgent:   { color: '#DC2626', bg: '#FEE2E2', dot: '#DC2626' },
+  breaking: { color: '#7F1D1D', bg: '#FEE2E2', dot: '#7F1D1D' },
+};
+
+// Map current story status to the "<verb> by" label for the second
+// people-line. The reviewer field always points to whoever last took
+// a status action, so labelling it by current status gives the right
+// English without needing per-stage attribution columns.
+const REVIEWER_VERB_BY_STATUS = {
+  approved:         'review.peopleApprovedBy',
+  layout_completed: 'review.peopleLayoutBy',
+  published:        'review.peoplePublishedBy',
+  rejected:         'review.peopleRejectedBy',
+  flagged:          'review.peopleFlaggedBy',
 };
 
 /**
@@ -109,6 +125,30 @@ function Chip({ icon: Icon, color, bg, label, title, onClick }) {
     <span className={cn(cls, 'cursor-default')} title={title}>
       {inner}
     </span>
+  );
+}
+
+/**
+ * PersonRow — tiny attribution line: small initials avatar + label +
+ * name. Used for "Reported by · X" / "Approved by · Y" so the workflow
+ * chain (reporter → approver → layout) is visible at a glance without
+ * opening the assignment history dialog.
+ */
+function PersonRow({ label, name }) {
+  if (!name) return null;
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <Avatar
+        initials={getInitials(name) || '?'}
+        size="xs"
+        color={getAvatarColor(name)}
+      />
+      <span className="truncate text-muted-foreground">
+        {label}
+        <span className="mx-1 text-muted-foreground/50">·</span>
+        <span className="font-medium text-foreground">{name}</span>
+      </span>
+    </div>
   );
 }
 
@@ -261,7 +301,16 @@ export default function ReviewSidePanel({
   })();
 
   const priorityPreset = PRIORITY_PRESETS[priority] || PRIORITY_PRESETS.normal;
-  const priorityLabel = t(`priority.${priority}`, priority).toUpperCase();
+  const priorityLabel = t(`priority.${priority}`, priority);
+
+  // People attribution. We always know the reporter; we may also know
+  // the most-recent reviewer (whoever changed status last). Label that
+  // second person by what they did — the verb depends on current
+  // status because the API stores only one reviewed_by field.
+  const reporterName = story?.reporter?.name || '';
+  const reviewerName = story?.reviewer_name || '';
+  const reviewerVerbKey = REVIEWER_VERB_BY_STATUS[status] || 'review.peopleReviewedBy';
+  const showReviewer = !!reviewerName && status !== 'submitted' && status !== 'draft';
 
   const sourceLabel = (() => {
     if (!story.source) return '';
@@ -280,57 +329,14 @@ export default function ReviewSidePanel({
       <div className="flex flex-1 flex-col gap-3 overflow-hidden p-3">
         {/* ─────────── Card 1: Status + Assignment ─────────── */}
         <Card className="shrink-0 p-3">
-          {/* Status row: pill + progress bar on the left, priority chip
-              top-right. Priority is a popover so reviewers can flip
-              normal → urgent inline. */}
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <StatusProgress status={status} />
-            </div>
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="shrink-0 rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: priorityPreset.bg, color: priorityPreset.fg }}
-                  title={t('review.priority', 'Priority')}
-                >
-                  {priorityLabel}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-36 p-2">
-                {activePriorities.map((level) => {
-                  const preset = PRIORITY_PRESETS[level] || PRIORITY_PRESETS.normal;
-                  return (
-                    <button
-                      key={level}
-                      className={cn(
-                        'flex w-full items-center gap-2 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
-                        priority === level && 'bg-primary/10 font-semibold'
-                      )}
-                      onClick={async () => {
-                        setPriority(level);
-                        try {
-                          await updateStory(id, { priority: level });
-                        } catch (err) {
-                          console.error('Failed to update priority:', err);
-                        }
-                      }}
-                    >
-                      <span
-                        className="size-2 rounded-full"
-                        style={{ backgroundColor: preset.bg }}
-                      />
-                      {t(`priority.${level}`, level)}
-                    </button>
-                  );
-                })}
-              </PopoverContent>
-            </Popover>
-          </div>
+          {/* Status: pill on top + thin progress bar. Priority moved
+              into the chip row below — keeping it up here as a dangling
+              pill made the card top look unbalanced. */}
+          <StatusProgress status={status} />
 
-          {/* Chips: Category + Location side by side. Static when there's
-              no editor (falls back to plain chip). */}
+          {/* Tag chips: Category, Location, Priority. All three share
+              the same icon-in-tinted-square + label visual so they
+              read as one row of metadata. Each opens its own picker. */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Popover>
               <PopoverTrigger asChild>
@@ -377,6 +383,49 @@ export default function ReviewSidePanel({
                 title={story.location}
               />
             )}
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <span className="inline-block">
+                  <Chip
+                    icon={Flag}
+                    color={priorityPreset.color}
+                    bg={priorityPreset.bg}
+                    label={priorityLabel}
+                    title={t('review.priority', 'Priority')}
+                    onClick={() => {}}
+                  />
+                </span>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-36 p-2">
+                {activePriorities.map((level) => {
+                  const preset = PRIORITY_PRESETS[level] || PRIORITY_PRESETS.normal;
+                  return (
+                    <button
+                      key={level}
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                        priority === level && 'bg-primary/10 font-semibold'
+                      )}
+                      onClick={async () => {
+                        setPriority(level);
+                        try {
+                          await updateStory(id, { priority: level });
+                        } catch (err) {
+                          console.error('Failed to update priority:', err);
+                        }
+                      }}
+                    >
+                      <span
+                        className="size-2 rounded-full"
+                        style={{ backgroundColor: preset.dot }}
+                      />
+                      {t(`priority.${level}`, level)}
+                    </button>
+                  );
+                })}
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* Submitted | Source — single muted line so it sits behind
@@ -404,6 +453,26 @@ export default function ReviewSidePanel({
             </p>
           )}
 
+          {/* People — Reported by + most-recent reviewer action.
+              Shows two compact rows so the workflow chain is visible
+              without scrolling into the assignment-history dialog. */}
+          {(reporterName || showReviewer) && (
+            <div className="mt-3 flex flex-col gap-1.5">
+              {reporterName && (
+                <PersonRow
+                  label={t('review.peopleReportedBy', 'Reported by')}
+                  name={reporterName}
+                />
+              )}
+              {showReviewer && (
+                <PersonRow
+                  label={t(reviewerVerbKey, 'Reviewed by')}
+                  name={reviewerName}
+                />
+              )}
+            </div>
+          )}
+
           {/* Assigned To — small label + avatar + name + history clock.
               The avatar makes this row scannable in a long Q&A; the
               clock opens the assignment-history dialog. */}
@@ -412,11 +481,23 @@ export default function ReviewSidePanel({
               {t('assignment.assignedTo', 'Assigned To')}
             </p>
             <div className="flex items-center gap-2">
-              <Avatar
-                initials={assigneeInitials || '?'}
-                size="sm"
-                color={story?.assignee_name ? undefined : '#9CA3AF'}
-              />
+              {story?.assignee_name ? (
+                <Avatar
+                  initials={assigneeInitials || '?'}
+                  size="sm"
+                  color={getAvatarColor(story.assignee_name)}
+                />
+              ) : (
+                // Unassigned — render an empty grey circle so the
+                // row's left edge is visually consistent.
+                <span
+                  className="inline-flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                  style={{ backgroundColor: '#9CA3AF' }}
+                  aria-hidden
+                >
+                  <UserCircle2 size={14} />
+                </span>
+              )}
               <div className="min-w-0 flex-1">
                 <ReassignPopover
                   assigneeId={currentAssigneeId}
@@ -551,6 +632,7 @@ export default function ReviewSidePanel({
                     <Avatar
                       initials={getInitials(c.author_name || '') || '?'}
                       size="sm"
+                      color={getAvatarColor(c.author_name || '')}
                       className="mt-0.5"
                     />
                     <div className="min-w-0 flex-1">
