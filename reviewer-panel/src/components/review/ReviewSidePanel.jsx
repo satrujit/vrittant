@@ -1,17 +1,13 @@
 import { useEffect, useState, useRef } from 'react';
 import {
-  BookOpen,
-  ChevronDown,
-  ChevronUp,
   ExternalLink,
   History,
-  Info,
   Loader2,
-  MessageSquare,
+  MapPin,
   Pencil,
   Send,
   Sparkles,
-  UserCircle2,
+  Tag as TagIcon,
 } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { useAuth } from '../../contexts/AuthContext';
@@ -23,8 +19,8 @@ import {
   reassignStory,
   updateStory,
 } from '../../services/api';
-import { StatusProgress } from '../common';
-import { getCategoryColor } from '../../utils/helpers';
+import { Avatar, StatusProgress } from '../common';
+import { getCategoryColor, getInitials } from '../../utils/helpers';
 import { formatDate, formatTimeAgo } from '../../utils/helpers';
 import { assignableReviewers } from '../../utils/users';
 import {
@@ -40,83 +36,89 @@ import { cn } from '@/lib/utils';
 import ReassignPopover from '../assignment/ReassignPopover';
 import { EditionPlacementMatrix } from './EditionPlacementMatrix';
 
-const PRIORITY_COLORS = {
-  normal: '#3B82F6',
-  urgent: '#F59E0B',
-  breaking: '#EF4444',
+// Priority swatches drive the URGENT-style pill in the top right.
+// Solid fills (vs. the muted dot used elsewhere) because reviewers
+// rely on this colour to make split-second triage decisions.
+const PRIORITY_PRESETS = {
+  normal:   { bg: '#E5E7EB', fg: '#374151' },
+  urgent:   { bg: '#DC2626', fg: '#FFFFFF' },
+  breaking: { bg: '#7F1D1D', fg: '#FFFFFF' },
 };
 
 /**
- * One metadata row — label on the left, value (optionally with a colored dot
- * for color-bearing fields) on the right. Every row uses the same font size,
- * the same foreground color, and the same vertical rhythm so DETAILS reads
- * as a calm key/value list rather than a fight between filled pills.
+ * Card — generic rounded container used for the three stacked sections
+ * in the redesigned right panel. The new layout treats Status/Page
+ * Assignment/Comments as peer cards rather than nested sections under
+ * a "Settings" toggle.
  */
-function MetaRow({ label, dotColor, value, onClick, title }) {
-  const Inner = (
-    <span className="inline-flex min-w-0 items-center gap-1.5 truncate text-xs text-foreground">
-      {dotColor && (
-        <span
-          className="size-1.5 shrink-0 rounded-full"
-          style={{ backgroundColor: dotColor }}
-          aria-hidden
-        />
-      )}
-      <span className="truncate">{value}</span>
-    </span>
-  );
+function Card({ children, className }) {
   return (
-    <div className="flex items-center justify-between gap-2 px-3 py-1 text-xs">
-      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
-      {onClick ? (
-        <button
-          type="button"
-          onClick={onClick}
-          title={title}
-          className="min-w-0 max-w-[60%] cursor-pointer rounded border-none bg-transparent p-0 text-right hover:opacity-80"
-        >
-          {Inner}
-        </button>
-      ) : (
-        <span className="min-w-0 max-w-[60%] text-right" title={title}>{Inner}</span>
+    <div
+      className={cn(
+        'rounded-lg border border-border bg-card shadow-[0_1px_2px_rgba(0,0,0,0.04)]',
+        className
       )}
+    >
+      {children}
     </div>
   );
 }
 
 /**
- * Card-style section wrapper. Groups related controls under a small
- * uppercase header so the side panel reads as a stack of self-contained
- * blocks rather than one continuous scroll.
+ * SectionHeader — small uppercase label used inside each card. Same
+ * typographic rhythm everywhere so the three cards read as a system.
  */
-function Section({ icon: Icon, title, children, className }) {
+function SectionHeader({ children, action }) {
   return (
-    <section
-      className={cn(
-        'rounded-lg border border-border bg-background/50 mx-3 mb-3 overflow-hidden',
-        className
-      )}
-    >
-      <header className="flex items-center gap-1.5 px-3 pt-2.5 pb-1.5">
-        {Icon && <Icon size={11} className="text-muted-foreground" />}
-        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-          {title}
-        </span>
-      </header>
-      <div className="pb-1.5">{children}</div>
-    </section>
+    <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
+      <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-foreground">
+        {children}
+      </span>
+      {action}
+    </div>
+  );
+}
+
+/**
+ * Chip — icon-in-coloured-square + text label. Used for Category and
+ * Location. Click hands off to a popover (provided by parent) for
+ * editing; static chips just render without onClick.
+ */
+function Chip({ icon: Icon, color, bg, label, title, onClick }) {
+  const inner = (
+    <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+      <span
+        className="inline-flex shrink-0 items-center justify-center rounded p-1"
+        style={{ backgroundColor: bg }}
+      >
+        <Icon size={12} style={{ color }} />
+      </span>
+      <span className="truncate text-[13px] font-medium text-foreground">{label}</span>
+    </span>
+  );
+  const cls =
+    'inline-flex max-w-full items-center rounded-md border border-border bg-background px-1.5 py-1 transition-colors hover:bg-accent';
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} title={title} className={cls}>
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <span className={cn(cls, 'cursor-default')} title={title}>
+      {inner}
+    </span>
   );
 }
 
 /**
  * ReviewSidePanel — fixed right panel on the ReviewPage.
  *
- * Holds everything that used to live in the cluttered top metadata bar
- * (status, priority, category, location, date, source, edition assignment)
- * plus the assignee selector and a per-story comment thread.
- *
- * Layout: scroll-y, sections stacked top-to-bottom, comments anchored at
- * the bottom and grow to fill remaining height.
+ * Three stacked cards: Status & Assignment, Page Assignment, Comments.
+ * Comments expands to fill remaining height; the first two cards size
+ * to their content. No collapse toggle in the new design — at 1366×768
+ * the natural overflow scrolls inside Comments.
  */
 export default function ReviewSidePanel({
   id,
@@ -128,42 +130,21 @@ export default function ReviewSidePanel({
   status,
   priority,
   setPriority,
-  // editions
-  editions,
-  selectedEdition,
-  setSelectedEdition,
-  selectedPage,
-  setSelectedPage,
-  editionPages,
-  assigningToEdition,
-  editionAssignments,
-  handleAssignToEdition,
-  handleRemoveFromEdition,
+  // editions (legacy props — the matrix now reads from /admin/editions
+  // directly; we keep the names for prop compatibility with ReviewPage)
+  editions: _editions,
+  selectedEdition: _selectedEdition,
+  setSelectedEdition: _setSelectedEdition,
+  selectedPage: _selectedPage,
+  setSelectedPage: _setSelectedPage,
+  editionPages: _editionPages,
+  assigningToEdition: _assigningToEdition,
+  editionAssignments: _editionAssignments,
+  handleAssignToEdition: _handleAssignToEdition,
+  handleRemoveFromEdition: _handleRemoveFromEdition,
 }) {
   const { t } = useI18n();
   const { config, user } = useAuth();
-
-  // Collapse the settings block to give Comments full panel height. Persisted
-  // per-user because Windows laptops at 1366×768 routinely squeeze the
-  // comment column to ~5 lines; collapsing once should stick.
-  const [settingsCollapsed, setSettingsCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem('reviewSidePanel.settingsCollapsed') === '1';
-    } catch {
-      return false;
-    }
-  });
-  const toggleSettings = () => {
-    setSettingsCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('reviewSidePanel.settingsCollapsed', next ? '1' : '0');
-      } catch {
-        /* ignore quota / private mode */
-      }
-      return next;
-    });
-  };
 
   const priorityLevels = (config?.priority_levels || [])
     .filter((p) => p.is_active)
@@ -270,221 +251,212 @@ export default function ReviewSidePanel({
     }
   };
 
-  return (
-    <aside className="flex h-full w-[320px] shrink-0 flex-col overflow-hidden border-l border-border bg-card">
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Settings collapse toggle — small bar always visible. Collapsing
-            removes the entire settings block (Details + Edition + Assigned)
-            so the Comments panel can use the full height. */}
-        <button
-          type="button"
-          onClick={toggleSettings}
-          className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-muted/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-          aria-expanded={!settingsCollapsed}
-        >
-          <span className="inline-flex items-center gap-1.5">
-            <Info size={11} />
-            {t('review.sidePanel.settings', 'Settings')}
-          </span>
-          {settingsCollapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
-        </button>
+  // ── Derived display values ─────────────────────────────────────────────
+  const catKey = category || story.category;
+  const { color: catColor, bg: catBg } = getCategoryColor(catKey);
+  const catLabel = (() => {
+    const k = (catKey || '').toLowerCase().replace(/[\s]+/g, '_');
+    const localized = t(`categories.${k}`);
+    return localized !== `categories.${k}` ? localized : (catKey || '—');
+  })();
 
-        {/* ─────────── Settings (scrolls) ─────────── */}
-        {!settingsCollapsed && (
-        <div className="overflow-y-auto border-b border-border pt-3">
-          <Section icon={Info} title={t('review.sidePanel.details', 'Details')}>
-            {/* Status pill on top + thin progress bar = single-glance pipeline
-                position. Replaces the four-circle stepper with truncated labels. */}
-            <div className="px-3 pb-2">
+  const priorityPreset = PRIORITY_PRESETS[priority] || PRIORITY_PRESETS.normal;
+  const priorityLabel = t(`priority.${priority}`, priority).toUpperCase();
+
+  const sourceLabel = (() => {
+    if (!story.source) return '';
+    if (story.source.startsWith('http')) return t('review.source', 'Source');
+    if (story.source === 'Reporter Submitted') return t('review.reporterSubmitted', 'Reporter Submitted');
+    if (story.source === 'Editor Created') return t('review.editorCreated', 'Editor Created');
+    return story.source;
+  })();
+  const sourceIsUrl = !!story.source && story.source.startsWith('http');
+
+  const assigneeName = story?.assignee_name || t('assignment.unassigned', 'Unassigned');
+  const assigneeInitials = getInitials(story?.assignee_name || '');
+
+  return (
+    <aside className="flex h-full w-[340px] shrink-0 flex-col overflow-hidden border-l border-border bg-muted/20">
+      <div className="flex flex-1 flex-col gap-3 overflow-hidden p-3">
+        {/* ─────────── Card 1: Status + Assignment ─────────── */}
+        <Card className="shrink-0 p-3">
+          {/* Status row: pill + progress bar on the left, priority chip
+              top-right. Priority is a popover so reviewers can flip
+              normal → urgent inline. */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
               <StatusProgress status={status} />
             </div>
-
-            {/* Category — dot + text, popover on click. */}
-            {(() => {
-              const catKey = category || story.category;
-              const { color: catColor } = getCategoryColor(catKey);
-              const catLabel = (() => {
-                const k = (catKey || '').toLowerCase().replace(/[\s]+/g, '_');
-                const localized = t(`categories.${k}`);
-                return localized !== `categories.${k}` ? localized : (catKey || '—');
-              })();
-              return (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <div>
-                      <MetaRow
-                        label={t('table.category', 'Category')}
-                        dotColor={catColor}
-                        value={catLabel}
-                        onClick={() => {}}
-                      />
-                    </div>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="max-h-60 w-48 overflow-y-auto p-2">
-                    {(config?.categories?.filter((c) => c.is_active) || []).map((c) => (
-                      <button
-                        key={c.key}
-                        className={cn(
-                          'flex w-full rounded-md border-none bg-transparent px-2 py-1 text-left text-xs transition-colors hover:bg-accent',
-                          category === c.key && 'bg-primary/10 font-semibold'
-                        )}
-                        onClick={async () => {
-                          setCategory(c.key);
-                          try {
-                            await updateStory(id, { category: c.key });
-                          } catch (err) {
-                            console.error('Failed to update category:', err);
-                          }
-                        }}
-                      >
-                        {t(`categories.${c.key}`, c.label || c.key)}
-                      </button>
-                    ))}
-                  </PopoverContent>
-                </Popover>
-              );
-            })()}
-
-            {/* Priority — dot + text, popover on click. */}
             <Popover>
               <PopoverTrigger asChild>
-                <div>
-                  <MetaRow
-                    label={t('review.priority', 'Priority')}
-                    dotColor={PRIORITY_COLORS[priority] || PRIORITY_COLORS.normal}
-                    value={t(`priority.${priority}`, priority)}
-                    onClick={() => {}}
-                  />
-                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: priorityPreset.bg, color: priorityPreset.fg }}
+                  title={t('review.priority', 'Priority')}
+                >
+                  {priorityLabel}
+                </button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-36 p-2">
-                {activePriorities.map((level) => (
+                {activePriorities.map((level) => {
+                  const preset = PRIORITY_PRESETS[level] || PRIORITY_PRESETS.normal;
+                  return (
+                    <button
+                      key={level}
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                        priority === level && 'bg-primary/10 font-semibold'
+                      )}
+                      onClick={async () => {
+                        setPriority(level);
+                        try {
+                          await updateStory(id, { priority: level });
+                        } catch (err) {
+                          console.error('Failed to update priority:', err);
+                        }
+                      }}
+                    >
+                      <span
+                        className="size-2 rounded-full"
+                        style={{ backgroundColor: preset.bg }}
+                      />
+                      {t(`priority.${level}`, level)}
+                    </button>
+                  );
+                })}
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          {/* Chips: Category + Location side by side. Static when there's
+              no editor (falls back to plain chip). */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <span className="inline-block">
+                  <Chip
+                    icon={TagIcon}
+                    color={catColor}
+                    bg={catBg}
+                    label={catLabel}
+                    title={catLabel}
+                    onClick={() => {}}
+                  />
+                </span>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="max-h-60 w-48 overflow-y-auto p-2">
+                {(config?.categories?.filter((c) => c.is_active) || []).map((c) => (
                   <button
-                    key={level}
+                    key={c.key}
                     className={cn(
-                      'flex w-full items-center gap-2 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
-                      priority === level && 'bg-primary/10 font-semibold'
+                      'flex w-full rounded-md border-none bg-transparent px-2 py-1 text-left text-xs transition-colors hover:bg-accent',
+                      category === c.key && 'bg-primary/10 font-semibold'
                     )}
                     onClick={async () => {
-                      setPriority(level);
+                      setCategory(c.key);
                       try {
-                        await updateStory(id, { priority: level });
+                        await updateStory(id, { category: c.key });
                       } catch (err) {
-                        console.error('Failed to update priority:', err);
+                        console.error('Failed to update category:', err);
                       }
                     }}
                   >
-                    <span
-                      className="size-2 rounded-full"
-                      style={{ backgroundColor: PRIORITY_COLORS[level] }}
-                    />
-                    {t(`priority.${level}`, level)}
+                    {t(`categories.${c.key}`, c.label || c.key)}
                   </button>
                 ))}
               </PopoverContent>
             </Popover>
 
             {story.location && (
-              <MetaRow
-                label={t('review.locationLabel', 'Location')}
-                value={story.location}
+              <Chip
+                icon={MapPin}
+                color="#DC2626"
+                bg="#FEE2E2"
+                label={story.location}
                 title={story.location}
               />
             )}
+          </div>
 
-            <MetaRow
-              label={t('review.dateLabel', 'Submitted')}
-              value={formatDate(story.submittedAt)}
-            />
+          {/* Submitted | Source — single muted line so it sits behind
+              the Category/Location chips visually. */}
+          {(story.submittedAt || sourceLabel) && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              {story.submittedAt && <span>{formatDate(story.submittedAt)}</span>}
+              {story.submittedAt && sourceLabel && <span className="mx-1.5">|</span>}
+              {sourceLabel && (
+                sourceIsUrl ? (
+                  <a
+                    href={story.source}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                    title={story.source}
+                  >
+                    <ExternalLink size={10} />
+                    {sourceLabel}
+                  </a>
+                ) : (
+                  <span>{sourceLabel}</span>
+                )
+              )}
+            </p>
+          )}
 
-            {story.source && (() => {
-              const isUrl = story.source.startsWith('http');
-              const label = isUrl
-                ? t('review.source', 'Source')
-                : story.source === 'Reporter Submitted'
-                  ? t('review.reporterSubmitted', 'Reporter Submitted')
-                  : story.source === 'Editor Created'
-                    ? t('review.editorCreated', 'Editor Created')
-                    : story.source;
-              if (isUrl) {
-                return (
-                  <div className="flex items-center justify-between gap-2 px-3 py-1 text-xs">
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {t('review.sourceLabel', 'Source')}
-                    </span>
-                    <a
-                      href={story.source}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex min-w-0 max-w-[60%] items-center justify-end gap-1 truncate text-xs text-primary hover:underline"
-                      title={story.source}
-                    >
-                      <ExternalLink size={10} />
-                      <span className="truncate">{label}</span>
-                    </a>
-                  </div>
-                );
-              }
-              return (
-                <MetaRow
-                  label={t('review.sourceLabel', 'Source')}
-                  value={label}
-                  title={story.source}
+          {/* Assigned To — small label + avatar + name + history clock.
+              The avatar makes this row scannable in a long Q&A; the
+              clock opens the assignment-history dialog. */}
+          <div className="mt-4">
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-foreground">
+              {t('assignment.assignedTo', 'Assigned To')}
+            </p>
+            <div className="flex items-center gap-2">
+              <Avatar
+                initials={assigneeInitials || '?'}
+                size="sm"
+                color={story?.assignee_name ? undefined : '#9CA3AF'}
+              />
+              <div className="min-w-0 flex-1">
+                <ReassignPopover
+                  assigneeId={currentAssigneeId}
+                  assigneeName={assigneeName}
+                  matchReason={null}
+                  reviewers={reviewers}
+                  onReassign={handleReassign}
+                  triggerClassName="!min-w-0 !w-full !text-primary !font-semibold"
                 />
-              );
-            })()}
-          </Section>
-
-          {/* ─────────── Edition assignment (matrix) ─────────── */}
-          <Section icon={BookOpen} title={t('review.assignEditionShort', 'Edition')}>
-            <EditionPlacementMatrix storyId={id} />
-          </Section>
-
-          {/* ─────────── Assignment ───────────
-              Compact: person icon + name (click → reassign popover) +
-              subtle method symbol + history clock. No section header, no
-              "Manual" chip — that information is conveyed by the icon. */}
-          <div className="mx-3 mb-3 flex items-center gap-1.5 rounded-lg border border-border bg-background/50 px-3 py-2">
-            <UserCircle2 size={14} className="shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <ReassignPopover
-                assigneeId={currentAssigneeId}
-                assigneeName={story?.assignee_name}
-                matchReason={null /* hide the badge — we render an icon instead */}
-                reviewers={reviewers}
-                onReassign={handleReassign}
-              />
-            </div>
-            {story?.assigned_match_reason === 'manual' ? (
-              <Pencil
-                size={10}
-                className="shrink-0 text-muted-foreground/70"
-                aria-label={t('assignment.matchReason.manual', 'Manually assigned')}
-                role="img"
-              />
-            ) : story?.assigned_match_reason ? (
-              <Sparkles
-                size={10}
-                className="shrink-0 text-muted-foreground/70"
-                aria-label={t(
-                  `assignment.matchReason.${story.assigned_match_reason}`,
-                  'Auto assigned'
-                )}
-                role="img"
-              />
-            ) : null}
-            <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-                  title={t('assignment.history')}
-                  aria-label={t('assignment.history')}
-                >
-                  <History size={12} />
-                </Button>
-              </DialogTrigger>
+              </div>
+              {story?.assigned_match_reason === 'manual' ? (
+                <Pencil
+                  size={11}
+                  className="shrink-0 text-muted-foreground/70"
+                  aria-label={t('assignment.matchReason.manual', 'Manually assigned')}
+                  role="img"
+                />
+              ) : story?.assigned_match_reason ? (
+                <Sparkles
+                  size={11}
+                  className="shrink-0 text-muted-foreground/70"
+                  aria-label={t(
+                    `assignment.matchReason.${story.assigned_match_reason}`,
+                    'Auto assigned'
+                  )}
+                  role="img"
+                />
+              ) : null}
+              <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                    title={t('assignment.history')}
+                    aria-label={t('assignment.history')}
+                  >
+                    <History size={14} />
+                  </Button>
+                </DialogTrigger>
                 <DialogContent className="sm:max-w-md">
                   <DialogHeader>
                     <DialogTitle>{t('assignment.history')}</DialogTitle>
@@ -543,23 +515,26 @@ export default function ReviewSidePanel({
                   </div>
                 </DialogContent>
               </Dialog>
+            </div>
           </div>
-        </div>
-        )}
+        </Card>
 
-        {/* ─────────── Comments (fills remaining height) ─────────── */}
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center gap-1.5 px-4 pt-3 pb-1.5">
-            <MessageSquare size={11} className="text-muted-foreground" />
-            <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-              {t('review.comments.title', 'Comments')}
-              {comments.length > 0 && (
-                <span className="ml-1 normal-case tracking-normal text-muted-foreground/60">
-                  ({comments.length})
-                </span>
-              )}
-            </span>
-          </div>
+        {/* ─────────── Card 2: Page Assignment ─────────── */}
+        <Card className="shrink-0">
+          <SectionHeader>{t('review.pageAssignment', 'Page Assignment')}</SectionHeader>
+          <EditionPlacementMatrix storyId={id} />
+        </Card>
+
+        {/* ─────────── Card 3: Comments (fills remaining height) ─────────── */}
+        <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <SectionHeader>
+            {t('review.comments.title', 'Comments')}
+            {comments.length > 0 && (
+              <span className="ml-1 normal-case tracking-normal text-muted-foreground/60">
+                ({comments.length})
+              </span>
+            )}
+          </SectionHeader>
           <div className="flex-1 overflow-y-auto px-3 pb-2">
             {commentsLoading ? (
               <div className="flex items-center justify-center py-6">
@@ -570,65 +545,61 @@ export default function ReviewSidePanel({
                 {t('review.comments.empty', 'No comments yet')}
               </p>
             ) : (
-              <ol className="flex flex-col gap-2">
+              <ol className="flex flex-col gap-3">
                 {comments.map((c) => (
-                  <li
-                    key={c.id}
-                    className={cn(
-                      'rounded-md border border-border bg-background px-2.5 py-1.5',
-                      c._pending && 'opacity-60'
-                    )}
-                  >
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-[11px] font-semibold text-foreground">
-                        {c.author_name || '—'}
-                      </span>
-                      <span
-                        className="text-[10px] text-muted-foreground"
+                  <li key={c.id} className={cn('flex gap-2', c._pending && 'opacity-60')}>
+                    <Avatar
+                      initials={getInitials(c.author_name || '') || '?'}
+                      size="sm"
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words text-xs text-foreground">{c.body}</p>
+                      <p
+                        className="mt-0.5 text-[10px] text-muted-foreground"
                         title={formatDate(c.created_at)}
                       >
-                        {formatTimeAgo(c.created_at)}
-                      </span>
+                        {formatDate(c.created_at)}
+                      </p>
                     </div>
-                    <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-foreground">
-                      {c.body}
-                    </p>
                   </li>
                 ))}
                 <div ref={commentsEndRef} />
               </ol>
             )}
           </div>
+          {/* Single-row composer with an inline send button. Keeps the
+              comment thread visible — the old two-row variant
+              (textarea above a separate Post button) ate ~60px that
+              the user spent reading rather than typing. */}
           <div className="shrink-0 border-t border-border p-2">
-            <textarea
-              className="mb-1.5 w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring"
-              placeholder={t('review.comments.placeholder', 'Add a comment…')}
-              rows={2}
-              value={commentDraft}
-              onChange={(e) => setCommentDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                  e.preventDefault();
-                  handlePostComment();
-                }
-              }}
-            />
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-[10px] text-muted-foreground">
-                {t('review.comments.shortcut', '⌘↩ to post')}
-              </span>
-              <Button
-                size="sm"
-                className="h-6 gap-1 px-2 text-[11px]"
-                disabled={!commentDraft.trim() || posting}
+            <div className="relative">
+              <textarea
+                className="w-full resize-none rounded-md border border-border bg-background py-2 pl-3 pr-9 text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring"
+                placeholder={t('review.comments.placeholder', 'Add a comment…')}
+                rows={2}
+                value={commentDraft}
+                onChange={(e) => setCommentDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    handlePostComment();
+                  }
+                }}
+              />
+              <button
+                type="button"
                 onClick={handlePostComment}
+                disabled={!commentDraft.trim() || posting}
+                className="absolute bottom-1.5 right-1.5 inline-flex h-7 w-7 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={t('review.comments.post', 'Post')}
+                title={t('review.comments.post', 'Post')}
               >
-                {posting ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />}
-                {t('review.comments.post', 'Post')}
-              </Button>
+                {posting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              </button>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
     </aside>
   );

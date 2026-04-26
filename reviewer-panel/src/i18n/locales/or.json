@@ -104,6 +104,7 @@
       "details": "ବିବରଣୀ",
       "settings": "ସେଟିଂସ୍"
     },
+    "pageAssignment": "ପୃଷ୍ଠା ନିର୍ଦ୍ଧାରଣ",
     "comments": {
       "title": "ମନ୍ତବ୍ୟ",
       "empty": "ଏ ପର୍ଯ୍ୟନ୍ତ କୌଣସି ମନ୍ତବ୍ୟ ନାହିଁ",
@@ -504,6 +505,9 @@
   "placements": {
     "allDaily": "ସବୁ ଦୈନିକ",
     "clear": "ସଫା",
+    "clearAll": "ସବୁ ସଫା କରନ୍ତୁ",
+    "changeDate": "ତାରିଖ ବଦଳାନ୍ତୁ",
+    "today": "ଆଜି",
     "drop": "ବାଦ",
     "noEditions": "{date} ପାଇଁ କୌଣସି ସଂସ୍କରଣ ନାହିଁ"
   }
