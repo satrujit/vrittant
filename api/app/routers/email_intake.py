@@ -192,22 +192,44 @@ async def email_inbound(
     # ── 6. Build the Story ─────────────────────────────────────────────
     paragraphs = split_paragraphs(text_body)
 
-    # Walk attachments. SendGrid uses the `attachments` count + numeric
-    # field names; we cap at MAX and skip non-images.
+    # Walk attachments. SendGrid posts a count under `attachments` and
+    # the actual files as `attachment1`, `attachment2`, …. We also
+    # scan ALL form keys for anything matching the attachment pattern
+    # — defence in depth in case SendGrid ever switches naming
+    # conventions or Gmail forwards inline images differently. The
+    # full list of attachment-shaped keys is logged for forensics.
     try:
-        attach_count = int(form.get("attachments") or 0)
+        attach_count_advertised = int(form.get("attachments") or 0)
     except (TypeError, ValueError):
-        attach_count = 0
+        attach_count_advertised = 0
+
+    # Discover attachment-shaped form keys ourselves rather than
+    # trusting the count alone — handles attachment-1, attachment_1,
+    # and inline-image renames.
+    attachment_keys = [
+        k for k in form.keys()
+        if k.startswith("attachment") and k != "attachments" and k != "attachment-info"
+    ]
+    log_kwargs["attachment_count_received"] = attach_count_advertised or len(attachment_keys)
+    log_kwargs["attachment_keys"] = ",".join(sorted(attachment_keys))
+
     image_paragraphs: list[dict] = []
-    for i in range(1, attach_count + 1):
+    rejected_kinds: list[str] = []
+    for key in sorted(attachment_keys):
         if len(image_paragraphs) >= MAX_ATTACHMENTS_PER_STORY:
             break
-        upload = form.get(f"attachment{i}")
+        upload = form.get(key)
         if upload is None or not hasattr(upload, "read"):
+            rejected_kinds.append(f"{key}:not-file")
             continue
-        filename = (getattr(upload, "filename", "") or "").strip() or f"attachment-{i}"
+        filename = (getattr(upload, "filename", "") or "").strip() or key
         content_type = getattr(upload, "content_type", "") or ""
         if not is_accepted_image(filename, content_type):
+            rejected_kinds.append(f"{filename}:{content_type}")
+            logger.info(
+                "email-intake rejecting non-image attachment: key=%s name=%s type=%s",
+                key, filename, content_type,
+            )
             continue
         try:
             blob = await upload.read()
@@ -224,6 +246,15 @@ async def email_inbound(
             "media_type": "photo",
             "media_name": filename,
         })
+
+    log_kwargs["attachment_count_accepted"] = len(image_paragraphs)
+
+    # Surface rejection reasons in the audit log so future debugging
+    # ("why didn't my photo come through?") doesn't need Cloud Run
+    # log-grepping. Rejections aren't errors — they're expected for
+    # videos / PDFs / signature image footers — but we want to see
+    # them.
+    rejection_msg = "; ".join(rejected_kinds) if rejected_kinds else None
 
     paragraphs.extend(image_paragraphs)
 
@@ -261,7 +292,13 @@ async def email_inbound(
     db.add(story)
     db.flush()
 
-    log_intake(db, status="accepted", story_id=story.id, **log_kwargs)
+    log_intake(
+        db,
+        status="accepted",
+        story_id=story.id,
+        error_msg=rejection_msg,
+        **log_kwargs,
+    )
     db.commit()
 
     return {"detail": "ok", "story_id": story.id}

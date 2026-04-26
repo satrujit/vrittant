@@ -23,7 +23,7 @@ Status vocabulary:
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from ..database import Base
@@ -52,6 +52,15 @@ class EmailIntakeLog(Base):
     status = Column(String, nullable=False)
     story_id = Column(String, ForeignKey("stories.id"), nullable=True, index=True)
     error_msg = Column(Text, nullable=True)
+    # Attachment forensics. attachment_count_received is what SendGrid
+    # said it sent (`form["attachments"]`); attachment_count_accepted
+    # is how many we attached to the Story (image-type whitelist
+    # filters the rest); attachment_keys lists the form field names
+    # SendGrid used so we catch any naming mismatch in future SendGrid
+    # API changes (e.g. attachment-1 vs attachment1).
+    attachment_count_received = Column(Integer, nullable=True)
+    attachment_count_accepted = Column(Integer, nullable=True)
+    attachment_keys = Column(String, nullable=True)
     created_at = Column(DateTime, default=now_ist, nullable=False)
 
     story = relationship("Story", foreign_keys=[story_id])
