@@ -4,12 +4,20 @@
 
 import { apiGet, apiPost, apiPut, apiDelete } from '../http.js';
 import { buildQuery } from './_internal.js';
+import { cachedGet, invalidateCache } from './cache.js';
 
 // ── Editions API ──
 
-export async function fetchEditions(params = {}) {
+// All edition reads share one SWR cache prefix so write paths only
+// need to invalidate one string. Note `delta: false` — the editions
+// endpoint doesn't yet support `updated_since`, so we revalidate by
+// full-fetch (still cheap because the cache returns instantly while
+// the background refetch runs).
+const EDITIONS_CACHE_PREFIX = '/admin/editions';
+
+export async function fetchEditions(params = {}, opts = {}) {
   const query = buildQuery(params);
-  return apiGet(`/admin/editions${query}`);
+  return cachedGet(`/admin/editions${query}`, { delta: false, ...opts });
 }
 
 export async function fetchEdition(id) {
@@ -17,39 +25,57 @@ export async function fetchEdition(id) {
 }
 
 export async function createEdition(data) {
-  return apiPost('/admin/editions', data);
+  const result = await apiPost('/admin/editions', data);
+  invalidateCache(EDITIONS_CACHE_PREFIX);
+  return result;
 }
 
 export async function updateEdition(id, data) {
-  return apiPut(`/admin/editions/${id}`, data);
+  const result = await apiPut(`/admin/editions/${id}`, data);
+  invalidateCache(EDITIONS_CACHE_PREFIX);
+  return result;
 }
 
 export async function deleteEdition(id) {
-  return apiDelete(`/admin/editions/${id}`);
+  const result = await apiDelete(`/admin/editions/${id}`);
+  invalidateCache(EDITIONS_CACHE_PREFIX);
+  return result;
 }
 
 export async function addEditionPage(editionId, data) {
-  return apiPost(`/admin/editions/${editionId}/pages`, data);
+  const result = await apiPost(`/admin/editions/${editionId}/pages`, data);
+  invalidateCache(EDITIONS_CACHE_PREFIX);
+  return result;
 }
 
 export async function updateEditionPage(editionId, pageId, data) {
-  return apiPut(`/admin/editions/${editionId}/pages/${pageId}`, data);
+  const result = await apiPut(`/admin/editions/${editionId}/pages/${pageId}`, data);
+  invalidateCache(EDITIONS_CACHE_PREFIX);
+  return result;
 }
 
 export async function deleteEditionPage(editionId, pageId) {
-  return apiDelete(`/admin/editions/${editionId}/pages/${pageId}`);
+  const result = await apiDelete(`/admin/editions/${editionId}/pages/${pageId}`);
+  invalidateCache(EDITIONS_CACHE_PREFIX);
+  return result;
 }
 
 export async function assignStoriesToPage(editionId, pageId, storyIds) {
-  return apiPut(`/admin/editions/${editionId}/pages/${pageId}/stories`, { story_ids: storyIds });
+  const result = await apiPut(`/admin/editions/${editionId}/pages/${pageId}/stories`, { story_ids: storyIds });
+  invalidateCache(EDITIONS_CACHE_PREFIX);
+  return result;
 }
 
 export async function addStoryToPage(editionId, pageId, storyId) {
-  return apiPost(`/admin/editions/${editionId}/pages/${pageId}/stories/${storyId}`);
+  const result = await apiPost(`/admin/editions/${editionId}/pages/${pageId}/stories/${storyId}`);
+  invalidateCache(EDITIONS_CACHE_PREFIX);
+  return result;
 }
 
 export async function removeStoryFromPage(editionId, pageId, storyId) {
-  return apiDelete(`/admin/editions/${editionId}/pages/${pageId}/stories/${storyId}`);
+  const result = await apiDelete(`/admin/editions/${editionId}/pages/${pageId}/stories/${storyId}`);
+  invalidateCache(EDITIONS_CACHE_PREFIX);
+  return result;
 }
 
 // ── Multi-edition placement (matrix) ──
