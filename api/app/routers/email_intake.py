@@ -95,7 +95,7 @@ async def email_inbound(
 
     from_name, from_email = parse_address(from_value)
     message_id = extract_message_id(headers)
-    forwarder  = extract_forwarder(headers)
+    forwarder  = extract_forwarder(headers, settings.INBOUND_EMAIL_DOMAIN)
     org_slug   = org_slug_from_to(to_value, settings.INBOUND_EMAIL_DOMAIN)
 
     log_kwargs = dict(

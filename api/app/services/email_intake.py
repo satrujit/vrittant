@@ -103,20 +103,25 @@ def org_slug_from_to(to_value: str, expected_domain: str) -> Optional[str]:
     return None
 
 
-def extract_forwarder(headers: str) -> Optional[str]:
+def extract_forwarder(headers: str, our_domain: str = "") -> Optional[str]:
     """Find the gateway address from the Received: header chain.
 
-    SendGrid hands us the raw headers as a single string; we walk the
-    Received lines and pick out the FIRST "for <addr>" we find that
-    isn't pointed at our own desk subdomain. That's the address the
-    upstream MTA delivered to before the forwarding rule kicked in —
-    i.e. the gateway mailbox.
+    SendGrid stamps its own "Received: ... for <X@desk.vrittant.in>"
+    at the top of the chain — that's our own hop and tells us
+    nothing about the upstream forwarder. We skip any "for" address
+    whose domain matches ``our_domain`` (the inbound subdomain we
+    own) and return the next one we find. That's the address the
+    upstream MTA delivered to *before* the forwarding rule kicked in
+    — i.e. the gateway mailbox we want to allowlist.
 
-    Falls back to nothing if the chain has no Received lines (test
-    fixtures, locally-handled mail). The router treats None as a drop.
+    Returns None when no other "for" address exists, which the
+    router treats as a silent drop. ``our_domain`` defaults to empty
+    only so unit tests can exercise the bare matcher; production
+    callers always pass settings.INBOUND_EMAIL_DOMAIN.
     """
     if not headers:
         return None
+    suffix = ("@" + our_domain.lower().lstrip("@")) if our_domain else None
     for line in headers.splitlines():
         if not line.lower().startswith("received:"):
             continue
@@ -124,8 +129,13 @@ def extract_forwarder(headers: str) -> Optional[str]:
         if not m:
             continue
         addr = (m.group(1) or "").strip().lower()
-        if addr and "@" in addr:
-            return addr
+        if not addr or "@" not in addr:
+            continue
+        # Skip our own SendGrid hop. Keep walking — the next "for" is
+        # the actual upstream forwarder.
+        if suffix and addr.endswith(suffix):
+            continue
+        return addr
     return None
 
 
