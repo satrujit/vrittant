@@ -67,6 +67,17 @@ class OrgConfig(Base):
     # 7-day rolling window of Edition rows. See DEFAULT_EDITION_NAMES
     # docstring above for the full contract.
     edition_names = Column(JSON, nullable=False, default=list)
+    # List[str] — gateway addresses we trust to forward inbound email
+    # from reporters into the Vrittant inbox at desk.vrittant.in.
+    # Typical entry: "pragativadi@gmail.com". Anything not in this list
+    # is silently dropped before we even look at the From: address.
+    email_forwarders = Column(JSON, nullable=False, default=list)
+    # List[{email, name}] — contributors who aren't registered reporters
+    # but whose emailed stories should still be accepted (columnists,
+    # external editorial writers). On first match we create a passive
+    # User row (user_type=reporter, no phone) so attribution and history
+    # work the same as for a regular reporter.
+    whitelisted_contributors = Column(JSON, nullable=False, default=list)
     default_language = Column(String, nullable=False, default="odia")
     created_at = Column(DateTime, default=now_ist)
     updated_at = Column(

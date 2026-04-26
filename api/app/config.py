@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     # (you don't want to ship a real value here).
     INTERNAL_TOKEN: str = ""
 
+    # Inbound email parsing (SendGrid Inbound Parse → /internal/email/inbound).
+    # The local part of the To: address selects the org; the domain part
+    # must match this setting exactly. Default matches the production
+    # MX record on parse.vrittant.in (or desk.vrittant.in — whichever
+    # subdomain is configured in SendGrid).
+    INBOUND_EMAIL_DOMAIN: str = "desk.vrittant.in"
+
     # ── Mobile force-update gate ─────────────────────────────────────────
     # The mobile app fetches /version/min-supported on cold start. If its
     # current version is below `min`, the app blocks with an "Update required"

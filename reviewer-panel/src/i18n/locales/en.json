@@ -457,7 +457,14 @@
       "localLabel": "Local Label",
       "active": "Active",
       "name": "Name",
-      "sortOrder": "Sort Order"
+      "sortOrder": "Sort Order",
+      "emailForwarders": "Email Forwarders",
+      "emailForwardersHelp": "Gateway addresses we trust to forward inbound reporter email into Vrittant. A message is dropped silently if the forwarding gateway (extracted from the Received: chain) is not in this list.",
+      "forwarderEmail": "Gateway Email",
+      "whitelistedContributors": "Whitelisted Contributors",
+      "whitelistedContributorsHelp": "Email addresses of non-reporter contributors (columnists, external editorial writers) whose stories should be accepted. The first email from each new address auto-creates a passive reporter record so attribution and history work the same as for a regular reporter.",
+      "contributorEmail": "Contributor Email",
+      "contributorName": "Display Name"
     },
     "entitlements": {
       "title": "Page Entitlements",
