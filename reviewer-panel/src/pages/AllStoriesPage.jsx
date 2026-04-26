@@ -71,6 +71,7 @@ export default function AllStoriesPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [reporterFilter, setReporterFilter] = useState('');
+  const [assigneeFilter, setAssigneeFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
   // Default to yesterday so the page opens on "last 1 day" of submissions.
   // Personal queue scoping moved to the Dashboard — All Stories is org-wide.
@@ -146,7 +147,7 @@ export default function AllStoriesPage() {
     setLoading(true);
     try {
       const offset = (currentPage - 1) * PAGE_SIZE;
-      const hasFilters = statusFilter || categoryFilter || reporterFilter || locationFilter || dateFrom || dateTo;
+      const hasFilters = statusFilter || categoryFilter || reporterFilter || assigneeFilter || locationFilter || dateFrom || dateTo;
       const useSemanticSearch = debouncedSearch.trim() && !hasFilters;
 
       if (useSemanticSearch) {
@@ -174,6 +175,7 @@ export default function AllStoriesPage() {
         }
         if (categoryFilter) params.category = categoryFilter;
         if (reporterFilter) params.reporter_id = reporterFilter;
+        if (assigneeFilter) params.assigned_to = assigneeFilter;
         if (locationFilter) params.location = locationFilter;
         if (dateFrom) params.date_from = dateFrom;
         if (dateTo) params.date_to = dateTo;
@@ -191,7 +193,7 @@ export default function AllStoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, debouncedSearch, statusFilter, categoryFilter, reporterFilter, locationFilter, dateFrom, dateTo]);
+  }, [currentPage, debouncedSearch, statusFilter, categoryFilter, reporterFilter, assigneeFilter, locationFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     loadStories();
@@ -213,6 +215,11 @@ export default function AllStoriesPage() {
 
   const handleReporterChange = (val) => {
     setReporterFilter(val);
+    setCurrentPage(1);
+  };
+
+  const handleAssigneeChange = (val) => {
+    setAssigneeFilter(val);
     setCurrentPage(1);
   };
 
@@ -264,6 +271,7 @@ export default function AllStoriesPage() {
     statusFilter ||
     categoryFilter ||
     reporterFilter ||
+    assigneeFilter ||
     locationFilter ||
     dateFrom ||
     dateTo ||
@@ -274,6 +282,7 @@ export default function AllStoriesPage() {
     setStatusFilter('');
     setCategoryFilter('');
     setReporterFilter('');
+    setAssigneeFilter('');
     setLocationFilter('');
     setDateFrom('');
     setDateTo('');
@@ -358,6 +367,27 @@ export default function AllStoriesPage() {
               placeholder={t('allStories.all')}
               allLabel={t('allStories.all')}
               options={reporters.map((r) => ({ value: String(r.id), label: r.name }))}
+            />
+          </div>
+
+          {/* #57 — "Assigned to" filter, restored after the rebuild. Backed
+              by the same reviewer pool the inline reassign popover uses
+              (assignableReviewers(reporters)) so the dropdown can never
+              offer a user who can't actually own a story. Maps to the
+              backend's `assigned_to` query param (also accepts 'me' but
+              we expose explicit user picks here — the dashboard already
+              covers the personal queue case). */}
+          <div className="flex flex-col gap-0.5 max-[900px]:min-w-0">
+            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
+              {t('allStories.filterByAssignee', 'Assigned to')}
+            </Label>
+            <SearchableSelect
+              triggerClassName="min-w-[140px]"
+              value={assigneeFilter}
+              onChange={handleAssigneeChange}
+              placeholder={t('allStories.all')}
+              allLabel={t('allStories.all')}
+              options={reviewers.map((r) => ({ value: String(r.id), label: r.name }))}
             />
           </div>
 
