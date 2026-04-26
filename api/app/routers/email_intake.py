@@ -32,6 +32,7 @@ from ..services.email_intake import (
     MAX_ATTACHMENTS_PER_STORY,
     SPAM_THRESHOLD,
     already_processed,
+    candidate_destinations,
     clean_subject,
     extract_forwarder,
     extract_message_id,
@@ -86,7 +87,8 @@ async def email_inbound(
     # SendGrid posts multipart/form-data. Read everything into form
     # so attachments are available alongside the named fields.
     form = await request.form()
-    to_value      = (form.get("to") or "").strip()
+    to_header     = (form.get("to") or "").strip()
+    envelope_raw  = (form.get("envelope") or "").strip()
     from_value    = (form.get("from") or "").strip()
     subject_value = (form.get("subject") or "").strip()
     text_body     = (form.get("text") or "").strip()
@@ -96,7 +98,20 @@ async def email_inbound(
     from_name, from_email = parse_address(from_value)
     message_id = extract_message_id(headers)
     forwarder  = extract_forwarder(headers, settings.INBOUND_EMAIL_DOMAIN)
-    org_slug   = org_slug_from_to(to_value, settings.INBOUND_EMAIL_DOMAIN)
+
+    # Walk envelope.to → To: header in that order. SendGrid's `to`
+    # header for forwarded mail still says satrujitm5@gmail.com (the
+    # original recipient), but the SMTP envelope carries the real
+    # destination pragativadi@desk.vrittant.in. We need the envelope
+    # to route this to Pragativadi.
+    org_slug = None
+    to_value = to_header  # default for logging
+    for cand in candidate_destinations(envelope_raw, to_header):
+        slug = org_slug_from_to(cand, settings.INBOUND_EMAIL_DOMAIN)
+        if slug:
+            org_slug = slug
+            to_value = cand
+            break
 
     log_kwargs = dict(
         message_id=message_id,

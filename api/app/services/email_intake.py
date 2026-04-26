@@ -24,6 +24,7 @@ Validation chain (any failure = silent drop with logged reason):
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 import uuid
@@ -101,6 +102,45 @@ def org_slug_from_to(to_value: str, expected_domain: str) -> Optional[str]:
         if domain == expected and local:
             return local
     return None
+
+
+def candidate_destinations(envelope_raw: str, to_header: str) -> list[str]:
+    """Return all plausible destination addresses for this delivery.
+
+    SendGrid Inbound Parse exposes two recipient fields and they
+    disagree on forwarded mail:
+
+      * ``to`` form field — taken from the email's To: HEADER. For a
+        forwarded message that's still the *original* recipient (e.g.
+        satrujitm5@gmail.com), not the address SendGrid actually
+        received it for.
+      * ``envelope`` form field — JSON like ``{"to": ["x@y"], "from":
+        "..."}``. The ``to`` array carries the real SMTP-envelope
+        recipient — i.e. ``pragativadi@desk.vrittant.in`` for our
+        forwarded case.
+
+    For routing we MUST trust the envelope; the header was correct
+    only for direct sends. We return envelope addresses first, then
+    the header value, so the router can try each in order until it
+    finds one whose domain matches our INBOUND_EMAIL_DOMAIN.
+    """
+    out: list[str] = []
+    if envelope_raw:
+        try:
+            env = json.loads(envelope_raw)
+            env_to = env.get("to") or []
+            if isinstance(env_to, str):
+                env_to = [env_to]
+            for addr in env_to:
+                if addr:
+                    out.append(str(addr))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            # Malformed envelope — fall through to the header-based
+            # candidate. Don't crash the whole intake on bad JSON.
+            pass
+    if to_header:
+        out.append(to_header)
+    return out
 
 
 def extract_forwarder(headers: str, our_domain: str = "") -> Optional[str]:
