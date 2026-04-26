@@ -42,6 +42,11 @@ function formatDisplayDate(dateStr) {
 }
 
 function getEditionTitle(edition, t) {
+  // Prefer the explicit edition title when one is set (e.g. the
+  // canonical geographic names like "Bhubaneswar"). Falls back to the
+  // synthesized "Daily - 26 Apr 2026" so legacy unnamed editions still
+  // surface a useful label in the search/filter.
+  if (edition?.title && edition.title.trim()) return edition.title;
   const typeLabel = t(`buckets.paperTypes.${edition.paper_type}`) !== `buckets.paperTypes.${edition.paper_type}`
     ? t(`buckets.paperTypes.${edition.paper_type}`)
     : edition.paper_type;
@@ -85,6 +90,9 @@ function EditionTable({ editions, t, onRowClick, onEdit, onDelete, onStatusChang
         <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_var(--border)]">
           <TableRow>
             <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em]">
+              {t('buckets.editionColumn', 'Edition')}
+            </TableHead>
+            <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em]">
               {t('buckets.paperType')}
             </TableHead>
             <TableHead className="px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em]">
@@ -121,8 +129,11 @@ function EditionTable({ editions, t, onRowClick, onEdit, onDelete, onStatusChang
                 <TableCell className="px-4 py-2">
                   <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
                     <Newspaper size={13} className="text-primary/70 shrink-0" />
-                    {paperLabel}
+                    {edition.title || paperLabel}
                   </span>
+                </TableCell>
+                <TableCell className="px-4 py-2 text-xs text-muted-foreground">
+                  {paperLabel}
                 </TableCell>
                 <TableCell className="px-4 py-2">
                   <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">

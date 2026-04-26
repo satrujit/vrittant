@@ -189,6 +189,7 @@
     "deleteEdition": "संस्करण हटाएं",
     "deleteEditionConfirm": "क्या आप सुनिश्चित हैं? यह सभी पृष्ठ असाइनमेंट हटा देगा।",
     "createEditionTitle": "नया संस्करण बनाएं",
+    "editionColumn": "संस्करण",
     "editionName": "संस्करण का नाम",
     "editionNameCustom": "कस्टम…",
     "editionNameCustomPlaceholder": "कस्टम संस्करण नाम दर्ज करें",
