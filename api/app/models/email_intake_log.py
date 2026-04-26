@@ -8,13 +8,17 @@ One row per delivery — created or rejected. Used for:
     see the exact reason it was dropped.
 
 Status vocabulary:
-  * accepted      — story created. story_id points at it.
-  * dropped_org   — local part didn't match any org slug.
-  * dropped_fwd   — forwarding gateway not in OrgConfig.email_forwarders.
-  * dropped_sender — no active reporter in the org with that email.
-  * dropped_spam  — SendGrid spam score over threshold.
-  * dropped_dup   — duplicate Message-ID.
-  * error         — unexpected failure during processing (see error_msg).
+  * accepted                — story created. story_id points at it.
+  * dropped_org             — local part didn't match any org slug.
+  * dropped_fwd             — forwarding gateway not in OrgConfig.email_forwarders.
+  * dropped_sender          — no active reporter in the org with that email.
+  * dropped_spam            — SendGrid spam score over threshold.
+  * dropped_dup             — duplicate Message-ID.
+  * forwarding_verification — Gmail "confirm forwarding" email; body
+                              stashed in error_msg so an admin can
+                              grep the 9-digit code without setting
+                              up a webhook.site detour.
+  * error                   — unexpected failure during processing (see error_msg).
 """
 from __future__ import annotations
 

@@ -116,6 +116,32 @@ async def email_inbound(
 
     log_kwargs["organization_id"] = org.id
 
+    # ── 1b. Gmail forwarding verification ───────────────────────────────
+    # When an admin adds a new forwarding address in Gmail, Google
+    # mails forwarding-noreply@google.com → <new-address> with a
+    # 9-digit confirmation code (and a clickable URL). Without this
+    # branch the email would fail the forwarder/sender allowlists and
+    # silently drop, leaving the admin no way to complete the setup
+    # except through a temporary webhook.site detour. We capture the
+    # body in error_msg so the code can be grepped from the audit
+    # table:
+    #   SELECT created_at, subject, error_msg
+    #   FROM email_intake_log
+    #   WHERE status = 'forwarding_verification'
+    #   ORDER BY created_at DESC LIMIT 1;
+    if from_email == "forwarding-noreply@google.com":
+        log_intake(
+            db,
+            status="forwarding_verification",
+            # Truncate generously — the verification body is ~1.5KB
+            # of plain text. Cap protects us against pathological
+            # payloads.
+            error_msg=(text_body or "(empty body)")[:8000],
+            **log_kwargs,
+        )
+        db.commit()
+        return {"detail": "ok"}
+
     # ── 2. Dedup early — we may already have this Message-ID even if
     #      the row was a drop. Skip on retries so we don't double-log.
     if message_id and already_processed(db, org.id, message_id):
