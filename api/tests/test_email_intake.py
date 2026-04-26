@@ -275,6 +275,37 @@ def test_extract_forwarder_pulls_for_address_from_received_chain():
     assert extract_forwarder(headers) == "pragativadi@gmail.com"
 
 
+def test_captures_gmail_forwarding_verification_body(client, db, org_setup):
+    """Gmail's forwarding-noreply email must be captured (status =
+    'forwarding_verification') with the body in error_msg so an
+    admin can grep the 9-digit code without a webhook.site detour.
+    Without this special-case the email would fail the forwarder
+    allowlist and silently drop."""
+    payload = _payload(
+        from_addr="forwarding-noreply@google.com",
+        from_name="Gmail Team",
+        subject="(#345678) Gmail Forwarding Confirmation",
+        text=(
+            "Pragativadi Desk has requested to automatically forward mail to your "
+            "email address pragativadi@desk.vrittant.in.\n\n"
+            "Confirmation code: 345678901\n\n"
+            "To allow Pragativadi Desk to automatically forward mail to your address, "
+            "please click the link below to confirm the request:\n"
+            "https://mail-settings.google.com/mail/vf-%5BANGjdJ_example%5D\n"
+        ),
+    )
+    resp = client.post(f"/internal/email/inbound?token={TOKEN}", data=payload)
+    assert resp.status_code == 200
+
+    log = db.query(EmailIntakeLog).one()
+    assert log.status == "forwarding_verification"
+    assert log.organization_id == ORG_ID
+    assert "345678901" in (log.error_msg or "")
+    assert "https://mail-settings.google.com" in (log.error_msg or "")
+    # No Story should be created for verification emails.
+    assert db.query(Story).count() == 0
+
+
 def test_extract_forwarder_skips_our_own_sendgrid_hop():
     """Top-most Received line is SendGrid's own — its 'for' address
     points at our INBOUND_EMAIL_DOMAIN. The parser must skip past it
