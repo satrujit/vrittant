@@ -9,6 +9,13 @@ const SIZE_CLASSES = {
   lg: 'size-12 text-base',
 };
 
+// Default fallback when no per-name color is provided. Hardcoded
+// instead of `hsl(var(--primary))` because the project's --primary
+// is defined in oklch space, which makes the hsl() wrapper resolve
+// to an invalid colour and paints the avatar transparent. Match the
+// brand coral so the fallback still reads as ours.
+const DEFAULT_COLOR = '#FA6C38';
+
 function Avatar({ initials, color, size = 'md', className }) {
   return (
     <div
@@ -17,7 +24,7 @@ function Avatar({ initials, color, size = 'md', className }) {
         SIZE_CLASSES[size] || SIZE_CLASSES.md,
         className
       )}
-      style={{ backgroundColor: color || 'hsl(var(--primary))' }}
+      style={{ backgroundColor: color || DEFAULT_COLOR }}
     >
       {initials}
     </div>
