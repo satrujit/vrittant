@@ -33,11 +33,11 @@ from ..services.email_intake import (
     SPAM_THRESHOLD,
     already_processed,
     candidate_destinations,
+    classify_attachment,
     clean_subject,
     extract_forwarder,
     extract_message_id,
     find_org_by_slug,
-    is_accepted_image,
     log_intake,
     org_slug_from_to,
     parse_address,
@@ -213,10 +213,10 @@ async def email_inbound(
     log_kwargs["attachment_count_received"] = attach_count_advertised or len(attachment_keys)
     log_kwargs["attachment_keys"] = ",".join(sorted(attachment_keys))
 
-    image_paragraphs: list[dict] = []
+    media_paragraphs: list[dict] = []
     rejected_kinds: list[str] = []
     for key in sorted(attachment_keys):
-        if len(image_paragraphs) >= MAX_ATTACHMENTS_PER_STORY:
+        if len(media_paragraphs) >= MAX_ATTACHMENTS_PER_STORY:
             break
         upload = form.get(key)
         if upload is None or not hasattr(upload, "read"):
@@ -224,10 +224,14 @@ async def email_inbound(
             continue
         filename = (getattr(upload, "filename", "") or "").strip() or key
         content_type = getattr(upload, "content_type", "") or ""
-        if not is_accepted_image(filename, content_type):
+        media_type = classify_attachment(filename, content_type)
+        if media_type is None:
+            # Rejected: video, audio, archive, executable, unknown.
+            # Logged so reviewers can see "why didn't my .zip come
+            # through" without us having to re-grep Cloud Run.
             rejected_kinds.append(f"{filename}:{content_type}")
             logger.info(
-                "email-intake rejecting non-image attachment: key=%s name=%s type=%s",
+                "email-intake rejecting unsupported attachment: key=%s name=%s type=%s",
                 key, filename, content_type,
             )
             continue
@@ -239,15 +243,15 @@ async def email_inbound(
         if not blob:
             continue
         media_url = save_file(blob, filename, subfolder="story-media")
-        image_paragraphs.append({
+        media_paragraphs.append({
             "id": str(uuid_mod.uuid4()),
             "text": "",
             "media_path": media_url,
-            "media_type": "photo",
+            "media_type": media_type,  # "photo" or "document"
             "media_name": filename,
         })
 
-    log_kwargs["attachment_count_accepted"] = len(image_paragraphs)
+    log_kwargs["attachment_count_accepted"] = len(media_paragraphs)
 
     # Surface rejection reasons in the audit log so future debugging
     # ("why didn't my photo come through?") doesn't need Cloud Run
@@ -256,7 +260,7 @@ async def email_inbound(
     # them.
     rejection_msg = "; ".join(rejected_kinds) if rejected_kinds else None
 
-    paragraphs.extend(image_paragraphs)
+    paragraphs.extend(media_paragraphs)
 
     headline = clean_subject(subject_value) or (
         # Fall back to the first non-empty paragraph if there's no
