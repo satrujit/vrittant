@@ -102,6 +102,8 @@ def admin_list_reporters(
             published_count=pub_map.get(r.id, 0),
             last_active=last_map.get(r.id),
             entitlements=[e.page_key for e in r.entitlements],
+            categories=list(r.categories or []),
+            regions=list(r.regions or []),
             is_deleted=r.deleted_at is not None,
         )
         for r in all_users

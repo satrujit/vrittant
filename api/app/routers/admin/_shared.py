@@ -177,6 +177,11 @@ class AdminReporterResponse(BaseModel):
     published_count: int
     last_active: Optional[datetime]
     entitlements: list[str] = []
+    # Reviewer-only scope. Reporters carry empty lists. Surfaced here so
+    # the org-admin "Edit user" modal can pre-check the boxes from the
+    # /admin/reporters list without an extra per-user round-trip.
+    categories: list[str] = []
+    regions: list[str] = []
     is_deleted: bool = False
 
     model_config = {"from_attributes": True}
