@@ -132,6 +132,35 @@ function EditionTable({ editions, t, onRowClick, onEdit, onDelete, onStatusChang
   const today = getTodayDate();
   const tomorrow = getTomorrowDate();
 
+  // Pre-group editions by date so the accordion knows which rows
+  // belong under each header. Editions arrive pre-sorted (tomorrow
+  // first, then ascending future, then past descending), so iterating
+  // preserves that order in the Map.
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const ed of editions) {
+      const d = ed.publication_date || '';
+      if (!map.has(d)) map.set(d, []);
+      map.get(d).push(ed);
+    }
+    return Array.from(map.entries());
+  }, [editions]);
+
+  // Accordion state. null = "user hasn't interacted yet" → derive
+  // default (first group expanded) inline. Once they click anything,
+  // we lock in their explicit choices and stop tracking the default.
+  const [expandedDates, setExpandedDates] = useState(null);
+  const effectiveExpanded =
+    expandedDates ?? new Set(groups.length > 0 ? [groups[0][0]] : []);
+  const toggleDate = (date) => {
+    setExpandedDates((prev) => {
+      const next = new Set(prev ?? (groups.length > 0 ? [groups[0][0]] : []));
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  };
+
   const renderEditionRow = (edition) => {
     const statusKey = getStatusKey(edition.status);
     const pageCount = edition.pages?.length ?? edition.page_count ?? 0;
@@ -250,56 +279,59 @@ function EditionTable({ editions, t, onRowClick, onEdit, onDelete, onStatusChang
           </TableRow>
         </TableHeader>
         <TableBody>
-          {(() => {
-            // Walk in render order, emit a thin date-band row whenever
-            // the date changes. We track previous date inline rather
-            // than pre-grouping into nested arrays so the existing row
-            // markup stays untouched.
-            let lastDate = null;
-            const rows = [];
-            for (const edition of editions) {
-              if (edition.publication_date !== lastDate) {
-                lastDate = edition.publication_date;
-                const relative = getRelativeDayLabel(lastDate, today, tomorrow, t);
-                const isTomorrow = lastDate === tomorrow;
-                rows.push(
-                  <TableRow
-                    key={`group-${lastDate}`}
-                    className={cn(
-                      'border-b border-border/60 hover:bg-transparent',
-                      isTomorrow ? 'bg-primary/5' : 'bg-muted/40'
+          {groups.flatMap(([date, group]) => {
+            const relative = getRelativeDayLabel(date, today, tomorrow, t);
+            const isTomorrow = date === tomorrow;
+            const isOpen = effectiveExpanded.has(date);
+            const headerRow = (
+              <TableRow
+                key={`group-${date}`}
+                className={cn(
+                  'cursor-pointer border-b border-border/60 hover:brightness-95',
+                  isTomorrow ? 'bg-primary/5' : 'bg-muted/40'
+                )}
+                onClick={() => toggleDate(date)}
+              >
+                <TableCell
+                  colSpan={7}
+                  className="px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground"
+                >
+                  <span className="inline-flex w-full items-center gap-2">
+                    {isOpen ? (
+                      <ChevronDown size={12} className={cn('shrink-0', isTomorrow && 'text-primary')} />
+                    ) : (
+                      <ChevronRight size={12} className={cn('shrink-0', isTomorrow && 'text-primary')} />
                     )}
-                  >
-                    <TableCell
-                      colSpan={7}
-                      className="px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <Calendar size={11} className={cn('shrink-0', isTomorrow && 'text-primary')} />
-                        <span className={cn(isTomorrow && 'text-primary')}>
-                          {formatDisplayDate(lastDate)}
-                        </span>
-                        {relative && (
-                          <span
-                            className={cn(
-                              'rounded-full px-1.5 py-px text-[10px] font-medium normal-case tracking-normal',
-                              isTomorrow
-                                ? 'bg-primary/15 text-primary'
-                                : 'bg-muted text-muted-foreground'
-                            )}
-                          >
-                            {relative}
-                          </span>
+                    <Calendar size={11} className={cn('shrink-0', isTomorrow && 'text-primary')} />
+                    <span className={cn(isTomorrow && 'text-primary')}>
+                      {formatDisplayDate(date)}
+                    </span>
+                    {relative && (
+                      <span
+                        className={cn(
+                          'rounded-full px-1.5 py-px text-[10px] font-medium normal-case tracking-normal',
+                          isTomorrow
+                            ? 'bg-primary/15 text-primary'
+                            : 'bg-muted text-muted-foreground'
                         )}
+                      >
+                        {relative}
                       </span>
-                    </TableCell>
-                  </TableRow>
-                );
-              }
-              rows.push(renderEditionRow(edition));
-            }
-            return rows;
-          })()}
+                    )}
+                    {/* Group count sits at the right edge — it's the
+                        only signal of group size when collapsed, so
+                        promote it past the muted text-foreground. */}
+                    <span className="ml-auto normal-case tracking-normal text-[11px] text-muted-foreground">
+                      {group.length}
+                    </span>
+                  </span>
+                </TableCell>
+              </TableRow>
+            );
+            return isOpen
+              ? [headerRow, ...group.map(renderEditionRow)]
+              : [headerRow];
+          })}
         </TableBody>
       </Table>
     </div>
