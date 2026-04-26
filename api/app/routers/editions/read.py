@@ -1,5 +1,5 @@
 """Edition read endpoints: list, detail."""
-from datetime import date as date_type
+from datetime import date as date_type, timedelta
 
 from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy import func
@@ -13,6 +13,7 @@ from ...schemas.edition import (
     EditionDetailResponse,
     EditionListResponse,
 )
+from ...utils.tz import now_ist
 from . import router
 from ._shared import _edition_to_response, _page_to_response, ensure_canonical_editions
 
@@ -47,20 +48,29 @@ def list_editions(
         base_filters.append(Edition.status == status_filter)
     if publication_date is not None:
         base_filters.append(Edition.publication_date == publication_date)
-        # Self-healing 7-day window: every time the matrix lands on a
-        # date we make sure the org's canonical edition rows exist for
-        # that date and the next 6. Idempotent and cheap (one bulk
-        # SELECT + bulk INSERT). Skipped when no date filter is given
-        # so global "list all editions" calls don't accidentally seed.
-        try:
-            created = ensure_canonical_editions(db, org_id, publication_date)
-            if created:
-                db.commit()
-        except Exception:
-            # Never let auto-seed break a read. Worst case the matrix
-            # shows the previously-existing editions; manual create
-            # still works.
-            db.rollback()
+
+    # Self-healing 7-day window. Two trigger paths:
+    #   * Filtered list (placement matrix on a specific date) → anchor
+    #     at that date so navigating forward stays primed.
+    #   * Unfiltered list (BucketsListPage) → anchor at TOMORROW. The
+    #     newspaper editorial convention is "today's work = tomorrow's
+    #     paper", so today's date sits one slot behind the rolling
+    #     canonical window. Manual editions for today/yesterday are
+    #     left untouched.
+    # Idempotent and cheap: bulk SELECT against the unique
+    # (org, date, title) index before INSERT.
+    try:
+        if publication_date is not None:
+            anchor = publication_date
+        else:
+            anchor = now_ist().date() + timedelta(days=1)
+        created = ensure_canonical_editions(db, org_id, anchor)
+        if created:
+            db.commit()
+    except Exception:
+        # Never let auto-seed break a read. Worst case the table shows
+        # the previously-existing editions; manual create still works.
+        db.rollback()
 
     # Total count (without joins)
     total = db.query(func.count(Edition.id)).filter(*base_filters).scalar()
