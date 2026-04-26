@@ -17,8 +17,9 @@ What we guarantee:
 from datetime import date, timedelta
 from unittest.mock import patch
 
-from app.models.edition import Edition
+from app.models.edition import Edition, EditionPage
 from app.models.org_config import OrgConfig
+from app.routers.editions._shared import CANONICAL_EDITION_PAGE_COUNT
 
 
 CANONICAL = [
@@ -167,6 +168,38 @@ def test_no_edition_names_configured_means_no_auto_seed(
 
     count = db.query(Edition).filter(Edition.organization_id == "org-test").count()
     assert count == 0
+
+
+def test_each_canonical_edition_gets_20_pages_named_page_n(
+    client, db, reviewer, override_user, auth_header
+):
+    """Canonical geographic editions share a uniform layout — every
+    auto-seeded edition lands with 'Page 1' … 'Page 20', independent
+    of the org's free-form page_suggestions preset."""
+    _seed_org_config(db)
+    override_user(reviewer)
+    anchor = date(2026, 5, 1)
+
+    client.get(f"/admin/editions?publication_date={anchor.isoformat()}", headers=auth_header)
+
+    sample = (
+        db.query(Edition)
+        .filter(
+            Edition.organization_id == "org-test",
+            Edition.publication_date == anchor,
+            Edition.title == "Bhubaneswar",
+        )
+        .first()
+    )
+    pages = (
+        db.query(EditionPage)
+        .filter(EditionPage.edition_id == sample.id)
+        .order_by(EditionPage.sort_order)
+        .all()
+    )
+    assert len(pages) == CANONICAL_EDITION_PAGE_COUNT == 20
+    assert [p.page_name for p in pages] == [f"Page {i}" for i in range(1, 21)]
+    assert [p.page_number for p in pages] == list(range(1, 21))
 
 
 def test_unfiltered_list_seeds_at_tomorrow(

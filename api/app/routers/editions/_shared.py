@@ -12,6 +12,12 @@ from ...models.org_config import OrgConfig
 # so today + 6 = a one-week rolling window with no scheduled job.
 CANONICAL_SEED_HORIZON_DAYS = 7
 
+# Number of blank pages every freshly-seeded canonical edition gets
+# (named "Page 1" … "Page N"). Independent of OrgConfig.page_suggestions
+# — that preset is for free-form manual editions; canonical geographic
+# editions all share the same uniform layout.
+CANONICAL_EDITION_PAGE_COUNT = 20
+
 
 PAPER_TYPE_LABELS = {
     "daily": "Daily",
@@ -43,6 +49,29 @@ def _edition_to_response(edition: Edition) -> dict:
         "created_at": edition.created_at,
         "updated_at": edition.updated_at,
     }
+
+
+def seed_canonical_pages(
+    db: Session,
+    edition: Edition,
+    count: int = CANONICAL_EDITION_PAGE_COUNT,
+) -> None:
+    """Add ``count`` blank pages named 'Page 1' … 'Page N' to a freshly
+    auto-seeded canonical edition. No-op if pages already exist (so
+    re-running the seeder doesn't duplicate). Caller controls the
+    transaction.
+    """
+    if edition.pages:
+        return
+    for i in range(1, count + 1):
+        db.add(
+            EditionPage(
+                edition_id=edition.id,
+                page_number=i,
+                page_name=f"Page {i}",
+                sort_order=i,
+            )
+        )
 
 
 def seed_default_pages(db: Session, edition: Edition, cfg: OrgConfig | None) -> None:
@@ -140,9 +169,12 @@ def ensure_canonical_editions(
         return 0
 
     # Flush so each new Edition gets its UUID before we attach pages.
+    # Canonical editions get the uniform Page 1..N layout — they share
+    # the same page structure across geographic editions, so we don't
+    # use OrgConfig.page_suggestions here.
     db.flush()
     for ed in created_editions:
-        seed_default_pages(db, ed, cfg)
+        seed_canonical_pages(db, ed)
     return len(created_editions)
 
 
