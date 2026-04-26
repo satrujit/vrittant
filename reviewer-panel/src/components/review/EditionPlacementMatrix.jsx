@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { Calendar as CalendarIcon } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import {
   getStoryPlacements,
@@ -6,6 +7,7 @@ import {
   listTodaysEditions,
 } from '../../services/api/editions.js';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 const AVIMAT = 'Avimat';
@@ -22,19 +24,42 @@ function todayIST() {
   return fmt.format(new Date()); // en-CA gives YYYY-MM-DD
 }
 
-function shiftDate(iso, days) {
+/** "27 April 2028" — long format used in the section header. */
+function formatLongDate(iso) {
+  if (!iso) return '';
   const [y, m, d] = iso.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return dt.toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(dt);
+}
+
+/** Pull just the page number out of a page_name like "Page 6". Falls
+ *  back to the full name when the title isn't a "Page N" string. The
+ *  cell renders the number BIG, so most reviewers should see a single
+ *  glanceable digit. */
+function shortPageLabel(pageName) {
+  if (!pageName) return null;
+  const m = String(pageName).match(/(\d+)/);
+  return m ? m[1] : pageName;
 }
 
 /**
- * EditionPlacementMatrix — one row of cells, one per edition for the
- * story's publication date. Clicking a cell opens a popover to pick a
- * page (or drop the story from that edition). When you pick a page, the
- * choice fans out to every other non-Avimat edition that has a page with
- * the same name and hasn't been manually overridden in this session.
+ * EditionPlacementMatrix — story → edition page assignments.
+ *
+ * Layout: a 3-column grid of edition cells (one per geographic
+ * edition). Each cell stacks the edition name on top of the
+ * currently-assigned page number (or an em-dash when not placed).
+ * Clicking a cell opens a popover to pick a page or drop the story
+ * from that edition.
+ *
+ * Date control: the active publication date renders as a long
+ * formatted string ("27 April 2028") and clicking it opens a
+ * calendar popover with a native date picker. Replaces the older
+ * ‹ ›-stepper UI.
  *
  * Avimat (Sunday-only edition) is intentionally never auto-filled —
  * direct clicks on its cell are the only way to place a story there.
@@ -49,8 +74,6 @@ export function EditionPlacementMatrix({ storyId }) {
   const { t } = useI18n();
   // Default to today (IST), not the story's submission date — a story
   // submitted yesterday can still be slated for tomorrow's edition.
-  // The reviewer can step the date forward/back to navigate days that
-  // have editions; un-placed stories simply stay in review status.
   const [activeDate, setActiveDate] = useState(() => todayIST());
 
   const [editions, setEditions] = useState([]);
@@ -58,6 +81,7 @@ export function EditionPlacementMatrix({ storyId }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [overrides, setOverrides] = useState(() => new Set());
+  const [datePopoverOpen, setDatePopoverOpen] = useState(false);
 
   // Initial load + reload when active date changes.
   useEffect(() => {
@@ -85,9 +109,9 @@ export function EditionPlacementMatrix({ storyId }) {
     };
   }, [activeDate, storyId]);
 
-  // Sort: daily editions first by numeric suffix (Ed 1, Ed 2, …), Avimat last.
-  // Backend ordering is unstable; without this the cells render right-to-left
-  // which reads weirdly when reviewers think in "Ed 1 → Ed 6" terms.
+  // Sort: canonical geographic editions first by their backend order
+  // (the seeder writes them in a stable list per org), Avimat last.
+  // Falls back to numeric suffix sort for legacy "Ed 1" / "Ed 6" rows.
   const sortedEditions = useMemo(() => {
     const numOf = (title) => {
       const m = String(title || '').match(/(\d+)/);
@@ -96,7 +120,10 @@ export function EditionPlacementMatrix({ storyId }) {
     return [...editions].sort((a, b) => {
       if (a.title === AVIMAT) return 1;
       if (b.title === AVIMAT) return -1;
-      return numOf(a.title) - numOf(b.title);
+      const an = numOf(a.title);
+      const bn = numOf(b.title);
+      if (an !== bn) return an - bn;
+      return String(a.title || '').localeCompare(String(b.title || ''));
     });
   }, [editions]);
 
@@ -140,6 +167,9 @@ export function EditionPlacementMatrix({ storyId }) {
         ns.add(editionId);
         return ns;
       });
+      // Fan-out: pick the same page-by-name on every other non-Avimat
+      // edition that the reviewer hasn't already touched this mount.
+      // Saves 5 extra clicks for "this story goes on page 3 everywhere".
       if (page) {
         for (const ed of editions) {
           if (ed.id === editionId) continue;
@@ -168,93 +198,83 @@ export function EditionPlacementMatrix({ storyId }) {
     [placementByEdition, commit]
   );
 
-  const applyAllDaily = useCallback(() => {
-    const ref = [...placementByEdition.values()].find((v) => v?.pageName);
-    const targetName = ref?.pageName || 'pg_1';
-    const next = new Map(placementByEdition);
-    for (const ed of editions) {
-      if (ed.title === AVIMAT) continue;
-      const match = ed.pages?.find((p) => p.page_name === targetName);
-      if (match) next.set(ed.id, { pageId: match.id, pageName: match.page_name });
-    }
-    commit(next);
-  }, [placementByEdition, editions, commit]);
-
   const clearAll = useCallback(() => {
     const next = new Map();
     for (const ed of editions) next.set(ed.id, null);
     commit(next);
   }, [editions, commit]);
 
-  const isToday = activeDate === todayIST();
+  const hasAny = useMemo(
+    () => [...placementByEdition.values()].some((v) => v?.pageId),
+    [placementByEdition]
+  );
 
   return (
-    <div className="px-3 pb-2">
-      {/* Row 1: date stepper. Stays on one line — no wrapping date. */}
-      <div className="mb-1.5 flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => setActiveDate((d) => shiftDate(d, -1))}
-          className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background text-[12px] leading-none hover:bg-accent"
-          aria-label="Previous day"
-        >
-          ‹
-        </button>
-        <span className="whitespace-nowrap text-[11px] font-medium tabular-nums">
-          {activeDate}
-          {isToday && <span className="ml-1 text-[10px] font-normal text-muted-foreground">(today)</span>}
-        </span>
-        <button
-          type="button"
-          onClick={() => setActiveDate((d) => shiftDate(d, 1))}
-          className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background text-[12px] leading-none hover:bg-accent"
-          aria-label="Next day"
-        >
-          ›
-        </button>
-        {!isToday && (
-          <button
-            type="button"
-            onClick={() => setActiveDate(todayIST())}
-            className="ml-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
-          >
-            Today
-          </button>
-        )}
-        <span className="flex-1" />
-        {saving && <span className="text-[10px] text-muted-foreground">saving…</span>}
-      </div>
+    <div className="px-4 pb-3">
+      {/* Header row: clickable date (opens calendar) + Clear All link.
+          Date sits in primary colour so it reads as the focal point. */}
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <Popover open={datePopoverOpen} onOpenChange={setDatePopoverOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-md border-none bg-transparent p-0 text-sm font-semibold text-primary transition-opacity hover:opacity-80"
+              title={t('placements.changeDate', 'Change date')}
+            >
+              <CalendarIcon size={14} />
+              <span>{formatLongDate(activeDate)}</span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-auto p-2">
+            <Input
+              type="date"
+              autoFocus
+              className="h-8 w-[160px] text-xs"
+              value={activeDate}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setActiveDate(e.target.value);
+                  setDatePopoverOpen(false);
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setActiveDate(todayIST());
+                setDatePopoverOpen(false);
+              }}
+              className="mt-1.5 w-full rounded-md border border-border bg-background px-2 py-1 text-[11px] hover:bg-accent"
+            >
+              {t('placements.today', 'Today')}
+            </button>
+          </PopoverContent>
+        </Popover>
 
-      {/* Row 2: action chips. Separate row so they never collide with the date. */}
-      {editions.length > 0 && (
-        <div className="mb-2 flex items-center gap-1">
-          <button
-            type="button"
-            onClick={applyAllDaily}
-            className="whitespace-nowrap rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
-          >
-            {t('placements.allDaily')}
-          </button>
-          <button
-            type="button"
-            onClick={clearAll}
-            className="whitespace-nowrap rounded-md border border-border bg-background px-2 py-0.5 text-[11px] hover:bg-accent"
-          >
-            {t('placements.clear')}
-          </button>
+        <div className="flex items-center gap-2">
+          {saving && (
+            <span className="text-[10px] text-muted-foreground">{t('common.saving', 'saving…')}</span>
+          )}
+          {hasAny && (
+            <button
+              type="button"
+              onClick={clearAll}
+              className="border-none bg-transparent p-0 text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              {t('placements.clearAll', 'Clear All')}
+            </button>
+          )}
         </div>
-      )}
+      </div>
 
       {loading ? (
         <div className="text-xs text-muted-foreground">{t('common.loading', 'Loading...')}</div>
       ) : !editions.length ? (
         <div className="text-xs text-muted-foreground">
-          {t('placements.noEditions', { date: activeDate })}
+          {t('placements.noEditions', { date: formatLongDate(activeDate) })}
         </div>
       ) : (
-        // Fixed 4-column grid keeps cells aligned. Trailing slots stay empty
-        // rather than centring an orphan row, which reads cleaner.
-        <div className="grid grid-cols-4 gap-1.5">
+        <div className="grid grid-cols-3 gap-x-3 gap-y-4">
           {sortedEditions.map((ed) => (
             <Cell
               key={ed.id}
@@ -273,54 +293,64 @@ export function EditionPlacementMatrix({ storyId }) {
 
 function Cell({ edition, current, onPick, onDrop, dropLabel }) {
   const [open, setOpen] = useState(false);
+  const display = shortPageLabel(current?.pageName);
+  const isPlaced = !!current?.pageId;
   return (
-    <div className="flex min-w-0 flex-col items-stretch">
-      <div className="mb-0.5 truncate text-center text-[10px] font-medium text-muted-foreground">
-        {edition.title}
-      </div>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'group flex min-w-0 cursor-pointer flex-col items-start gap-0.5 rounded border-none bg-transparent p-0 text-left transition-opacity hover:opacity-80',
+          )}
+        >
+          <span className="truncate text-[13px] font-semibold text-foreground" title={edition.title}>
+            {edition.title}
+          </span>
+          <span
             className={cn(
-              'w-full rounded border border-border bg-background px-1 py-1 text-center text-xs hover:bg-accent',
-              current?.pageName && 'border-primary/40 bg-primary/5 font-medium text-foreground'
+              'text-[26px] font-semibold leading-none tabular-nums',
+              isPlaced ? 'text-foreground' : 'text-muted-foreground/60',
             )}
           >
-            {current?.pageName || '—'}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="max-h-60 w-40 overflow-y-auto p-1">
-          {edition.pages?.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => {
-                onPick(p);
-                setOpen(false);
-              }}
-              className={cn(
-                'block w-full whitespace-nowrap rounded px-2 py-1 text-left text-xs hover:bg-accent',
-                current?.pageId === p.id && 'bg-primary/10 font-semibold'
-              )}
-            >
-              {p.page_name}
-            </button>
-          ))}
-          <div className="my-1 border-t border-border" />
+            {display || '–'}
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="max-h-60 w-44 overflow-y-auto p-1">
+        {edition.pages?.map((p) => (
           <button
+            key={p.id}
             type="button"
             onClick={() => {
-              onDrop();
+              onPick(p);
               setOpen(false);
             }}
-            className="block w-full whitespace-nowrap rounded px-2 py-1 text-left text-xs text-destructive hover:bg-destructive/10"
+            className={cn(
+              'block w-full whitespace-nowrap rounded px-2 py-1 text-left text-xs hover:bg-accent',
+              current?.pageId === p.id && 'bg-primary/10 font-semibold'
+            )}
           >
-            {dropLabel}
+            {p.page_name}
           </button>
-        </PopoverContent>
-      </Popover>
-    </div>
+        ))}
+        {isPlaced && (
+          <>
+            <div className="my-1 border-t border-border" />
+            <button
+              type="button"
+              onClick={() => {
+                onDrop();
+                setOpen(false);
+              }}
+              className="block w-full whitespace-nowrap rounded px-2 py-1 text-left text-xs text-destructive hover:bg-destructive/10"
+            >
+              {dropLabel}
+            </button>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 

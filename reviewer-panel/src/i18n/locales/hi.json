@@ -104,6 +104,7 @@
       "details": "विवरण",
       "settings": "सेटिंग्स"
     },
+    "pageAssignment": "पृष्ठ निर्धारण",
     "comments": {
       "title": "टिप्पणियाँ",
       "empty": "अभी तक कोई टिप्पणी नहीं",
@@ -504,6 +505,9 @@
   "placements": {
     "allDaily": "सभी डेली",
     "clear": "क्लियर",
+    "clearAll": "सब क्लियर",
+    "changeDate": "तारीख बदलें",
+    "today": "आज",
     "drop": "हटाएं",
     "noEditions": "{date} के लिए कोई संस्करण नहीं"
   }

@@ -104,6 +104,7 @@
       "details": "Details",
       "settings": "Settings"
     },
+    "pageAssignment": "Page Assignment",
     "comments": {
       "title": "Comments",
       "empty": "No comments yet",
@@ -504,6 +505,9 @@
   "placements": {
     "allDaily": "All daily",
     "clear": "Clear",
+    "clearAll": "Clear All",
+    "changeDate": "Change date",
+    "today": "Today",
     "drop": "Drop",
     "noEditions": "No editions for {date}"
   }
