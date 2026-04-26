@@ -44,6 +44,14 @@ DEFAULT_PRIORITY_LEVELS = [
     {"key": "breaking", "label": "Breaking", "label_local": "ବ୍ରେକିଂ", "is_active": True},
 ]
 
+# Per-organization canonical edition names. When present, the editions
+# router auto-creates one Edition row per name × per day for a rolling
+# 7-day window so reviewers always find the geographic editions
+# pre-seeded on the Page Arrangement screen. Manual editions (with
+# different titles) are not affected; same-titled rows are de-duped on
+# create. Empty list = feature off (no auto-seeding).
+DEFAULT_EDITION_NAMES = []
+
 
 class OrgConfig(Base):
     __tablename__ = "org_configs"
@@ -55,6 +63,10 @@ class OrgConfig(Base):
     page_suggestions = Column(JSON, nullable=False, default=list)
     priority_levels = Column(JSON, nullable=False, default=list)
     edition_schedule = Column(JSON, nullable=False, default=list)
+    # List[str] — geographic / regional edition names that auto-seed a
+    # 7-day rolling window of Edition rows. See DEFAULT_EDITION_NAMES
+    # docstring above for the full contract.
+    edition_names = Column(JSON, nullable=False, default=list)
     default_language = Column(String, nullable=False, default="odia")
     created_at = Column(DateTime, default=now_ist)
     updated_at = Column(

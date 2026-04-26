@@ -116,6 +116,9 @@ class UpdateOrgConfigRequest(BaseModel):
     page_suggestions: Optional[list[PageSuggestionItem]] = None
     priority_levels: Optional[list[PriorityLevelItem]] = None
     edition_schedule: Optional[list[EditionTemplate]] = None
+    # Geographic edition names (e.g. ["Bhubaneswar", "Coastal Odisha"]).
+    # See OrgConfig.edition_names for the full contract.
+    edition_names: Optional[list[str]] = None
     default_language: Optional[str] = None
 
 
@@ -125,6 +128,7 @@ class OrgConfigResponse(BaseModel):
     page_suggestions: list[dict] = []
     priority_levels: list[dict] = []
     edition_schedule: list[EditionTemplate] = Field(default_factory=list)
+    edition_names: list[str] = Field(default_factory=list)
     default_language: str = "odia"
 
     model_config = {"from_attributes": True}

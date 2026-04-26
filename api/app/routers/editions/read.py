@@ -14,7 +14,7 @@ from ...schemas.edition import (
     EditionListResponse,
 )
 from . import router
-from ._shared import _edition_to_response, _page_to_response
+from ._shared import _edition_to_response, _page_to_response, ensure_canonical_editions
 
 
 def _edition_with_pages(edition: Edition) -> dict:
@@ -47,6 +47,20 @@ def list_editions(
         base_filters.append(Edition.status == status_filter)
     if publication_date is not None:
         base_filters.append(Edition.publication_date == publication_date)
+        # Self-healing 7-day window: every time the matrix lands on a
+        # date we make sure the org's canonical edition rows exist for
+        # that date and the next 6. Idempotent and cheap (one bulk
+        # SELECT + bulk INSERT). Skipped when no date filter is given
+        # so global "list all editions" calls don't accidentally seed.
+        try:
+            created = ensure_canonical_editions(db, org_id, publication_date)
+            if created:
+                db.commit()
+        except Exception:
+            # Never let auto-seed break a read. Worst case the matrix
+            # shows the previously-existing editions; manual create
+            # still works.
+            db.rollback()
 
     # Total count (without joins)
     total = db.query(func.count(Edition.id)).filter(*base_filters).scalar()
