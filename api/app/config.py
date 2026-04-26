@@ -60,10 +60,10 @@ class Settings(BaseSettings):
 
     # Inbound email parsing (SendGrid Inbound Parse → /internal/email/inbound).
     # The local part of the To: address selects the org; the domain part
-    # must match this setting exactly. Default matches the production
-    # MX record on parse.vrittant.in (or desk.vrittant.in — whichever
-    # subdomain is configured in SendGrid).
-    INBOUND_EMAIL_DOMAIN: str = "desk.vrittant.in"
+    # must match this setting exactly. Production MX is set on the
+    # vrittant.in apex (no subdomain) so reporters mail
+    # pragativadi@vrittant.in, sambad@vrittant.in, etc.
+    INBOUND_EMAIL_DOMAIN: str = "vrittant.in"
 
     # ── Mobile force-update gate ─────────────────────────────────────────
     # The mobile app fetches /version/min-supported on cold start. If its
