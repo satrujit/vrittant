@@ -36,6 +36,21 @@ function getTomorrowDate() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+// Default visible window for the buckets table — past 2 days, today,
+// and the next 7 (the canonical rolling window). 10 days total. The
+// reviewer can widen via the date inputs in the filter row when they
+// need historical context.
+function getDateOffsetISO(deltaDays) {
+  const d = new Date();
+  d.setDate(d.getDate() + deltaDays);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+const DEFAULT_DATE_FROM_OFFSET = -2;
+const DEFAULT_DATE_TO_OFFSET = 7;
+
 // Sort comparator for the buckets list. Editor-friendly priority:
 //   1. Tomorrow (today + 1) at the very top — that's the paper being
 //      actively prepared right now (newspaper convention).
@@ -381,6 +396,12 @@ export default function BucketsListPage() {
   const [search, setSearch] = useState('');
   const [filterPaperType, setFilterPaperType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  // Default to a 10-day window: past 2 + today + next 7. Pure
+  // frontend filter — the API still returns up to 200 editions and
+  // the cache makes revisits instant. Reviewer can widen by editing
+  // either input.
+  const [dateFrom, setDateFrom] = useState(() => getDateOffsetISO(DEFAULT_DATE_FROM_OFFSET));
+  const [dateTo, setDateTo] = useState(() => getDateOffsetISO(DEFAULT_DATE_TO_OFFSET));
 
   // Published-section toggle (collapsed by default — keeps focus on active editions)
   const [publishedExpanded, setPublishedExpanded] = useState(false);
@@ -393,10 +414,17 @@ export default function BucketsListPage() {
   // Until we add real pagination here, request the full cap.
   const EDITIONS_PAGE_SIZE = 200;
 
+  // SWR-style: the cache returns stale data immediately so the table
+  // paints on the second visit without a spinner; `onUpdate` fires
+  // when the background revalidation completes and we swap in the
+  // fresh list.
   const loadEditions = async () => {
     setLoading(true);
     try {
-      const data = await fetchEditions({ limit: EDITIONS_PAGE_SIZE });
+      const data = await fetchEditions(
+        { limit: EDITIONS_PAGE_SIZE },
+        { onUpdate: (fresh) => setEditions(fresh.editions || []) }
+      );
       setEditions(data.editions || []);
     } catch (err) {
       console.error('Failed to fetch editions:', err);
@@ -409,7 +437,14 @@ export default function BucketsListPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchEditions({ limit: EDITIONS_PAGE_SIZE })
+    fetchEditions(
+      { limit: EDITIONS_PAGE_SIZE },
+      {
+        onUpdate: (fresh) => {
+          if (!cancelled) setEditions(fresh.editions || []);
+        },
+      }
+    )
       .then((data) => {
         if (!cancelled) {
           setEditions(data.editions || []);
@@ -447,13 +482,23 @@ export default function BucketsListPage() {
       result = result.filter((e) => getStatusKey(e.status) === filterStatus);
     }
 
+    // Date-range gate. ISO yyyy-mm-dd strings compare lexicographically
+    // so no Date parsing needed. Open-ended on either side when the
+    // input is blank.
+    if (dateFrom) {
+      result = result.filter((e) => (e.publication_date || '') >= dateFrom);
+    }
+    if (dateTo) {
+      result = result.filter((e) => (e.publication_date || '') <= dateTo);
+    }
+
     // Sort tomorrow-first so the actively-prepared paper sits at the
     // top, then ascending into the future, then today + past dates.
     // .slice() because Array.prototype.sort mutates and `editions`
     // came straight from state.
     const tomorrow = getTomorrowDate();
     return result.slice().sort((a, b) => compareEditionsForBuckets(a, b, tomorrow));
-  }, [editions, search, filterPaperType, filterStatus, t]);
+  }, [editions, search, filterPaperType, filterStatus, dateFrom, dateTo, t]);
 
   // Split into active (draft + finalized) and published.
   // Active stays expanded; published collapses behind a toggle so the page
@@ -630,7 +675,37 @@ export default function BucketsListPage() {
           />
         </div>
 
-        {(filterPaperType || filterStatus || search) && (
+        {/* Date window. Defaults to past 2 + today + next 7 = 10 days
+            so the table opens on a focused, actionable view. Reviewer
+            can widen either end (or clear both) to dig into history. */}
+        <div className="flex flex-col gap-0.5 min-w-[120px]">
+          <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
+            {t('allStories.dateFrom', 'From')}
+          </Label>
+          <Input
+            type="date"
+            className="h-8 text-xs"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-0.5 min-w-[120px]">
+          <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
+            {t('allStories.dateTo', 'To')}
+          </Label>
+          <Input
+            type="date"
+            className="h-8 text-xs"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+        </div>
+
+        {(filterPaperType
+          || filterStatus
+          || search
+          || dateFrom !== getDateOffsetISO(DEFAULT_DATE_FROM_OFFSET)
+          || dateTo !== getDateOffsetISO(DEFAULT_DATE_TO_OFFSET)) && (
           <Button
             variant="ghost"
             size="xs"
@@ -638,6 +713,8 @@ export default function BucketsListPage() {
               setFilterPaperType('');
               setFilterStatus('');
               setSearch('');
+              setDateFrom(getDateOffsetISO(DEFAULT_DATE_FROM_OFFSET));
+              setDateTo(getDateOffsetISO(DEFAULT_DATE_TO_OFFSET));
             }}
             className="h-8 text-muted-foreground hover:text-foreground"
           >
