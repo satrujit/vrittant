@@ -62,6 +62,17 @@ def update_org_config(
         config.page_suggestions = [p.model_dump() for p in body.page_suggestions]
     if body.priority_levels is not None:
         config.priority_levels = [p.model_dump() for p in body.priority_levels]
+    if body.edition_names is not None:
+        # Strip and de-dupe so the auto-seeder doesn't churn on
+        # whitespace-only or repeated names if an admin pastes sloppily.
+        seen = set()
+        cleaned = []
+        for raw in body.edition_names:
+            name = (raw or "").strip()
+            if name and name not in seen:
+                seen.add(name)
+                cleaned.append(name)
+        config.edition_names = cleaned
     if body.default_language is not None:
         config.default_language = body.default_language
     db.commit()

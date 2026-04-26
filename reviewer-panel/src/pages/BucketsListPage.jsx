@@ -197,14 +197,30 @@ export default function BucketsListPage() {
   const navigate = useNavigate();
 
   const pubTypes = (config?.publication_types || []).filter(p => p.is_active);
+  // Org's geographic edition names (e.g. Bhubaneswar, Coastal Odisha).
+  // Backed by OrgConfig.edition_names — when populated, the same list
+  // also drives the auto-rolling 7-day seeder on the backend, so the
+  // dropdown here mirrors what reviewers see in Page Arrangement.
+  const editionNames = useMemo(
+    () => (config?.edition_names || []).filter((n) => typeof n === 'string' && n.trim()),
+    [config?.edition_names]
+  );
 
   const [editions, setEditions] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Sentinel used when the user picks "Custom…" from the name dropdown
+  // instead of a canonical name. Anything else is the literal title.
+  const CUSTOM_NAME_SENTINEL = '__custom__';
 
   // Create modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newDate, setNewDate] = useState(getTodayDate());
   const [newPaperType, setNewPaperType] = useState('');
+  // Default to the first canonical name when one exists, otherwise sit
+  // on the custom sentinel so the free-text fallback is exposed.
+  const [newName, setNewName] = useState('');
+  const [newCustomName, setNewCustomName] = useState('');
   const [creating, setCreating] = useState(false);
 
   // Edit modal state
@@ -295,11 +311,25 @@ export default function BucketsListPage() {
   const handleCreate = async () => {
     setCreating(true);
     try {
-      await createEdition({ publication_date: newDate, paper_type: newPaperType });
+      // Resolve the title: a canonical name (if picked) wins; otherwise
+      // pass the custom string when non-empty, or omit the field so the
+      // backend falls back to its auto-generated "Daily - 26 Apr 2026".
+      let title;
+      if (newName === CUSTOM_NAME_SENTINEL) {
+        const trimmed = newCustomName.trim();
+        if (trimmed) title = trimmed;
+      } else if (newName) {
+        title = newName;
+      }
+      const payload = { publication_date: newDate, paper_type: newPaperType };
+      if (title) payload.title = title;
+      await createEdition(payload);
       await loadEditions();
       setShowCreateModal(false);
       setNewDate(getTodayDate());
       setNewPaperType(pubTypes[0]?.key || '');
+      setNewName(editionNames[0] || CUSTOM_NAME_SENTINEL);
+      setNewCustomName('');
     } catch (err) {
       console.error('Failed to create edition:', err);
     } finally {
@@ -361,6 +391,8 @@ export default function BucketsListPage() {
   const openCreateModal = () => {
     setNewDate(getTodayDate());
     setNewPaperType(pubTypes[0]?.key || '');
+    setNewName(editionNames[0] || CUSTOM_NAME_SENTINEL);
+    setNewCustomName('');
     setShowCreateModal(true);
   };
 
@@ -368,6 +400,8 @@ export default function BucketsListPage() {
     setShowCreateModal(false);
     setNewDate(getTodayDate());
     setNewPaperType(pubTypes[0]?.key || '');
+    setNewName(editionNames[0] || CUSTOM_NAME_SENTINEL);
+    setNewCustomName('');
   };
 
   const closeEditModal = () => {
@@ -579,6 +613,40 @@ export default function BucketsListPage() {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Edition name picker. Shown only when the org has configured
+              canonical names (Pragativadi has 6: Bhubaneswar etc.).
+              "Custom…" lets the reviewer create one-off editions
+              alongside the auto-rolling canonical set. */}
+          {editionNames.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edition-name">
+                {t('buckets.editionName', 'Edition name')}
+              </Label>
+              <Select value={newName} onValueChange={setNewName}>
+                <SelectTrigger id="edition-name" className="w-full rounded-lg bg-card border-border text-foreground">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {editionNames.map((name) => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                  <SelectItem value={CUSTOM_NAME_SENTINEL}>
+                    {t('buckets.editionNameCustom', 'Custom…')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {newName === CUSTOM_NAME_SENTINEL && (
+                <Input
+                  id="edition-name-custom"
+                  className="mt-1.5"
+                  placeholder={t('buckets.editionNameCustomPlaceholder', 'Enter a custom edition name')}
+                  value={newCustomName}
+                  onChange={(e) => setNewCustomName(e.target.value)}
+                />
+              )}
+            </div>
+          )}
 
           <div className="flex items-center justify-end gap-2 pt-2">
             <Button

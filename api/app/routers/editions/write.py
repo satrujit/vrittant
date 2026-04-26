@@ -21,7 +21,7 @@ from ...schemas.edition import (
 )
 from ...utils.scope import get_owned_or_404
 from . import router
-from ._shared import _edition_to_response, _generate_title, _page_to_response
+from ._shared import _edition_to_response, _generate_title, _page_to_response, seed_default_pages
 
 
 # ---------------------------------------------------------------------------
@@ -45,23 +45,8 @@ def create_edition(body: EditionCreate, db: Session = Depends(get_db), user: Use
     # manually for every day. Other paper types (weekend / evening /
     # special) start blank — they're often custom layouts.
     if body.paper_type == "daily":
-        cfg = (
-            db.query(OrgConfig)
-            .filter(OrgConfig.organization_id == org_id)
-            .first()
-        )
-        suggestions = (cfg.page_suggestions or []) if cfg else []
-        active = [s for s in suggestions if s.get("is_active", True)]
-        active.sort(key=lambda s: s.get("sort_order", 0))
-        for idx, s in enumerate(active, start=1):
-            db.add(
-                EditionPage(
-                    edition_id=edition.id,
-                    page_number=idx,
-                    page_name=s.get("name") or f"Page {idx}",
-                    sort_order=idx,
-                )
-            )
+        cfg = db.query(OrgConfig).filter(OrgConfig.organization_id == org_id).first()
+        seed_default_pages(db, edition, cfg)
 
     db.commit()
     db.refresh(edition)
