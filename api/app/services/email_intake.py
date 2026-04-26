@@ -55,7 +55,46 @@ MAX_ATTACHMENTS_PER_STORY = 8
 
 # Image extensions we accept as paragraph media. Matches the existing
 # storage._media_type_from_ext "photo" set.
-ACCEPTED_IMAGE_EXTS = {"jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp"}
+ACCEPTED_IMAGE_EXTS = {
+    "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp",
+    # TIFF — print-newsroom workflow: scanned source photos and
+    # high-res camera output often arrive as TIFF for quality.
+    "tif", "tiff",
+}
+
+# Document extensions we accept. Reporters routinely send press
+# releases as PDF / Word docs alongside photos; rejecting these forces
+# them to copy-paste the body into the email itself or skip
+# attachments entirely. We never open these server-side — same
+# defence-in-depth as for images: stored as binary in GCS, downloaded
+# on demand by an authenticated reviewer.
+#
+# PageMaker (.pmd) is included because Indian print newsrooms still
+# routinely ship layout files that way — reviewers want to download
+# and open them in PageMaker / InDesign on their layout machines.
+ACCEPTED_DOCUMENT_EXTS = {
+    "pdf", "doc", "docx", "txt", "rtf", "odt", "pmd",
+    # Spreadsheets — election results, panchayat census data, court
+    # docket lists routinely arrive as Excel/CSV from official
+    # sources.
+    "xls", "xlsx", "csv", "ods",
+}
+
+# MIME types we trust when the file extension is missing or oddly
+# cased — used as a fallback in classify_attachment.
+ACCEPTED_DOCUMENT_MIMES = {
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/rtf",
+    "text/plain",
+    "text/rtf",
+    "text/csv",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
 
 # Subject prefixes we strip when promoting subject → headline. Run
 # repeatedly because forwards-of-forwards stack ("Fwd: Fwd: Re:").
@@ -266,20 +305,46 @@ def split_paragraphs(text_body: str) -> list[dict]:
 
 
 def is_accepted_image(filename: str, content_type: str) -> bool:
-    """Gate uploads to image attachments. Rejects videos, PDFs, and
-    executables — none of these belong on a story page, and storing
-    them invites legal/security headaches we don't need to underwrite."""
+    """True if the attachment is a still image we can render inline.
+    Kept as a separate helper so the parser can choose between
+    media_type='photo' and media_type='document' on the resulting
+    paragraph — the editor renders them differently."""
     if not filename:
         return False
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext in ACCEPTED_IMAGE_EXTS:
         return True
-    # Defense in depth: trust the MIME type only if the extension is
-    # missing/odd. SendGrid sniffs and reports content_type from the
-    # MIME part header.
     if not ext and (content_type or "").lower().startswith("image/"):
         return True
     return False
+
+
+def classify_attachment(filename: str, content_type: str) -> Optional[str]:
+    """Return the media_type to attach this file with — or None to
+    reject it.
+
+      * "photo"    — still image (jpg, png, etc.) → renders inline
+      * "document" — PDF, Word, RTF, plain text → renders as a
+                     downloadable file in the story's Attachments
+                     section
+      * None       — videos, audio, archives (.zip), executables,
+                     anything else. Keeps Story media bounded to
+                     things a reviewer actually wants to see.
+
+    Filename trumps MIME type because Gmail/Outlook sometimes mislabel
+    content_type. MIME is consulted only when the filename has no
+    extension or an unfamiliar one.
+    """
+    if not filename:
+        return None
+    if is_accepted_image(filename, content_type):
+        return "photo"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext in ACCEPTED_DOCUMENT_EXTS:
+        return "document"
+    if not ext and (content_type or "").lower() in ACCEPTED_DOCUMENT_MIMES:
+        return "document"
+    return None
 
 
 # ── DB-side orchestration ───────────────────────────────────────────────

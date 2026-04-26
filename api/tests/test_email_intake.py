@@ -378,6 +378,42 @@ def test_extract_forwarder_skips_our_own_sendgrid_hop():
     assert extract_forwarder(headers, "desk.vrittant.in") == "pragativadi@gmail.com"
 
 
+def test_classify_attachment_accepts_images_and_documents_rejects_others():
+    """The full attachment classification matrix. Adding here is
+    cheaper than each gate getting hit live; it also documents what
+    the system silently drops vs accepts so a reviewer asking
+    "why didn't my .mp4 come through" gets answered by reading this
+    test."""
+    from app.services.email_intake import classify_attachment
+
+    # Photos.
+    assert classify_attachment("a.jpg", "image/jpeg") == "photo"
+    assert classify_attachment("scan.tiff", "image/tiff") == "photo"
+    assert classify_attachment("scan.tif", "image/tiff") == "photo"
+    assert classify_attachment("phone.HEIC", "image/heic") == "photo"
+
+    # Documents — press releases, official statements, datasets.
+    assert classify_attachment("release.pdf", "application/pdf") == "document"
+    assert classify_attachment("draft.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document") == "document"
+    assert classify_attachment("draft.doc", "application/msword") == "document"
+    assert classify_attachment("notes.txt", "text/plain") == "document"
+    assert classify_attachment("notes.rtf", "text/rtf") == "document"
+    assert classify_attachment("layout.pmd", "") == "document"
+    assert classify_attachment("results.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") == "document"
+    assert classify_attachment("results.xls", "application/vnd.ms-excel") == "document"
+    assert classify_attachment("dispatch.csv", "text/csv") == "document"
+    assert classify_attachment("notes.odt", "application/vnd.oasis.opendocument.text") == "document"
+    assert classify_attachment("data.ods", "application/vnd.oasis.opendocument.spreadsheet") == "document"
+
+    # Rejected: anything else.
+    assert classify_attachment("clip.mp4", "video/mp4") is None
+    assert classify_attachment("call.mp3", "audio/mpeg") is None
+    assert classify_attachment("malware.exe", "application/octet-stream") is None
+    assert classify_attachment("payload.zip", "application/zip") is None
+    assert classify_attachment("script.sh", "text/x-shellscript") is None
+    assert classify_attachment("", "image/jpeg") is None  # empty filename
+
+
 def test_org_slug_from_to_handles_display_name_and_case():
     from app.services.email_intake import org_slug_from_to
     assert org_slug_from_to(
