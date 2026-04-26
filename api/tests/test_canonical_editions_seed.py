@@ -1,17 +1,21 @@
 """Auto-seed canonical editions over a 7-day rolling window.
 
-Driven by OrgConfig.edition_names. The list endpoint
-(`GET /admin/editions?publication_date=…`) primes the calendar lazily
-on every visit, so reviewers always find the geographic edition rows
-ready in Page Arrangement.
+Driven by OrgConfig.edition_names. The list endpoint primes the
+calendar lazily on every visit:
+
+  * `GET /admin/editions?publication_date=D`  → anchor = D
+  * `GET /admin/editions`                     → anchor = today + 1
+    (newspaper convention: today's editorial work = tomorrow's paper)
 
 What we guarantee:
   * Visiting any date materialises the canonical 6 names × 7 days.
   * Re-visiting (same date) does NOT duplicate — idempotent.
   * Manual editions with non-canonical titles are untouched.
   * No edition_names configured → no auto-seeding (feature off).
+  * Listing without a date filter still seeds (anchored at tomorrow).
 """
 from datetime import date, timedelta
+from unittest.mock import patch
 
 from app.models.edition import Edition
 from app.models.org_config import OrgConfig
@@ -163,3 +167,44 @@ def test_no_edition_names_configured_means_no_auto_seed(
 
     count = db.query(Edition).filter(Edition.organization_id == "org-test").count()
     assert count == 0
+
+
+def test_unfiltered_list_seeds_at_tomorrow(
+    client, db, reviewer, override_user, auth_header
+):
+    """The buckets list page calls /admin/editions with no date filter.
+    It still has to trigger the seeder — anchored at *tomorrow* — so
+    the canonical editions appear in the Page Arrangement table."""
+    _seed_org_config(db)
+    override_user(reviewer)
+
+    # Pin "now" so the assertion is deterministic. Patches the symbol
+    # imported inside the read module, not the source utility.
+    from datetime import datetime, timezone, timedelta as td
+
+    fake_now = datetime(2026, 4, 26, 10, 0, tzinfo=timezone(td(hours=5, minutes=30)))
+    with patch("app.routers.editions.read.now_ist", return_value=fake_now):
+        resp = client.get("/admin/editions", headers=auth_header)
+        assert resp.status_code == 200
+
+    tomorrow = date(2026, 4, 27)
+
+    # Today (26 Apr) must NOT be auto-seeded — it's a slot for manual
+    # editions only under the today+1 convention.
+    today_count = (
+        db.query(Edition)
+        .filter(Edition.organization_id == "org-test", Edition.publication_date == date(2026, 4, 26))
+        .count()
+    )
+    assert today_count == 0
+
+    # Tomorrow + the next 6 days must each have all 6 canonical names.
+    for offset in range(7):
+        d = tomorrow + timedelta(days=offset)
+        titles = sorted(
+            r.title
+            for r in db.query(Edition)
+            .filter(Edition.organization_id == "org-test", Edition.publication_date == d)
+            .all()
+        )
+        assert titles == sorted(CANONICAL), f"Day {d}: got {titles}"
