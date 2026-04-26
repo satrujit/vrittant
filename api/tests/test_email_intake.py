@@ -273,6 +273,52 @@ def test_split_paragraphs_drops_quoted_reply_trailer():
     assert paras[1]["text"] == "Second paragraph."
 
 
+def test_split_paragraphs_joins_soft_wrapped_lines_within_paragraph():
+    """Email clients hard-wrap at ~70 chars. Without joining, a single
+    written paragraph becomes a stack of short broken lines in the
+    editor — which is what the first real test surfaced. Each
+    blank-line-delimited block must collapse to ONE flowing line."""
+    from app.services.email_intake import split_paragraphs
+    body = (
+        "Yesterday in Bhubaneswar a celebration was organised at the\n"
+        "Jagannath temple, attended by several local dignitaries who\n"
+        "spoke about the importance of nutrition for children.\n"
+        "\n"
+        "The event ended with a community meal.\n"
+    )
+    paras = split_paragraphs(body)
+    assert len(paras) == 2
+    assert paras[0]["text"] == (
+        "Yesterday in Bhubaneswar a celebration was organised at the "
+        "Jagannath temple, attended by several local dignitaries who "
+        "spoke about the importance of nutrition for children."
+    )
+    assert paras[1]["text"] == "The event ended with a community meal."
+
+
+def test_split_paragraphs_keeps_list_items_on_separate_lines():
+    """Lines that look like list items (-, *, •, "1.", "2)") are kept
+    on their own lines — the soft-wrap join would otherwise glue
+    bullets together as one run-on sentence."""
+    from app.services.email_intake import split_paragraphs
+    body = (
+        "Things to note:\n"
+        "- First item\n"
+        "- Second item that wraps\n"
+        "  onto another line\n"
+        "- Third item\n"
+    )
+    paras = split_paragraphs(body)
+    assert len(paras) == 1
+    # First non-list line stays as the lead; bullets stay individually
+    # bulleted; the wrapped continuation joins to its bullet.
+    text = paras[0]["text"]
+    assert "Things to note:" in text
+    assert "- First item" in text
+    assert "- Second item that wraps onto another line" in text
+    assert "- Third item" in text
+
+
 def test_extract_forwarder_pulls_for_address_from_received_chain():
     from app.services.email_intake import extract_forwarder
     headers = (

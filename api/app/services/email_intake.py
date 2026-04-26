@@ -209,34 +209,56 @@ def split_paragraphs(text_body: str) -> list[dict]:
     """Split a plain-text email body into paragraph dicts shaped the way
     Story.paragraphs expects (each row is {"id": uuid, "text": str}).
 
-    Splits on blank lines (one or more empty lines = paragraph break).
-    Strips per-paragraph whitespace. Discards empty paragraphs. Drops
-    common email artefacts (trailing "Sent from my iPhone", quoted
-    "On <date>, X wrote:" blocks) using a conservative heuristic —
-    we don't want to silently delete real content.
+    Two-stage normalisation, important for email content:
+
+      1. **Strip quoted-reply trailers and signatures** at the
+         body level (before splitting). Catches "On <date>, X wrote:"
+         openers, "Sent from my iPhone" sigs, and the RFC 3676 "-- "
+         signature delimiter.
+      2. **Paragraph split**: blank line(s) = paragraph break.
+      3. **Soft-wrap join**: within each paragraph, single newlines
+         are *soft wraps* added by the sender's email client at ~70
+         characters. Join those lines with a single space so the
+         editor renders one flowing paragraph instead of dozens of
+         short broken ones (which is what the editor was showing
+         after the first real test).
     """
     if not text_body:
         return []
-    # Trim a quoted-reply trailer if present. Match conservatively:
-    # only the standard Gmail/Outlook quote opener.
-    trimmed = re.split(
-        r"\n\s*On\s+.+\s+wrote:\s*\n",
-        text_body,
-        maxsplit=1,
-    )[0]
+
+    body = text_body
+    # 1a. Trim quoted-reply trailer.
+    body = re.split(r"\n\s*On\s+.+\s+wrote:\s*\n", body, maxsplit=1)[0]
+    # 1b. Trim mobile signature trailers.
+    body = re.sub(
+        r"\n\s*Sent from my (iPhone|iPad|Android|mobile|phone).*$",
+        "",
+        body,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    # 1c. Trim RFC 3676 "-- " sig delimiter (everything after).
+    body = re.split(r"\n--\s*\n", body, maxsplit=1)[0]
+
     paragraphs = []
-    for chunk in re.split(r"\n\s*\n", trimmed):
-        text = chunk.strip()
-        if not text:
+    for chunk in re.split(r"\n\s*\n", body):
+        # Soft-wrap join: every non-empty line in the chunk becomes
+        # a space-separated continuation of the same paragraph. Keeps
+        # bullet-style content (lines that already look intentional
+        # — eg start with •, -, *, or a digit followed by . or )) on
+        # their own lines so a list reads as a list.
+        lines = [line.strip() for line in chunk.splitlines() if line.strip()]
+        if not lines:
             continue
-        # Drop "Sent from my iPhone" style sigs at the very end of the
-        # last paragraph.
-        text = re.sub(
-            r"\n\s*(Sent from my (iPhone|iPad|Android|mobile)|--\s*\n.*)$",
-            "",
-            text,
-            flags=re.DOTALL | re.IGNORECASE,
-        ).strip()
+        joined: list[str] = []
+        for line in lines:
+            looks_like_list_item = bool(
+                re.match(r"^([-*•·]|\d+[.)]\s)", line)
+            )
+            if joined and not looks_like_list_item:
+                joined[-1] = joined[-1] + " " + line
+            else:
+                joined.append(line)
+        text = "\n".join(joined).strip()
         if not text:
             continue
         paragraphs.append({"id": str(uuid.uuid4()), "text": text})
@@ -384,6 +406,9 @@ def log_intake(
     status: str,
     story_id: Optional[str] = None,
     error_msg: Optional[str] = None,
+    attachment_count_received: Optional[int] = None,
+    attachment_count_accepted: Optional[int] = None,
+    attachment_keys: Optional[str] = None,
 ) -> EmailIntakeLog:
     row = EmailIntakeLog(
         organization_id=organization_id,
@@ -396,6 +421,9 @@ def log_intake(
         status=status,
         story_id=story_id,
         error_msg=(error_msg or None) if error_msg else None,
+        attachment_count_received=attachment_count_received,
+        attachment_count_accepted=attachment_count_accepted,
+        attachment_keys=(attachment_keys or None)[:500] if attachment_keys else None,
     )
     db.add(row)
     return row
