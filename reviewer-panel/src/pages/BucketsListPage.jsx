@@ -27,6 +27,51 @@ function getTodayDate() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function getTomorrowDate() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Sort comparator for the buckets list. Editor-friendly priority:
+//   1. Tomorrow (today + 1) at the very top — that's the paper being
+//      actively prepared right now (newspaper convention).
+//   2. Day-after-tomorrow forward, ascending — early planning row.
+//   3. Today and earlier dates, descending — historical reference.
+// Within a date, fall back to title to keep the canonical 6 in a
+// stable order (no jitter on re-render).
+function compareEditionsForBuckets(a, b, tomorrow) {
+  const aDate = a.publication_date || '';
+  const bDate = b.publication_date || '';
+  const aFuture = aDate >= tomorrow;
+  const bFuture = bDate >= tomorrow;
+  if (aFuture !== bFuture) return aFuture ? -1 : 1;
+  if (aDate !== bDate) {
+    return aFuture ? aDate.localeCompare(bDate) : bDate.localeCompare(aDate);
+  }
+  return (a.title || '').localeCompare(b.title || '');
+}
+
+// Human-readable bucket label for the date-group header rows.
+// Keeps "Tomorrow" / "Today" / "Yesterday" as anchors and falls back
+// to the formatted date for everything else.
+function getRelativeDayLabel(dateStr, today, tomorrow, t) {
+  if (!dateStr) return '';
+  if (dateStr === tomorrow) return t('buckets.relative.tomorrow', 'Tomorrow');
+  if (dateStr === today) return t('buckets.relative.today', 'Today');
+  // yesterday
+  const y = new Date(today + 'T00:00:00');
+  y.setDate(y.getDate() - 1);
+  const yyyy = y.getFullYear();
+  const mm = String(y.getMonth() + 1).padStart(2, '0');
+  const dd = String(y.getDate()).padStart(2, '0');
+  if (dateStr === `${yyyy}-${mm}-${dd}`) return t('buckets.relative.yesterday', 'Yesterday');
+  return null;
+}
+
 function formatDisplayDate(dateStr) {
   if (!dateStr) return '';
   try {
@@ -78,7 +123,101 @@ const STATUS_COLORS = {
 // Reusable table for both the active and published edition sections.
 // Stops row-click navigation propagating from interactive cells (status,
 // edit, delete) so those controls work without sending the user away.
+//
+// Visual grouping: a thin date-band row is inserted before the first
+// edition of each new date so 6 same-day rows read as one cluster
+// without dominating the table. The "Tomorrow" group is highlighted
+// because that's the paper currently being prepared.
 function EditionTable({ editions, t, onRowClick, onEdit, onDelete, onStatusChange, bordered = true }) {
+  const today = getTodayDate();
+  const tomorrow = getTomorrowDate();
+
+  const renderEditionRow = (edition) => {
+    const statusKey = getStatusKey(edition.status);
+    const pageCount = edition.pages?.length ?? edition.page_count ?? 0;
+    const storyCount = edition.story_count ?? 0;
+    const statusStyle = STATUS_COLORS[statusKey] || STATUS_COLORS.draft;
+    const paperLabel = t(`buckets.paperTypes.${edition.paper_type}`) !== `buckets.paperTypes.${edition.paper_type}`
+      ? t(`buckets.paperTypes.${edition.paper_type}`)
+      : edition.paper_type;
+
+    return (
+      <TableRow
+        key={edition.id}
+        className="cursor-pointer group"
+        onClick={() => onRowClick(edition.id)}
+      >
+        <TableCell className="px-4 py-2">
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
+            <Newspaper size={13} className="text-primary/70 shrink-0" />
+            {edition.title || paperLabel}
+          </span>
+        </TableCell>
+        <TableCell className="px-4 py-2 text-xs text-muted-foreground">
+          {paperLabel}
+        </TableCell>
+        <TableCell className="px-4 py-2">
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
+            <Calendar size={12} className="shrink-0" />
+            {formatDisplayDate(edition.publication_date)}
+          </span>
+        </TableCell>
+        <TableCell className="px-4 py-2 text-xs text-foreground">
+          <span className="inline-flex items-center gap-1">
+            <FileText size={12} className="text-muted-foreground" />
+            {pageCount}
+          </span>
+        </TableCell>
+        <TableCell className="px-4 py-2 text-xs text-foreground">
+          {storyCount}
+        </TableCell>
+        <TableCell className="px-4 py-2">
+          <Select
+            value={statusKey}
+            onValueChange={(val) => onStatusChange(edition.id, val)}
+          >
+            <SelectTrigger
+              className="h-auto w-auto gap-1 border-none bg-transparent p-0 px-2 py-[2px] text-[11px] font-semibold rounded-full shadow-none focus:ring-0"
+              style={{ color: statusStyle.color, backgroundColor: statusStyle.background }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="draft">{t('buckets.editionStatus.draft')}</SelectItem>
+              <SelectItem value="finalized">{t('buckets.editionStatus.finalized')}</SelectItem>
+              <SelectItem value="published">{t('buckets.editionStatus.published')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </TableCell>
+        <TableCell className="px-4 py-2">
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:bg-accent hover:text-primary"
+              onClick={(e) => onEdit(e, edition)}
+              aria-label={t('buckets.editEdition')}
+              title={t('buckets.editEdition')}
+            >
+              <Pencil size={14} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              onClick={(e) => onDelete(e, edition.id)}
+              aria-label={t('buckets.deleteEdition')}
+              title={t('buckets.deleteEdition')}
+            >
+              <Trash2 size={14} />
+            </Button>
+          </div>
+        </TableCell>
+      </TableRow>
+    );
+  };
+
   return (
     <div
       className={cn(
@@ -111,91 +250,56 @@ function EditionTable({ editions, t, onRowClick, onEdit, onDelete, onStatusChang
           </TableRow>
         </TableHeader>
         <TableBody>
-          {editions.map((edition) => {
-            const statusKey = getStatusKey(edition.status);
-            const pageCount = edition.pages?.length ?? edition.page_count ?? 0;
-            const storyCount = edition.story_count ?? 0;
-            const statusStyle = STATUS_COLORS[statusKey] || STATUS_COLORS.draft;
-            const paperLabel = t(`buckets.paperTypes.${edition.paper_type}`) !== `buckets.paperTypes.${edition.paper_type}`
-              ? t(`buckets.paperTypes.${edition.paper_type}`)
-              : edition.paper_type;
-
-            return (
-              <TableRow
-                key={edition.id}
-                className="cursor-pointer group"
-                onClick={() => onRowClick(edition.id)}
-              >
-                <TableCell className="px-4 py-2">
-                  <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
-                    <Newspaper size={13} className="text-primary/70 shrink-0" />
-                    {edition.title || paperLabel}
-                  </span>
-                </TableCell>
-                <TableCell className="px-4 py-2 text-xs text-muted-foreground">
-                  {paperLabel}
-                </TableCell>
-                <TableCell className="px-4 py-2">
-                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
-                    <Calendar size={12} className="shrink-0" />
-                    {formatDisplayDate(edition.publication_date)}
-                  </span>
-                </TableCell>
-                <TableCell className="px-4 py-2 text-xs text-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    <FileText size={12} className="text-muted-foreground" />
-                    {pageCount}
-                  </span>
-                </TableCell>
-                <TableCell className="px-4 py-2 text-xs text-foreground">
-                  {storyCount}
-                </TableCell>
-                <TableCell className="px-4 py-2">
-                  <Select
-                    value={statusKey}
-                    onValueChange={(val) => onStatusChange(edition.id, val)}
+          {(() => {
+            // Walk in render order, emit a thin date-band row whenever
+            // the date changes. We track previous date inline rather
+            // than pre-grouping into nested arrays so the existing row
+            // markup stays untouched.
+            let lastDate = null;
+            const rows = [];
+            for (const edition of editions) {
+              if (edition.publication_date !== lastDate) {
+                lastDate = edition.publication_date;
+                const relative = getRelativeDayLabel(lastDate, today, tomorrow, t);
+                const isTomorrow = lastDate === tomorrow;
+                rows.push(
+                  <TableRow
+                    key={`group-${lastDate}`}
+                    className={cn(
+                      'border-b border-border/60 hover:bg-transparent',
+                      isTomorrow ? 'bg-primary/5' : 'bg-muted/40'
+                    )}
                   >
-                    <SelectTrigger
-                      className="h-auto w-auto gap-1 border-none bg-transparent p-0 px-2 py-[2px] text-[11px] font-semibold rounded-full shadow-none focus:ring-0"
-                      style={{ color: statusStyle.color, backgroundColor: statusStyle.background }}
-                      onClick={(e) => e.stopPropagation()}
+                    <TableCell
+                      colSpan={7}
+                      className="px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground"
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="draft">{t('buckets.editionStatus.draft')}</SelectItem>
-                      <SelectItem value="finalized">{t('buckets.editionStatus.finalized')}</SelectItem>
-                      <SelectItem value="published">{t('buckets.editionStatus.published')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-                <TableCell className="px-4 py-2">
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground hover:bg-accent hover:text-primary"
-                      onClick={(e) => onEdit(e, edition)}
-                      aria-label={t('buckets.editEdition')}
-                      title={t('buckets.editEdition')}
-                    >
-                      <Pencil size={14} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                      onClick={(e) => onDelete(e, edition.id)}
-                      aria-label={t('buckets.deleteEdition')}
-                      title={t('buckets.deleteEdition')}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            );
-          })}
+                      <span className="inline-flex items-center gap-2">
+                        <Calendar size={11} className={cn('shrink-0', isTomorrow && 'text-primary')} />
+                        <span className={cn(isTomorrow && 'text-primary')}>
+                          {formatDisplayDate(lastDate)}
+                        </span>
+                        {relative && (
+                          <span
+                            className={cn(
+                              'rounded-full px-1.5 py-px text-[10px] font-medium normal-case tracking-normal',
+                              isTomorrow
+                                ? 'bg-primary/15 text-primary'
+                                : 'bg-muted text-muted-foreground'
+                            )}
+                          >
+                            {relative}
+                          </span>
+                        )}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                );
+              }
+              rows.push(renderEditionRow(edition));
+            }
+            return rows;
+          })()}
         </TableBody>
       </Table>
     </div>
@@ -303,7 +407,12 @@ export default function BucketsListPage() {
       result = result.filter((e) => getStatusKey(e.status) === filterStatus);
     }
 
-    return result;
+    // Sort tomorrow-first so the actively-prepared paper sits at the
+    // top, then ascending into the future, then today + past dates.
+    // .slice() because Array.prototype.sort mutates and `editions`
+    // came straight from state.
+    const tomorrow = getTomorrowDate();
+    return result.slice().sort((a, b) => compareEditionsForBuckets(a, b, tomorrow));
   }, [editions, search, filterPaperType, filterStatus, t]);
 
   // Split into active (draft + finalized) and published.
