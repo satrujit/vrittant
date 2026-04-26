@@ -385,10 +385,18 @@ export default function BucketsListPage() {
   // Published-section toggle (collapsed by default — keeps focus on active editions)
   const [publishedExpanded, setPublishedExpanded] = useState(false);
 
+  // Hit the backend's max page size (200) for the buckets list. The
+  // rolling 7-day canonical window alone is 6×7=42 rows per org, plus
+  // any manual editions and historical/published rows. The default
+  // backend limit (50) was truncating the window — the most-recent
+  // canonical day was only showing a partial set of editions.
+  // Until we add real pagination here, request the full cap.
+  const EDITIONS_PAGE_SIZE = 200;
+
   const loadEditions = async () => {
     setLoading(true);
     try {
-      const data = await fetchEditions();
+      const data = await fetchEditions({ limit: EDITIONS_PAGE_SIZE });
       setEditions(data.editions || []);
     } catch (err) {
       console.error('Failed to fetch editions:', err);
@@ -401,7 +409,7 @@ export default function BucketsListPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchEditions()
+    fetchEditions({ limit: EDITIONS_PAGE_SIZE })
       .then((data) => {
         if (!cancelled) {
           setEditions(data.editions || []);
