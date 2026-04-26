@@ -190,6 +190,11 @@
     "deleteEditionConfirm": "ନିଶ୍ଚିତ? ସବୁ ପୃଷ୍ଠା ଆସାଇନମେଣ୍ଟ ହଟାଇ ଦିଆଯିବ।",
     "createEditionTitle": "ନୂଆ ସଂସ୍କରଣ ତିଆରି",
     "editionColumn": "ସଂସ୍କରଣ",
+    "relative": {
+      "tomorrow": "ଆସନ୍ତାକାଲି",
+      "today": "ଆଜି",
+      "yesterday": "ଗତକାଲି"
+    },
     "editionName": "ସଂସ୍କରଣ ନାମ",
     "editionNameCustom": "କଷ୍ଟମ୍…",
     "editionNameCustomPlaceholder": "ଏକ କଷ୍ଟମ୍ ସଂସ୍କରଣ ନାମ ଲେଖନ୍ତୁ",
