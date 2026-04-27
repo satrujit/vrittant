@@ -176,8 +176,9 @@
   "buckets": {
     "title": "Page Arrangement",
     "subtitle": "Create newspaper editions and arrange approved stories across pages.",
-    "newEdition": "+ New Edition",
+    "newEdition": "New Edition",
     "editionTitle": "Edition",
+    "editionNumber": "Edition {n}",
     "publicationDate": "Publication Date",
     "paperType": "Paper Type",
     "paperTypes": {

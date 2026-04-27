@@ -176,7 +176,7 @@ function EditionTable({ editions, t, onRowClick, onEdit, onDelete, onStatusChang
     });
   };
 
-  const renderEditionRow = (edition) => {
+  const renderEditionRow = (edition, index) => {
     const statusKey = getStatusKey(edition.status);
     const pageCount = edition.pages?.length ?? edition.page_count ?? 0;
     const storyCount = edition.story_count ?? 0;
@@ -184,6 +184,7 @@ function EditionTable({ editions, t, onRowClick, onEdit, onDelete, onStatusChang
     const paperLabel = t(`buckets.paperTypes.${edition.paper_type}`) !== `buckets.paperTypes.${edition.paper_type}`
       ? t(`buckets.paperTypes.${edition.paper_type}`)
       : edition.paper_type;
+    const editionLabel = t('buckets.editionNumber', { n: index + 1 });
 
     return (
       <TableRow
@@ -194,7 +195,7 @@ function EditionTable({ editions, t, onRowClick, onEdit, onDelete, onStatusChang
         <TableCell className="px-4 py-2">
           <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
             <Newspaper size={13} className="text-primary/70 shrink-0" />
-            {edition.title || paperLabel}
+            {editionLabel}
           </span>
         </TableCell>
         <TableCell className="px-4 py-2 text-xs text-muted-foreground">
@@ -344,7 +345,7 @@ function EditionTable({ editions, t, onRowClick, onEdit, onDelete, onStatusChang
               </TableRow>
             );
             return isOpen
-              ? [headerRow, ...group.map(renderEditionRow)]
+              ? [headerRow, ...group.map((ed, i) => renderEditionRow(ed, i))]
               : [headerRow];
           })}
         </TableBody>
