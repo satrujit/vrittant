@@ -176,8 +176,9 @@
   "buckets": {
     "title": "पृष्ठ व्यवस्था",
     "subtitle": "अखबार संस्करण बनाएं और स्वीकृत खबरें पृष्ठों पर सजाएं।",
-    "newEdition": "+ नया संस्करण",
+    "newEdition": "नया संस्करण",
     "editionTitle": "संस्करण",
+    "editionNumber": "संस्करण {n}",
     "publicationDate": "प्रकाशन तिथि",
     "paperType": "पेपर प्रकार",
     "paperTypes": {

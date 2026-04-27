@@ -176,8 +176,9 @@
   "buckets": {
     "title": "ପୃଷ୍ଠା ବିନ୍ୟାସ",
     "subtitle": "ସମ୍ବାଦପତ୍ର ସଂସ୍କରଣ ତିଆରି କରନ୍ତୁ ଏବଂ ଅନୁମୋଦିତ ଖବର ସଜାନ୍ତୁ।",
-    "newEdition": "+ ନୂଆ ସଂସ୍କରଣ",
+    "newEdition": "ନୂଆ ସଂସ୍କରଣ",
     "editionTitle": "ସଂସ୍କରଣ",
+    "editionNumber": "ସଂସ୍କରଣ {n}",
     "publicationDate": "ପ୍ରକାଶନ ତାରିଖ",
     "paperType": "କାଗଜ ପ୍ରକାର",
     "paperTypes": {
