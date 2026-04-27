@@ -11,16 +11,18 @@ import { cn } from '@/lib/utils';
 
 const AVIMAT = 'Avimat';
 
-/** Today's date in IST as YYYY-MM-DD. The day editor's clock matters,
- *  not the browser's UTC offset. */
-function todayIST() {
+/** Tomorrow's date in IST as YYYY-MM-DD. Editors working today are
+ *  preparing tomorrow's paper, so that's the default placement date. */
+function tomorrowIST() {
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   });
-  return fmt.format(new Date()); // en-CA gives YYYY-MM-DD
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + 1);
+  return fmt.format(d);
 }
 
 /** "27 April 2028" — long format used in the section header. */
@@ -71,9 +73,10 @@ function shortPageLabel(pageName) {
  */
 export function EditionPlacementMatrix({ storyId }) {
   const { t } = useI18n();
-  // Default to today (IST), not the story's submission date — a story
-  // submitted yesterday can still be slated for tomorrow's edition.
-  const [activeDate, setActiveDate] = useState(() => todayIST());
+  // Default to tomorrow (IST): editors working today are preparing
+  // tomorrow's edition, mirroring the buckets list where the "Tomorrow"
+  // group is the highlighted top row.
+  const [activeDate, setActiveDate] = useState(() => tomorrowIST());
 
   const [editions, setEditions] = useState([]);
   const [placements, setPlacements] = useState([]);
