@@ -60,8 +60,19 @@ def pick_assignee(story: Story, db: Session) -> tuple[User, str]:
         if candidates:
             return _least_loaded(db, candidates), "category"
 
-    # Step 2 — region
-    reporter = story.reporter
+    # Step 2 — region.
+    # Look up the reporter explicitly by reporter_id rather than via
+    # `story.reporter`. The relationship is unloaded on transient/pending
+    # stories — which is exactly what the WhatsApp ingest path passes in
+    # (the Story is constructed in memory and pick_assignee runs BEFORE
+    # `db.add()` + commit). Lazy-load on a transient instance returns
+    # None, the region check silently no-ops, and every WA-ingested
+    # story falls through to load-balance instead of region-matching.
+    reporter = (
+        db.query(User).filter(User.id == story.reporter_id).first()
+        if story.reporter_id
+        else None
+    )
     reporter_area = _normalize(reporter.area_name) if reporter else ""
     if reporter_area:
         candidates = [
