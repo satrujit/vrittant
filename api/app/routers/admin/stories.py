@@ -184,6 +184,8 @@ def admin_list_stories(
         items = [
             AdminStoryListItem(
                 id=s.id,
+                seq_no=s.seq_no,
+                display_id=s.display_id,
                 reporter_id=s.reporter_id,
                 headline=s.headline,
                 category=s.category,
