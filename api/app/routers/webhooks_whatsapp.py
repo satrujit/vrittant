@@ -361,29 +361,24 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
         )
         stored_media_url = stored_media_url or media_url
 
-    # Generate the story id up front so we can prefix the headline with a
-    # short slice of it. Two reasons:
-    #   1. Forwarded press releases often share an identical first line, so
-    #      using just `text.split("\n")[0]` produced collisions in the
-    #      reviewer queue (and would now trip the editor-side duplicate
-    #      check; see admin/stories.py::_check_headline_duplicate_today).
-    #   2. Reviewers asked for a stable per-WhatsApp-item handle they can
-    #      reference in chat — `#abcdef12` is short enough to read aloud
-    #      and unique to this story.
+    # Headline = the first non-empty line of the forwarded text, capped
+    # at 120 chars to fit the editorial display width. Falls back to
+    # "Forwarded from WhatsApp" when the message has no text body
+    # (image-only forwards). Reviewers reference these stories by the
+    # display_id ("PNS-26-1234") which is also unique per-org and
+    # human-readable, replacing the older "#shortid" prefix that used
+    # to live on the headline itself.
     new_story_id = str(uuid.uuid4())
-    short_id = new_story_id[:8]
     if text:
         first_line = text.split("\n", 1)[0].strip()
     else:
         first_line = ""
-    # Truncate the body slice so the full headline (including the
-    # "#shortid " prefix, 10 chars) stays under the 120-char editorial cap.
     if first_line:
-        if len(first_line) > 110:
-            first_line = first_line[:109].rstrip() + "…"
-        headline = f"#{short_id} {first_line}"
+        if len(first_line) > 120:
+            first_line = first_line[:119].rstrip() + "…"
+        headline = first_line
     else:
-        headline = f"#{short_id} Forwarded from WhatsApp"
+        headline = "Forwarded from WhatsApp"
     paragraphs = []
     if text:
         paragraphs.append({"id": str(uuid.uuid4()), "text": text})
