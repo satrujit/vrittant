@@ -76,9 +76,10 @@ def _check_headline_duplicate_today(
     Editorial rule: a single org should never publish two stories with
     identical headlines on the same day — it's almost always either an
     accidental double-save or two reporters racing on the same press
-    release. WhatsApp-forwarded items sidestep this naturally because their
-    headlines are prefixed with the story's short id (see
-    webhooks_whatsapp.py); editor-created stories must be unique by hand.
+    release. The check is wired into editor-create / editor-update only;
+    WhatsApp-forwarded items skip this entirely (they often share the
+    same first line because reporters forward the same press release,
+    and the per-org display_id distinguishes them in the queue).
 
     `exclude_story_id` is required during PUT updates so the story being
     re-saved doesn't false-positive against itself.
