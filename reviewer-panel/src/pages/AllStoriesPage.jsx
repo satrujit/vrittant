@@ -542,6 +542,11 @@ export default function AllStoriesPage() {
                           onClick={(e) => e.stopPropagation()}
                           className="text-sm font-semibold text-foreground leading-tight line-clamp-2 hover:text-primary transition-colors no-underline"
                         >
+                          {story.displayId && (
+                            <span className="mr-1.5 inline-block rounded bg-muted px-1.5 py-px text-[10px] font-mono font-medium text-muted-foreground align-middle">
+                              {story.displayId}
+                            </span>
+                          )}
                           {story.headline}
                         </Link>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">

@@ -7,6 +7,7 @@ from .story_comment import StoryComment
 from .otp_send_log import OtpSendLog
 from .sarvam_usage_log import SarvamUsageLog
 from .email_intake_log import EmailIntakeLog
+from .org_story_seq import OrgStorySeq
 
 __all__ = [
     "Edition", "EditionPage", "EditionPageStory",
@@ -18,4 +19,5 @@ __all__ = [
     "OtpSendLog",
     "SarvamUsageLog",
     "EmailIntakeLog",
+    "OrgStorySeq",
 ]

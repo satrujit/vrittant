@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, String, Text, text as sql_text
+from sqlalchemy import BigInteger, JSON, Boolean, Column, DateTime, ForeignKey, Index, String, Text, text as sql_text
 from sqlalchemy.orm import relationship
 
 from ..database import Base
@@ -36,6 +36,9 @@ class Story(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     reporter_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     organization_id = Column(String, ForeignKey("organizations.id"), nullable=False, index=True)
+    # Per-org sequential counter for human-readable display IDs. Assigned
+    # at INSERT time via assign_next_seq(); see services/story_seq.py.
+    seq_no = Column(BigInteger, nullable=True)
     headline = Column(String, default="")
     category = Column(String, nullable=True)
     location = Column(String, nullable=True)
@@ -58,8 +61,26 @@ class Story(Base):
     reporter = relationship("User", foreign_keys=[reporter_id], back_populates="stories")
     reviewer = relationship("User", foreign_keys=[reviewed_by])
     assignee = relationship("User", foreign_keys=[assigned_to])
+    organization = relationship("Organization", foreign_keys=[organization_id])
     revision = relationship("StoryRevision", back_populates="story", uselist=False)
 
     def refresh_search_text(self):
         """Update search_text from current headline, paragraphs, location."""
         self.search_text = build_search_text(self.headline, self.paragraphs, self.location)
+
+    @property
+    def display_id(self) -> str | None:
+        """Human-readable id like ``PNS-26-1234``.
+
+        Composed from the org's display_code (e.g. PNS), the year of
+        ``created_at`` (last two digits), and the per-org ``seq_no``.
+        Returns None if any piece is missing — callers can fall back to
+        ``self.id`` (the UUID).
+        """
+        if self.seq_no is None or self.created_at is None:
+            return None
+        org = self.organization
+        if org is None or not org.display_code:
+            return None
+        yy = self.created_at.year % 100
+        return f"{org.display_code}-{yy:02d}-{self.seq_no}"

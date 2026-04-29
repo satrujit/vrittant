@@ -67,6 +67,11 @@ export default function StoryCard({ story, index, onClick, t }) {
             )}
           </div>
           <div className="text-[13px] font-semibold text-foreground leading-tight mb-0.5 line-clamp-2">
+            {story.displayId && (
+              <span className="mr-1 inline-block rounded bg-muted px-1 py-px text-[9px] font-mono font-medium text-muted-foreground align-middle">
+                {story.displayId}
+              </span>
+            )}
             {story.headline || '(No headline)'}
           </div>
           {story.bodyText && (

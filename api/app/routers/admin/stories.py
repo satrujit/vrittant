@@ -322,10 +322,12 @@ def create_editor_story(
         db, org_id=org_id, headline=headline, submitted_at=now,
     )
 
+    from ...services.story_seq import assign_next_seq
     story = Story(
         id=str(uuid_mod.uuid4()),
         reporter_id=current_user.id,
         organization_id=org_id,
+        seq_no=assign_next_seq(db, org_id),
         headline=headline,
         paragraphs=paragraphs,
         category=body.category,
