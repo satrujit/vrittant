@@ -66,14 +66,14 @@ export default function StoryCard({ story, index, onClick, t }) {
               </span>
             )}
           </div>
-          <div className="text-[13px] font-semibold text-foreground leading-tight mb-0.5 line-clamp-2">
-            {story.displayId && (
-              <span className="mr-1 inline-block rounded bg-muted px-1 py-px text-[9px] font-mono font-medium text-muted-foreground align-middle">
-                {story.displayId}
-              </span>
-            )}
+          <div className="text-[13px] font-semibold text-foreground leading-tight line-clamp-2">
             {story.headline || '(No headline)'}
           </div>
+          {story.displayId && (
+            <div className="font-mono text-[10px] font-medium tracking-wider text-muted-foreground mb-1">
+              {story.displayId}
+            </div>
+          )}
           {story.bodyText && (
             <div className="text-[11px] text-muted-foreground leading-normal line-clamp-2 mb-2">
               {truncateText(story.bodyText, 80)}
