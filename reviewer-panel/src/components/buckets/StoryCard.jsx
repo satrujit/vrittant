@@ -65,15 +65,15 @@ export default function StoryCard({ story, index, onClick, t }) {
                 <CheckCircle2 size={14} />
               </span>
             )}
+            {story.displayId && (
+              <span className="ml-auto font-mono text-[10px] font-semibold tracking-wider text-blue-600 whitespace-nowrap">
+                {story.displayId}
+              </span>
+            )}
           </div>
-          <div className="text-[13px] font-semibold text-foreground leading-tight line-clamp-2">
+          <div className="text-[13px] font-semibold text-foreground leading-tight line-clamp-2 mb-1">
             {story.headline || '(No headline)'}
           </div>
-          {story.displayId && (
-            <div className="font-mono text-[10px] font-medium tracking-wider text-muted-foreground mb-1">
-              {story.displayId}
-            </div>
-          )}
           {story.bodyText && (
             <div className="text-[11px] text-muted-foreground leading-normal line-clamp-2 mb-2">
               {truncateText(story.bodyText, 80)}
