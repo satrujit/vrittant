@@ -313,13 +313,13 @@ export default function DashboardPage() {
                             onClick={(e) => e.stopPropagation()}
                             className="text-[0.9375rem] font-semibold text-foreground leading-tight line-clamp-2 hover:text-primary transition-colors no-underline"
                           >
-                            {story.displayId && (
-                              <span className="mr-1.5 inline-block rounded bg-muted px-1.5 py-px text-[10px] font-mono font-medium text-muted-foreground align-middle">
-                                {story.displayId}
-                              </span>
-                            )}
                             {story.headline}
                           </Link>
+                          {story.displayId && (
+                            <span className="font-mono text-[11px] font-medium tracking-wider text-muted-foreground">
+                              {story.displayId}
+                            </span>
+                          )}
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                             <span className="inline-flex items-center gap-1 whitespace-nowrap">
                               <Avatar
