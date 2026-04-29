@@ -53,10 +53,10 @@ def fake_persist(monkeypatch):
     async def fake(url: str, content_type: str | None = None, original_name: str | None = None):
         persisted.append(url)
         stored = f"https://storage.googleapis.com/test-bucket/whatsapp/fake-{len(persisted)}.bin"
-        # _persist_media returns (stored_url, body, content_type). The body
-        # is only consumed for docx text extraction — None is safe for
-        # generic/image fixtures used by these tests.
-        return (stored, None, content_type)
+        # _persist_media returns (stored_url, body, content_type, image_variants).
+        # body is only consumed for docx text extraction; image_variants
+        # is non-None only for image uploads (web + thumbnail variants).
+        return (stored, None, content_type, None)
 
     from app.routers import webhooks_whatsapp
 
@@ -227,7 +227,7 @@ def test_image_message_falls_back_to_link_if_persist_fails(client, db, gupshup_r
     we still want the story created — fall back to recording the Gupshup URL
     so the reporter doesn't have to resend."""
     async def failing_persist(url, content_type=None, original_name=None):
-        return (None, None, None)
+        return (None, None, None, None)
 
     from app.routers import webhooks_whatsapp
     monkeypatch.setattr(webhooks_whatsapp, "_persist_media", failing_persist)

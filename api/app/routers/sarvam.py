@@ -638,25 +638,6 @@ async def llm_chat(
     if model == "sarvam-m":
         model = "sarvam-30b"
 
-    payload = {
-        "model": model,
-        "messages": messages,
-        # sarvam-30b and sarvam-105b are reasoning models. Without an
-        # explicit effort setting they ramble in `reasoning_content` and
-        # the actual `content` comes back truncated. We picked "medium" as
-        # the cost/quality compromise for mobile chat (title gen, polish,
-        # short generations). NOTE: empirically "medium" can still cut off
-        # on long Odia generations (~400 words) — the research-story
-        # endpoint uses "high" for that reason. If story-generation from
-        # the mobile notepad starts coming back empty, bump this to "high".
-        "reasoning_effort": "medium",
-    }
-    if body.temperature is not None:
-        payload["temperature"] = body.temperature
-    if body.max_tokens is not None:
-        # Sarvam pro tier caps sarvam-30b at 8192 output tokens
-        payload["max_tokens"] = min(body.max_tokens, 8192)
-
     # Attribution: prefer story_id when given, otherwise generic
     # reviewer_panel bucket. Either way we tag the user so we can answer
     # "which reviewer ran the AI bill up this week".
@@ -665,41 +646,61 @@ async def llm_chat(
         if body.story_id
         else sarvam_client.cost_context(bucket="reviewer_panel", user_id=user.id)
     )
+
+    # Convert OpenAI-style messages to Gemini's (system + single-turn
+    # user prompt). Multi-turn assistant history is rare on this
+    # endpoint — when present, fold prior assistant turns into the user
+    # prompt as bracketed context so a Gemini call still sees them.
+    system_parts: list[str] = []
+    prompt_parts: list[str] = []
+    for m in messages:
+        role = m.get("role")
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "system":
+            system_parts.append(content)
+        elif role == "user":
+            prompt_parts.append(content)
+        elif role == "assistant":
+            prompt_parts.append(f"[Previous assistant turn: {content}]")
+    system = "\n\n".join(system_parts) or None
+    prompt = "\n\n".join(prompt_parts) or " "
+    max_tokens = min(body.max_tokens or 4096, 8192)
+    temperature = body.temperature if body.temperature is not None else None
+
     try:
+        from ..services import gemini_client
         with attribution:
-            data = await sarvam_client.chat(payload=payload, timeout=60.0)
-        # Strip <think>/<thinking> reasoning tags from model output
-        for choice in data.get("choices", []):
-            msg = choice.get("message", {})
-            if msg.get("content"):
-                content = msg["content"]
-                content = re.sub(r'<think(?:ing)?>[\s\S]*?</think(?:ing)?>', '', content)
-                content = re.sub(r'<think(?:ing)?>[\s\S]*', '', content)
-                msg["content"] = content.strip()
-        return data
-    except httpx.HTTPStatusError as exc:
+            text = await gemini_client.chat(
+                prompt=prompt,
+                system=system,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=60.0,
+            )
+        # Wrap in the OpenAI-shape the mobile/panel clients already
+        # parse — they read data.choices[0].message.content. Keeping
+        # the response shape stable means no client release needed.
+        return {
+            "model": settings.GEMINI_DEFAULT_MODEL,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text.strip()},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+    except Exception as exc:  # noqa: BLE001 — gemini_client wraps everything
         from fastapi.responses import JSONResponse
-
-        # Log upstream error so we can diagnose 4xx/5xx from Sarvam.
-        # Truncate to keep logs readable; full body still goes to client.
-        body_preview = exc.response.text[:500]
         logger.warning(
-            "Sarvam /v1/chat/completions returned %s (model=%s, max_tokens=%s, msgs=%d): %s",
-            exc.response.status_code, model, body.max_tokens,
-            len(messages), body_preview,
+            "/api/llm/chat: Gemini call failed (max_tokens=%s, msgs=%d): %s",
+            body.max_tokens, len(messages), exc,
         )
-        return JSONResponse(
-            status_code=exc.response.status_code,
-            content=exc.response.json()
-            if exc.response.headers.get("content-type", "").startswith("application/json")
-            else {"detail": exc.response.text},
-        )
-    except httpx.RequestError:
-        from fastapi.responses import JSONResponse
-
         return JSONResponse(
             status_code=502,
-            content={"detail": "Unable to reach Sarvam AI service"},
+            content={"detail": f"LLM call failed: {exc}"},
         )
 
 
@@ -797,40 +798,37 @@ async def llm_translate(
         else sarvam_client.cost_context(bucket="reviewer_panel", user_id=user.id)
     )
     translated_chunks: list[str] = []
+    # Map BCP-47 language codes to plain English names for the
+    # Gemini prompt (the underlying chat is more reliable with names
+    # than codes).
+    _LANG_NAMES = {
+        "od-IN": "Odia", "en-IN": "English", "en-US": "English",
+        "hi-IN": "Hindi", "bn-IN": "Bengali", "te-IN": "Telugu",
+        "ta-IN": "Tamil", "mr-IN": "Marathi", "gu-IN": "Gujarati",
+    }
+    src_lang = _LANG_NAMES.get(body.source_language_code, body.source_language_code)
+    tgt_lang = _LANG_NAMES.get(body.target_language_code, body.target_language_code)
+
+    from ..services import gemini_client
     with attribution:
         for chunk in chunks:
-            payload = {
-                "input": chunk,
-                "source_language_code": body.source_language_code,
-                "target_language_code": body.target_language_code,
-                "mode": body.mode,
-                "model": "mayura:v1",
-                "enable_preprocessing": True,
-            }
             try:
-                data = await sarvam_client.translate(payload=payload, timeout=60.0)
-                translated_chunks.append(data.get("translated_text", ""))
-            except httpx.HTTPStatusError as exc:
+                translated = (await gemini_client.translate(
+                    text=chunk,
+                    source_lang=src_lang,
+                    target_lang=tgt_lang,
+                    timeout=60.0,
+                )).strip()
+                translated_chunks.append(translated)
+            except Exception as exc:  # noqa: BLE001
                 from fastapi.responses import JSONResponse
-
-                body_preview = exc.response.text[:500]
                 logger.warning(
-                    "Sarvam /translate returned %s (chunk_len=%d, src=%s, tgt=%s): %s",
-                    exc.response.status_code, len(chunk),
-                    body.source_language_code, body.target_language_code,
-                    body_preview,
+                    "/api/llm/translate: Gemini call failed (chunk_len=%d, src=%s, tgt=%s): %s",
+                    len(chunk), src_lang, tgt_lang, exc,
                 )
-                return JSONResponse(
-                    status_code=exc.response.status_code,
-                    content=exc.response.json()
-                    if exc.response.headers.get("content-type", "").startswith("application/json")
-                    else {"detail": exc.response.text},
-                )
-            except httpx.RequestError:
-                from fastapi.responses import JSONResponse
                 return JSONResponse(
                     status_code=502,
-                    content={"detail": "Unable to reach Sarvam AI service"},
+                    content={"detail": f"Translate failed: {exc}"},
                 )
 
     return {"translated_text": "\n\n".join(translated_chunks)}

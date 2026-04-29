@@ -6,7 +6,7 @@ Mobile shouldn't be picking the model. Mobile shouldn't be shipping a
 copy of the system prompt either — that means a typo or improvement
 needs an app store release. This endpoint owns:
 
-  - the model (Claude Haiku 4.5; Sarvam-30b on fallback)
+  - the model (Gemini 2.5 Flash; Sarvam-30b on fallback)
   - the system prompt
   - max_tokens, temperature, reasoning settings
   - post-processing (Odia digit normalization, purna virama spacing)
@@ -17,18 +17,16 @@ it (so we can see in logs/UI when the fallback fired).
 
 Fallback chain
 --------------
-1. Try Anthropic Claude Haiku 4.5 (faithful to facts, obeys structure).
-2. On TRANSIENT failure (timeout, 5xx, 429, 529, network error) →
-   fall back to Sarvam-30b with the same system prompt. Logged with
-   ``fallback_reason=...`` so the failure is grep-able.
-3. On NON-TRANSIENT Anthropic failure (400/401/403): bubble up. Those
+1. Try Gemini 2.5 Flash (faithful to facts, obeys structure, ~3-4×
+   cheaper than Claude Haiku at parity quality on Odia journalism).
+2. On TRANSIENT failure (timeout, 5xx, 429, network error) →
+   fall back to Sarvam-30b with the same system prompt.
+3. On NON-TRANSIENT Gemini failure (400/401/403): bubble up. Those
    are deploy/auth bugs and silent fallback would mask them forever.
 4. On Sarvam failure after fallback: 502 to client.
 
-We A/B'd Haiku vs Sarvam-30b on real Odia reporter notes (see
-/tmp/haiku-ab/VERDICT.md, summarized in the commit message that
-introduced this endpoint). Haiku won decisively on faithfulness,
-structure, and latency; Sarvam stays as a safety net only.
+Migrated from Anthropic Claude Haiku → Gemini 2.5 Flash on
+2026-04-29; Sarvam stays as a safety net only.
 """
 from __future__ import annotations
 
@@ -41,8 +39,8 @@ from pydantic import BaseModel, Field
 
 from ..deps import get_current_user
 from ..models.user import User
-from ..services import anthropic_client, sarvam_client
-from ..services.anthropic_client import AnthropicError, is_transient_error
+from ..services import gemini_client, sarvam_client
+from ..services.gemini_client import GeminiError, is_transient_error
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +78,13 @@ SYSTEM_PROMPT = (
 )
 
 # Model picks (centralized so a future swap is one constant change).
-PRIMARY_MODEL = "claude-haiku-4-5"
+# Migrated from Anthropic Claude Haiku → Gemini 2.5 Flash on
+# 2026-04-29 after a sample bake-off showed Flash matched Haiku on
+# Odia journalistic faithfulness at ~3-4× lower cost. Sarvam-30b
+# stays as the safety-net fallback.
+PRIMARY_MODEL = "gemini-2.5-flash"
 FALLBACK_MODEL = "sarvam-30b"
 
-# max_tokens budgets:
-#   Haiku: 4096 is well over our observed P95 (562 tokens on 400-char input).
-#   Sarvam: 8192 is the Pro tier cap on sarvam-30b; reasoning models burn
-#   most of the budget in reasoning_content before emitting the article.
 PRIMARY_MAX_TOKENS = 4096
 FALLBACK_MAX_TOKENS = 8192
 
@@ -116,12 +114,12 @@ class GenerateStoryResponse(BaseModel):
     model: str = Field(
         ...,
         description="Which model actually served the response. Useful for "
-        "monitoring fallback rate. One of 'claude-haiku-4-5' (primary) "
+        "monitoring fallback rate. One of 'gemini-2.5-flash' (primary) "
         "or 'sarvam-30b' (fallback).",
     )
     fallback_used: bool = Field(
         default=False,
-        description="True when Anthropic failed and Sarvam served. Surface "
+        description="True when Gemini failed and Sarvam served. Surface "
         "in panel logs / debug overlays; not user-facing.",
     )
 
@@ -187,42 +185,41 @@ async def generate_story(
         else sarvam_client.cost_context(bucket="generate_story", user_id=user.id)
     )
 
-    # ── Try Anthropic primary ────────────────────────────────────────────
+    # ── Try Gemini primary ──────────────────────────────────────────────
     with attribution:
         try:
-            anth_resp = await anthropic_client.chat(
-                model=PRIMARY_MODEL,
+            text = await gemini_client.chat(
+                prompt=notes,
                 system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": notes}],
+                model=PRIMARY_MODEL,
                 max_tokens=PRIMARY_MAX_TOKENS,
                 temperature=0.3,
             )
-            text = anthropic_client.extract_text(anth_resp)
             if not text:
                 # Empty response is treated as a transient failure — fall
                 # back to Sarvam rather than returning an empty body to the
                 # user. Models occasionally emit only a refusal/empty turn.
-                raise AnthropicError(
-                    "anthropic returned empty content", status_code=None
+                raise GeminiError(
+                    "gemini returned empty content", status_code=None
                 )
             return GenerateStoryResponse(
                 body=_post_process(text),
                 model=PRIMARY_MODEL,
                 fallback_used=False,
             )
-        except AnthropicError as exc:
+        except GeminiError as exc:
             if not is_transient_error(exc):
                 logger.error(
-                    "generate_story: non-transient Anthropic failure "
+                    "generate_story: non-transient Gemini failure "
                     "(status=%s, user=%s) — bubbling up: %s",
                     exc.status_code, user.id, exc,
                 )
                 raise HTTPException(
                     status_code=http_status.HTTP_502_BAD_GATEWAY,
-                    detail=f"Anthropic error ({exc.status_code}): {exc}",
+                    detail=f"Gemini error ({exc.status_code}): {exc}",
                 )
             logger.warning(
-                "generate_story: Anthropic transient failure "
+                "generate_story: Gemini transient failure "
                 "(status=%s, user=%s, story_id=%s) — falling back to Sarvam: %s",
                 exc.status_code, user.id, body.story_id, exc,
             )

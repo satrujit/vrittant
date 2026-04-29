@@ -158,14 +158,18 @@ def _extract_docx_text(body: bytes) -> str:
 
 async def _persist_media(
     url: str, content_type: str | None = None, original_name: str | None = None
-) -> tuple[str | None, bytes | None, str | None]:
+) -> tuple[str | None, bytes | None, str | None, dict | None]:
     """Download a media file from Gupshup's transient URL and re-host it
     in our own bucket.
 
-    Returns ``(stored_url, body, content_type)``. ``stored_url`` is None
-    only if the upload failed (callers fall back to the Gupshup link).
-    ``body`` and ``content_type`` are returned even when upload fails, so
-    the caller can still extract docx text from the bytes we did fetch.
+    Returns ``(stored_url, body, content_type, image_variants)``.
+    ``stored_url`` is None only if the upload failed (callers fall back
+    to the Gupshup link). ``body`` and ``content_type`` are returned
+    even when upload fails, so the caller can still extract docx text
+    from the bytes we did fetch. ``image_variants`` is the
+    ``image_pipeline.process_image`` dict (``media_path`` /
+    ``media_path_web`` / ``media_path_thumb``) for image uploads, or
+    None for non-images.
     """
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
@@ -176,7 +180,7 @@ async def _persist_media(
             ct = (resp.headers.get("content-type") or content_type or "").split(";")[0].strip()
     except Exception:
         logger.exception("Failed to download Gupshup media from %s", url)
-        return (None, None, None)
+        return (None, None, None, None)
 
     ext = _CONTENT_TYPE_EXT.get(ct.lower(), "")
     if not ext and original_name and "." in original_name:
@@ -190,12 +194,28 @@ async def _persist_media(
             ext = "." + url_path.rsplit(".", 1)[-1].lower()
     filename = f"{uuid.uuid4().hex}{ext}"
 
+    # For images, run through the image_pipeline so the panel + WP
+    # featured-image upload get a 250 KB web variant and list cards
+    # get a 40 KB thumbnail. Original is preserved for print.
+    # Non-images (docx, audio, etc.) go through the plain save_file
+    # path unchanged. The returned `stored` URL stays the original
+    # for backwards compat; image_variants carries the extras.
+    image_variants: dict | None = None
+    if ext.lower() in {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}:
+        try:
+            from ..services.image_pipeline import process_image
+            image_variants = process_image(body, original_name or filename)
+            stored = image_variants["media_path"]
+            return (stored, body, ct, image_variants)
+        except Exception:
+            logger.exception("image_pipeline failed for WhatsApp media; falling back to plain upload")
+
     try:
         stored = storage.save_file(body, filename, subfolder="whatsapp")
     except Exception:
         logger.exception("Failed to upload WhatsApp media to storage")
         stored = None
-    return (stored, body, ct)
+    return (stored, body, ct, image_variants)
 
 
 def _is_docx_ct(ct: str | None) -> bool:
@@ -295,8 +315,9 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
         media_body: bytes | None = None
         media_ct: str | None = None
         original_name = inner_payload.get("name") or None
+        image_variants: dict | None = None
         if media_url:
-            stored_media_url, media_body, media_ct = await _persist_media(
+            stored_media_url, media_body, media_ct, image_variants = await _persist_media(
                 media_url, inner_payload.get("contentType"), original_name
             )
             stored_media_url = stored_media_url or media_url
@@ -313,6 +334,14 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
                 "media_path": stored_media_url,
                 "media_type": _media_type_for(inner_type),
             }
+            # Attach the web + thumbnail variants alongside the original
+            # so list views can pull thumbnails (~40 KB) and the WP
+            # featured-image upload uses the web variant (~250 KB).
+            if image_variants:
+                if image_variants.get("media_path_web"):
+                    media_para["media_path_web"] = image_variants["media_path_web"]
+                if image_variants.get("media_path_thumb"):
+                    media_para["media_path_thumb"] = image_variants["media_path_thumb"]
             if original_name:
                 # `media_name` drives the panel's display name + download
                 # filename. Without this, docs land as `<hex>` with no
@@ -354,9 +383,10 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     stored_media_url = None
     media_body: bytes | None = None
     media_ct: str | None = None
+    image_variants: dict | None = None
     original_name = inner_payload.get("name") or None
     if media_url:
-        stored_media_url, media_body, media_ct = await _persist_media(
+        stored_media_url, media_body, media_ct, image_variants = await _persist_media(
             media_url, inner_payload.get("contentType"), original_name
         )
         stored_media_url = stored_media_url or media_url
@@ -389,6 +419,11 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
             "media_path": stored_media_url,
             "media_type": _media_type_for(inner_type),
         }
+        if image_variants:
+            if image_variants.get("media_path_web"):
+                media_para["media_path_web"] = image_variants["media_path_web"]
+            if image_variants.get("media_path_thumb"):
+                media_para["media_path_thumb"] = image_variants["media_path_thumb"]
         if original_name:
             media_para["media_name"] = original_name
         paragraphs.append(media_para)

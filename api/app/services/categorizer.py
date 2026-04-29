@@ -62,7 +62,7 @@ async def classify_category(
     if not keys or not (text and text.strip()):
         return None
 
-    if not (settings.SARVAM_API_KEY and settings.SARVAM_BASE_URL):
+    if not settings.GEMINI_API_KEY:
         return None
 
     user_msg = (
@@ -70,30 +70,20 @@ async def classify_category(
         f"News message:\n{text.strip()[:2000]}"
     )
 
-    payload = {
-        "model": "sarvam-30b",
-        "messages": [
-            {"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": user_msg},
-        ],
-        "temperature": 0.0,
-        "max_tokens": _MAX_TOKENS,
-        "reasoning_effort": "low",
-    }
-
     try:
-        data = await sarvam_client.chat(payload=payload, timeout=_TIMEOUT_SECONDS)
-    except (httpx.HTTPError, ValueError) as exc:
-        logger.warning("categorizer: sarvam call failed: %s", exc)
+        from . import gemini_client
+        raw = await gemini_client.chat(
+            prompt=user_msg,
+            system=_SYSTEM,
+            max_tokens=_MAX_TOKENS,
+            temperature=0.0,
+            timeout=_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort categorisation
+        logger.warning("categorizer: gemini call failed: %s", exc)
         return None
 
-    try:
-        raw = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError):
-        return None
     if not isinstance(raw, str) or not raw:
-        # Sarvam can return content=null when it refuses to commit; skip
-        # silently rather than crashing the whole inbound webhook.
         return None
 
     # Strip <think> tags, lower-case, keep alnum + underscore. The model

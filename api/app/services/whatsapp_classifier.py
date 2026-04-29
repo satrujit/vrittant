@@ -7,10 +7,7 @@ anything ambiguous (those get flagged for triage instead).
 import logging
 import re
 
-import httpx
-
-from ..config import settings
-from . import sarvam_client
+from . import gemini_client
 
 logger = logging.getLogger(__name__)
 
@@ -28,26 +25,18 @@ _SYSTEM = (
 )
 
 
-async def _sarvam_call(prompt: str) -> str:
-    payload = {
-        "model": "sarvam-30b",
-        "messages": [
-            {"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.0,
-        "max_tokens": 5,
-    }
-    data = await sarvam_client.chat(payload=payload, timeout=3)
-    return (data["choices"][0]["message"]["content"] or "").strip().lower()
-
-
 async def classify(text: str) -> str:
     """Return 'news' | 'chitchat' | 'unclear'. Never raises."""
     if not text or not text.strip():
         return "unclear"
     try:
-        raw = await _sarvam_call(text.strip()[:1000])
+        raw = (await gemini_client.chat(
+            prompt=text.strip()[:1000],
+            system=_SYSTEM,
+            max_tokens=5,
+            temperature=0.0,
+            timeout=3.0,
+        )).strip().lower()
     except Exception:
         logger.warning("WhatsApp classifier call failed; defaulting to unclear", exc_info=True)
         return "unclear"

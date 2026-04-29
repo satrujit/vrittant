@@ -76,24 +76,23 @@ async def semantic_search_stories(
 
     # --- Step 1: Translate query for cross-language support ---
     has_odia = bool(re.search(r'[\u0B00-\u0B7F]', q))
-    source_lang = "od-IN" if has_odia else "en-IN"
-    target_lang = "en-IN" if has_odia else "od-IN"
+    source_lang = "Odia" if has_odia else "English"
+    target_lang = "English" if has_odia else "Odia"
 
     translated_text = ""
     try:
-        payload = {
-            "input": q,
-            "source_language_code": source_lang,
-            "target_language_code": target_lang,
-            "model": "mayura:v1",
-        }
+        from ...services import gemini_client
         _log.info("Search: translating query=%r (%s -> %s)", q, source_lang, target_lang)
         with sarvam_client.cost_context(bucket="search"):
-            data = await sarvam_client.translate(payload=payload, timeout=15.0)
-        translated_text = data.get("translated_text", "")
+            translated_text = (await gemini_client.translate(
+                text=q,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                timeout=15.0,
+            )).strip()
         _log.info("Search: translated %r -> %r", q, translated_text)
     except Exception as exc:
-        _log.warning("Sarvam translate failed (continuing with original query): %s", exc)
+        _log.warning("Gemini translate failed (continuing with original query): %s", exc)
 
     # --- Step 2: Build search terms (original + translated + individual words) ---
     all_terms = [q]

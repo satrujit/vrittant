@@ -82,14 +82,25 @@ export function transformStory(story) {
   // Build media files from paragraphs that have media_path. Carry the
   // paragraph id so the UI can delete by id (paragraphs reorder when other
   // paragraphs are removed, so positional indices aren't safe).
+  // For images we also expose the server-generated web (~250 KB) and
+  // thumbnail (~40 KB) variants so list cards can pull thumbnails and
+  // detail views can pull web. Falls back to the original on legacy
+  // paragraphs that pre-date the image pipeline.
   const mediaFiles = paragraphs
     .filter((p) => p.media_path || p.photo_path)
-    .map((p) => ({
-      paragraphId: p.id,
-      type: p.media_type || 'photo',
-      url: getMediaUrl(p.media_path || p.photo_path),
-      name: p.media_name || 'media',
-    }));
+    .map((p) => {
+      const orig = getMediaUrl(p.media_path || p.photo_path);
+      const web = getMediaUrl(p.media_path_web) || orig;
+      const thumb = getMediaUrl(p.media_path_thumb) || web;
+      return {
+        paragraphId: p.id,
+        type: p.media_type || 'photo',
+        url: orig,         // print + canonical reference
+        urlWeb: web,       // panel detail / review page
+        urlThumb: thumb,   // list cards, dashboards
+        name: p.media_name || 'media',
+      };
+    });
 
   return {
     ...story,

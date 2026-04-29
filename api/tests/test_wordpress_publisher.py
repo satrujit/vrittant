@@ -87,21 +87,20 @@ def _set_secret_env(monkeypatch):
     monkeypatch.setenv("WP_TEST_APP_PASSWORD", "test-app-password")
 
 
-# Patch the chat function on the wordpress_publisher namespace so the
-# translate helper resolves the mock during tests. The publisher imports
-# anthropic_client as a module attribute.
+# Patch gemini_client.chat on the wordpress_publisher namespace so the
+# translate helper resolves the mock during tests. The publisher
+# imports gemini_client as a module attribute.
 @pytest.fixture
 def mock_translate(monkeypatch):
     async def fake_chat(*args, **kwargs):
-        return {
-            "content": [{"type": "text", "text": json.dumps({
-                "title": "Incident in Bhubaneswar",
-                "body": "An incident took place in Bhubaneswar today.",
-                "excerpt": "An incident took place in Bhubaneswar today.",
-            })}],
-            "usage": {"input_tokens": 10, "output_tokens": 20},
-        }
-    monkeypatch.setattr(wordpress_publisher.anthropic_client, "chat", fake_chat)
+        # gemini_client.chat returns a string directly (not an Anthropic-style
+        # content-block dict). Translation helper does its own json.loads.
+        return json.dumps({
+            "title": "Incident in Bhubaneswar",
+            "body": "An incident took place in Bhubaneswar today.",
+            "excerpt": "An incident took place in Bhubaneswar today.",
+        })
+    monkeypatch.setattr(wordpress_publisher.gemini_client, "chat", fake_chat)
 
 
 # ---------------------------------------------------------------------------
