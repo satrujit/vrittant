@@ -281,10 +281,19 @@ export function EditionPlacementMatrix({ storyId }) {
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-x-3 gap-y-4">
-          {sortedEditions.map((ed) => (
+          {sortedEditions.map((ed, i) => (
             <Cell
               key={ed.id}
               edition={ed}
+              // Match the buckets/Page Arrangement list which renders
+              // editions as "Edition 1..N" rather than the geographic
+              // name. Avimat keeps its real title because it's special
+              // (Sunday-only, sorted last).
+              label={
+                ed.title === AVIMAT
+                  ? AVIMAT
+                  : t('buckets.editionNumber', { n: i + 1 })
+              }
               current={placementByEdition.get(ed.id)}
               onPick={(p) => pickPage(ed.id, p)}
               onDrop={() => dropFromEdition(ed.id)}
@@ -297,10 +306,14 @@ export function EditionPlacementMatrix({ storyId }) {
   );
 }
 
-function Cell({ edition, current, onPick, onDrop, dropLabel }) {
+function Cell({ edition, label, current, onPick, onDrop, dropLabel }) {
   const [open, setOpen] = useState(false);
   const display = shortPageLabel(current?.pageName);
   const isPlaced = !!current?.pageId;
+  // Prefer the caller-supplied display label ("Edition 1..N") and fall
+  // back to the raw geographic title only if the parent didn't pass one
+  // (defensive — shouldn't happen with the current callsite).
+  const displayLabel = label ?? edition.title;
   return (
     // The wrapper enforces the grid column width so the title can
     // truncate without spilling over its neighbour. Without
@@ -316,9 +329,9 @@ function Cell({ edition, current, onPick, onDrop, dropLabel }) {
           >
             <span
               className="block w-full truncate text-[13px] font-semibold text-foreground"
-              title={edition.title}
+              title={displayLabel}
             >
-              {edition.title}
+              {displayLabel}
             </span>
             <span
               className={cn(
