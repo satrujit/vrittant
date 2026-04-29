@@ -25,6 +25,7 @@ import {
   transformStory,
   llmChat,
   translateText,
+  generateStory,
   getSTTWebSocketUrl,
   fetchEditions,
   fetchEdition,
@@ -71,6 +72,9 @@ export function useReviewState({ id, t }) {
   // English translation tab
   const [englishTranslation, setEnglishTranslation] = useState('');
   const [translating, setTranslating] = useState(false);
+
+  // Server-owned Odia polish (Refine button on the editor toolbar)
+  const [refining, setRefining] = useState(false);
 
   // Social posts
   const [socialPosts, setSocialPosts] = useState(null);
@@ -803,26 +807,49 @@ export function useReviewState({ id, t }) {
     }
   }, [id, isNew, story, headline, editor, englishEditor, englishTranslation, socialPosts, navigate]);
 
-  // Translate to English via Sarvam's dedicated /translate endpoint.
-  // We translate headline + body separately so the headline always survives
-  // intact even if the body is large/chunked, then render headline as a
-  // bold first line so it's clearly distinguished in the English view.
-  // After translation completes we auto-persist via updateStory so the user
-  // doesn't have to remember to hit Save.
+  // Translate to English — but via the chat LLM, not Sarvam's literal
+  // /translate endpoint. The system prompt asks for a journalistic
+  // re-narration in concise English (inverted-pyramid lead, supporting
+  // paras, no fillers) rather than a word-for-word render that tends to
+  // read clunky. Facts, names, and numbers are preserved exactly.
   const handleTranslateToEnglish = useCallback(async () => {
     if (!story) return;
     setTranslating(true);
     try {
       const odiaBody = story.paragraphs.map((p) => p.text).filter(Boolean).join('\n\n');
-      const [translatedHeadline, translatedBody] = await Promise.all([
-        story.headline ? translateText(story.headline) : Promise.resolve(''),
-        odiaBody ? translateText(odiaBody) : Promise.resolve(''),
-      ]);
-      const combined = [translatedHeadline, translatedBody].filter(Boolean).join('\n\n');
-      setEnglishTranslation(combined);
-      const headlineHtml = translatedHeadline ? `<p><strong>${translatedHeadline}</strong></p>` : '';
-      const bodyHtml = translatedBody.split('\n\n').filter(Boolean).map((p) => `<p>${p}</p>`).join('');
+      const systemPrompt =
+        "You are an English news editor adapting an Odia newspaper article for an English-reading audience. " +
+        "Do NOT produce a literal word-for-word translation. Re-narrate the story in clean, concise journalistic " +
+        "English — inverted-pyramid style: lead paragraph with the who/what/when/where in 1-2 sentences, then " +
+        "supporting paragraphs in logical order. Tighten verbose phrasing, drop fillers and repetitions, and " +
+        "preserve every fact faithfully (names, places, numbers, dates, quotes — never invent or alter). " +
+        "Render proper nouns in standard English spelling (ନୟାଗଡ଼ → Nayagarh, ଶ୍ରୀଜଗନ୍ନାଥ → Shree Jagannath). " +
+        "First line MUST be the translated headline wrapped in **bold** (e.g. \"**Headline here**\"); a blank " +
+        "line, then the body. Return ONLY the translated article — no preamble like 'Here is the translation'.";
+      const userPrompt = `Headline: ${story.headline || ''}\n\n${odiaBody}`;
+      const text = await llmChat({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 4096,
+        temperature: 0.3,
+        expectEnglish: true,
+      });
+      const trimmed = (text || '').trim();
+      // Split on the first blank line so the bold-wrapped headline becomes
+      // its own paragraph; the rest stays as body paragraphs.
+      const [firstLine, ...rest] = trimmed.split(/\n{2,}/);
+      const headlineMatch = (firstLine || '').match(/^\*\*(.+?)\*\*\s*$/);
+      const headlineHtml = headlineMatch
+        ? `<p><strong>${headlineMatch[1]}</strong></p>`
+        : (firstLine ? `<p>${firstLine}</p>` : '');
+      const bodyHtml = rest
+        .filter(Boolean)
+        .map((p) => `<p>${p}</p>`)
+        .join('');
       const englishHtml = headlineHtml + bodyHtml;
+      setEnglishTranslation(englishHtml);
       if (englishEditor) {
         englishEditor.commands.setContent(englishHtml);
       }
@@ -838,6 +865,32 @@ export function useReviewState({ id, t }) {
       setTranslating(false);
     }
   }, [id, story, englishEditor]);
+
+  // Refine the current Odia body via /api/llm/generate-story. Same
+  // server-owned polish the mobile reporter app uses on raw notes:
+  // English-script slips → Odia script, dictation duplicates collapsed,
+  // punctuation cleaned, Odia digits normalised — without altering facts.
+  const handleRefineStory = useCallback(async () => {
+    if (!editor || !story) return;
+    const currentBody = editor.getText({ blockSeparator: '\n\n' }).trim();
+    if (!currentBody) return;
+    setRefining(true);
+    try {
+      const res = await generateStory(currentBody, { story_id: story.id });
+      const refined = (res?.body || '').trim();
+      if (!refined) return;
+      const html = refined
+        .split(/\n{2,}/)
+        .filter(Boolean)
+        .map((p) => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
+        .join('');
+      editor.commands.setContent(html);
+    } catch (err) {
+      console.error('Refine failed:', err);
+    } finally {
+      setRefining(false);
+    }
+  }, [editor, story]);
 
   // Fetch draft editions for assignment
   useEffect(() => {
@@ -1000,6 +1053,9 @@ export function useReviewState({ id, t }) {
     englishTranslation,
     translating,
 
+    // server-owned Odia polish (Refine button)
+    refining,
+
     // social
     socialPosts,
     setSocialPosts,
@@ -1053,6 +1109,7 @@ export function useReviewState({ id, t }) {
     handleStatusChange,
     handleSaveContent,
     handleTranslateToEnglish,
+    handleRefineStory,
     handleAssignToEdition,
     handleRemoveFromEdition,
     toggleAudioPlay,

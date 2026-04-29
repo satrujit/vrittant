@@ -11,6 +11,8 @@ import {
   List,
   ListOrdered,
   RotateCcw,
+  Sparkles,
+  Loader2,
   Table as TableIcon,
 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -76,6 +78,8 @@ export default function ReviewToolbar({
   setOdiaKeyboard,
   handleInsertLink,
   handleRevert,
+  handleRefineStory,
+  refining = false,
 }) {
   const { t } = useI18n();
   const { user } = useAuth();
@@ -179,9 +183,30 @@ export default function ReviewToolbar({
           {odiaKeyboard ? 'ଅ' : 'En'}
         </button>
       </div>
-      <Button variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={handleRevert} title={t('review.revert')}>
-        <RotateCcw size={12} />
-      </Button>
+      <div className="flex items-center gap-1">
+        {handleRefineStory && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs"
+            onClick={handleRefineStory}
+            disabled={refining || !editor}
+            title={t('review.refine')}
+          >
+            {refining ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Sparkles size={12} />
+            )}
+            <span className="hidden sm:inline">
+              {refining ? t('review.refining') : t('review.refine')}
+            </span>
+          </Button>
+        )}
+        <Button variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={handleRevert} title={t('review.revert')}>
+          <RotateCcw size={12} />
+        </Button>
+      </div>
     </div>
   );
 }

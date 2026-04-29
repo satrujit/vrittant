@@ -140,6 +140,25 @@ export async function llmChat(arg1, arg2) {
 }
 
 /**
+ * Server-owned story polish via /api/llm/generate-story. Backend picks
+ * the model + system prompt (Gemini 2.5 Flash with Sarvam-30b fallback)
+ * and applies the same English-script→Odia transliteration, dictation
+ * dedup, punctuation cleanup, and digit normalisation the mobile app
+ * uses on raw reporter notes. Reusing the same endpoint here keeps the
+ * polish behaviour identical between the reporter app and the panel.
+ *
+ * @param {string} notes — current Odia body (or raw reporter notes)
+ * @param {object} [options] — { story_id?: string }
+ * @returns {Promise<{body: string, model: string, fallback_used: boolean}>}
+ */
+export async function generateStory(notes, options = {}) {
+  if (!notes || !notes.trim()) return { body: '', model: '', fallback_used: false };
+  const payload = { notes };
+  if (options.story_id) payload.story_id = options.story_id;
+  return await apiPost('/api/llm/generate-story', payload);
+}
+
+/**
  * Translate Odia (or another source language) to English via Sarvam's
  * dedicated /translate endpoint. Much more reliable than asking the chat
  * LLM to translate — chat-completions sometimes returns the source

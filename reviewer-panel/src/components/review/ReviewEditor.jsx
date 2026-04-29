@@ -44,6 +44,8 @@ export default function ReviewEditor({
   setOdiaKeyboard,
   handleInsertLink,
   handleRevert,
+  handleRefineStory,
+  refining,
   // selection tooltip
   selectionTooltip,
   hasSelection,
@@ -232,6 +234,8 @@ export default function ReviewEditor({
           setOdiaKeyboard={setOdiaKeyboard}
           handleInsertLink={handleInsertLink}
           handleRevert={handleRevert}
+          handleRefineStory={handleRefineStory}
+          refining={refining}
         />
 
         {/* TipTap Editor */}
