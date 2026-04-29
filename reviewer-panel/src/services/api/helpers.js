@@ -102,6 +102,14 @@ export function transformStory(story) {
     // transformStory below — keep both mappers in sync.
     displayId: story.display_id || story.displayId || null,
     seqNo: story.seq_no ?? story.seqNo ?? null,
+    // WordPress publishing state. wpPushStatus values:
+    //   pending | ok | failed | retract | skipped_no_config |
+    //   skipped_wp_status_publish | skipped_wp_status_trash | ...
+    wpPostId: story.wp_post_id ?? null,
+    wpUrl: story.wp_url || null,
+    wpPushedAt: story.wp_pushed_at || null,
+    wpPushStatus: story.wp_push_status || null,
+    wpPushError: story.wp_push_error || null,
     reporter: reporterWithUI,
     reporterId: reporter.id || story.reporter_id,
     submittedAt: story.submitted_at || story.submittedAt,

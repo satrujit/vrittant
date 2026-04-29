@@ -48,6 +48,15 @@ class AdminStoryResponse(BaseModel):
     assigned_to: Optional[str] = None
     assignee_name: Optional[str] = None
     assigned_match_reason: Optional[str] = None
+    # WordPress publishing state. None until the story has been
+    # approved (and an org-level WP config exists). The chip on the
+    # review side panel reads ``wp_push_status`` to render its label
+    # and links to ``wp_url`` when present.
+    wp_post_id: Optional[int] = None
+    wp_url: Optional[str] = None
+    wp_pushed_at: Optional[datetime] = None
+    wp_push_status: Optional[str] = None
+    wp_push_error: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -76,6 +85,15 @@ class AdminStoryListItem(BaseModel):
     assigned_to: Optional[str] = None
     assignee_name: Optional[str] = None
     assigned_match_reason: Optional[str] = None
+    # WordPress publishing state. None until the story has been
+    # approved (and an org-level WP config exists). The chip on the
+    # review side panel reads ``wp_push_status`` to render its label
+    # and links to ``wp_url`` when present.
+    wp_post_id: Optional[int] = None
+    wp_url: Optional[str] = None
+    wp_pushed_at: Optional[datetime] = None
+    wp_push_status: Optional[str] = None
+    wp_push_error: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -129,6 +147,15 @@ class AdminStoryWithRevisionResponse(BaseModel):
     assigned_to: Optional[str] = None
     assignee_name: Optional[str] = None
     assigned_match_reason: Optional[str] = None
+    # WordPress publishing state. None until the story has been
+    # approved (and an org-level WP config exists). The chip on the
+    # review side panel reads ``wp_push_status`` to render its label
+    # and links to ``wp_url`` when present.
+    wp_post_id: Optional[int] = None
+    wp_url: Optional[str] = None
+    wp_pushed_at: Optional[datetime] = None
+    wp_push_status: Optional[str] = None
+    wp_push_error: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

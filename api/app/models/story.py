@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, JSON, Boolean, Column, DateTime, ForeignKey, Index, String, Text, text as sql_text
+from sqlalchemy import BigInteger, Integer, JSON, Boolean, Column, DateTime, ForeignKey, Index, String, Text, text as sql_text
 from sqlalchemy.orm import relationship
 
 from ..database import Base
@@ -57,6 +57,14 @@ class Story(Base):
     assigned_match_reason = Column(String, nullable=True)  # category | region | load_balance | manual
     whatsapp_session_open_until = Column(DateTime, nullable=True)
     needs_triage = Column(Boolean, nullable=False, default=False, server_default=sql_text("false"))
+
+    # WordPress auto-publish state (see services/wordpress_publisher.py)
+    wp_post_id = Column(Integer, nullable=True)
+    wp_url = Column(String, nullable=True)
+    wp_pushed_at = Column(DateTime, nullable=True)
+    wp_push_status = Column(String, nullable=True)  # pending|ok|failed|retract|skipped_*
+    wp_push_error = Column(Text, nullable=True)
+    wp_push_attempts = Column(Integer, nullable=False, default=0, server_default=sql_text("0"))
 
     reporter = relationship("User", foreign_keys=[reporter_id], back_populates="stories")
     reviewer = relationship("User", foreign_keys=[reviewed_by])

@@ -323,6 +323,35 @@ def _apply_transcript(story_id: str, paragraph_id: str, transcript: str) -> None
         db.close()
 
 
+@router.post("/sweep-wp-push")
+async def sweep_wp_push(
+    x_internal_token: Optional[str] = Header(default=None, alias="X-Internal-Token"),
+):
+    """Drain pending WordPress pushes/retracts.
+
+    Designed to be hit every 60s by Cloud Scheduler. The publisher
+    handles its own create-vs-update branching, the WP-side status
+    guard, and the retract path; this endpoint just opens a session,
+    invokes the sweep, and commits.
+
+    Returns counts so Cloud Scheduler / observability can spot
+    backlogs (``picked`` rising = pushes outpacing the cron tick).
+    """
+    _require_internal_token(x_internal_token)
+    from ..services import wordpress_publisher
+
+    db = SessionLocal()
+    try:
+        result = await wordpress_publisher.sweep_pending(db)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 async def _fetch_audio_bytes(audio_url: str) -> bytes:
     """Pull audio bytes back from where ``save_file`` parked them."""
     if audio_url.startswith("http://") or audio_url.startswith("https://"):
