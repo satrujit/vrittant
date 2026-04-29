@@ -11,7 +11,7 @@ import {
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchStats, fetchStories, fetchReporters, transformStory, reassignStory } from '../services/api';
-import { Avatar, StatusBadge, CategoryChip, SearchBar, PageHeader } from '../components/common';
+import { Avatar, StatusBadge, CategoryChip, SearchBar, PageHeader, Pagination } from '../components/common';
 import { LayoutDashboard } from 'lucide-react';
 import { formatDate, formatTimeAgo } from '../utils/helpers';
 import { assignableReviewers } from '../utils/users';
@@ -391,44 +391,11 @@ export default function DashboardPage() {
                 total: totalStories,
               })}
             </span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                aria-label="Previous page"
-              >
-                <ChevronLeft size={16} />
-              </Button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                (page) => (
-                  <button
-                    key={page}
-                    className={cn(
-                      'inline-flex items-center justify-center min-w-8 h-8 px-2 border rounded-md text-xs font-medium transition-all cursor-pointer',
-                      page === currentPage
-                        ? 'bg-primary text-primary-foreground border-primary hover:bg-primary/90'
-                        : 'bg-card text-foreground border-border hover:bg-accent hover:border-primary/40 hover:text-primary'
-                    )}
-                    onClick={() => setCurrentPage(page)}
-                  >
-                    {page}
-                  </button>
-                )
-              )}
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages, p + 1))
-                }
-                disabled={currentPage === totalPages}
-                aria-label="Next page"
-              >
-                <ChevronRight size={16} />
-              </Button>
-            </div>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
           </div>
         )}
       </div>

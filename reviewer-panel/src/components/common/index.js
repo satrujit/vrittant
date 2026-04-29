@@ -7,6 +7,7 @@ export { default as SearchBar } from './SearchBar';
 export { default as Modal } from './Modal';
 export { default as SearchableSelect } from './SearchableSelect';
 export { default as PageHeader } from './PageHeader';
+export { default as Pagination } from './Pagination';
 
 // Re-export shadcn Dialog pieces for direct use
 export {

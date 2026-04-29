@@ -21,7 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, StatusBadge, CategoryChip, SearchBar, SearchableSelect, PageHeader } from '../components/common';
+import { Avatar, StatusBadge, CategoryChip, SearchBar, SearchableSelect, PageHeader, Pagination } from '../components/common';
 import { formatDate, formatTimeAgo } from '../utils/helpers';
 import { assignableReviewers } from '../utils/users';
 import {
@@ -663,60 +663,11 @@ export default function AllStoriesPage() {
                 total: totalStories,
               })}
             </span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="icon-xs"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                aria-label="Previous page"
-              >
-                <ChevronLeft size={16} />
-              </Button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter((page) => {
-                  if (page === 1 || page === totalPages) return true;
-                  if (Math.abs(page - currentPage) <= 1) return true;
-                  return false;
-                })
-                .reduce((acc, page, i, arr) => {
-                  if (i > 0 && page - arr[i - 1] > 1) {
-                    acc.push({ type: 'ellipsis', key: `e-${page}` });
-                  }
-                  acc.push({ type: 'page', page, key: page });
-                  return acc;
-                }, [])
-                .map((item) =>
-                  item.type === 'ellipsis' ? (
-                    <span
-                      key={item.key}
-                      className="inline-flex items-center justify-center min-w-[24px] text-xs text-muted-foreground select-none"
-                    >
-                      ...
-                    </span>
-                  ) : (
-                    <Button
-                      key={item.key}
-                      variant={item.page === currentPage ? 'default' : 'outline'}
-                      size="xs"
-                      onClick={() => setCurrentPage(item.page)}
-                    >
-                      {item.page}
-                    </Button>
-                  )
-                )}
-              <Button
-                variant="outline"
-                size="icon-xs"
-                onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages, p + 1))
-                }
-                disabled={currentPage === totalPages}
-                aria-label="Next page"
-              >
-                <ChevronRight size={16} />
-              </Button>
-            </div>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
           </div>
         )}
       </div>
