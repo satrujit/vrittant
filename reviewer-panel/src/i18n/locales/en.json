@@ -96,6 +96,8 @@
     "draftingReport": "Editing Report",
     "autoSaved": "Auto-saved {time}",
     "revert": "Revert",
+    "refine": "Refine",
+    "refining": "Refining…",
     "metadata": "Properties",
     "priority": "Priority",
     "dateLabel": "Submitted",

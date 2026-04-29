@@ -159,6 +159,8 @@ function ReviewPage() {
               setOdiaKeyboard={s.setOdiaKeyboard}
               handleInsertLink={s.handleInsertLink}
               handleRevert={s.handleRevert}
+              handleRefineStory={s.handleRefineStory}
+              refining={s.refining}
               selectionTooltip={s.selectionTooltip}
               hasSelection={s.hasSelection}
               convertingSelection={s.convertingSelection}
