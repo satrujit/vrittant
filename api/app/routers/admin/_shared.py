@@ -28,6 +28,8 @@ class AdminReporterInfo(BaseModel):
 
 class AdminStoryResponse(BaseModel):
     id: str
+    seq_no: Optional[int] = None
+    display_id: Optional[str] = None
     reporter_id: str
     headline: str
     category: Optional[str]
@@ -52,6 +54,8 @@ class AdminStoryResponse(BaseModel):
 
 class AdminStoryListItem(BaseModel):
     id: str
+    seq_no: Optional[int] = None
+    display_id: Optional[str] = None
     reporter_id: str
     headline: str
     category: Optional[str]
@@ -103,6 +107,8 @@ class EditionAssignmentInfo(BaseModel):
 
 class AdminStoryWithRevisionResponse(BaseModel):
     id: str
+    seq_no: Optional[int] = None
+    display_id: Optional[str] = None
     reporter_id: str
     headline: str
     category: Optional[str]

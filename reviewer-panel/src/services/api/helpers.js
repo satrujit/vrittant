@@ -98,7 +98,8 @@ export function transformStory(story) {
     bodyText,
     // Human-readable display id (e.g. "PNS-26-1234"). Server populates
     // it from the org code + year + per-org seq_no; falls back to null
-    // for legacy stories that pre-date the migration.
+    // for legacy stories that pre-date the migration. Mirrored on
+    // transformStory below — keep both mappers in sync.
     displayId: story.display_id || story.displayId || null,
     seqNo: story.seq_no ?? story.seqNo ?? null,
     reporter: reporterWithUI,
