@@ -187,6 +187,11 @@ def admin_list_stories(
                 id=s.id,
                 seq_no=s.seq_no,
                 display_id=s.display_id,
+                wp_post_id=s.wp_post_id,
+                wp_url=s.wp_url,
+                wp_pushed_at=s.wp_pushed_at,
+                wp_push_status=s.wp_push_status,
+                wp_push_error=s.wp_push_error,
                 reporter_id=s.reporter_id,
                 headline=s.headline,
                 category=s.category,
@@ -501,6 +506,7 @@ def admin_update_story_status(
         )
 
     # Edition assignment is optional — approval no longer requires it
+    prior_status = story.status
     story.status = body.status
     if body.status in TERMINAL_STATUSES:
         story.reviewed_by = user.id
@@ -509,6 +515,27 @@ def admin_update_story_status(
         story.reviewed_by = None
         story.reviewed_at = None
     story.updated_at = now_ist()
+
+    # WordPress push lifecycle hooks. The transitions that matter:
+    #   approved              → flag for push (create or update WP draft)
+    #   approved → flagged/rejected/submitted (un-approve) → retract
+    #     iff a WP post was already created
+    # The actual HTTP work happens in the /internal/sweep-wp-push cron;
+    # we only flip the state field here. Idempotent: re-approving a story
+    # that's already been pushed re-flags it for push, which the
+    # publisher then handles as an update (with WP-status guard).
+    if body.status == "approved":
+        # Only re-flag if it wasn't already pending — preserves prior
+        # error/attempt state when, e.g., reviewer toggles via the UI.
+        if story.wp_push_status != "pending":
+            story.wp_push_status = "pending"
+            story.wp_push_attempts = 0
+            story.wp_push_error = None
+    elif prior_status == "approved" and body.status in {"flagged", "rejected", "submitted"}:
+        if story.wp_post_id is not None:
+            story.wp_push_status = "retract"
+            story.wp_push_attempts = 0
+            story.wp_push_error = None
 
     # Publish-time cleanup: drop the silent backup audio (always-upload
     # pipeline) once the story is published. Audio explicitly attached by
@@ -641,6 +668,18 @@ def admin_update_story(
 
     story.updated_at = now_ist()
     story.refresh_search_text()
+
+    # If this story has already been pushed to WordPress, the editor's
+    # update should propagate. Re-flag for push; the publisher will
+    # update the existing post in place (and silently skip if the WP
+    # team has already published or trashed it). Stories that were
+    # never pushed don't get flagged from a mid-edit save — only the
+    # /status endpoint flips them on approval.
+    if story.wp_post_id is not None and story.wp_push_status not in {"pending", "retract"}:
+        story.wp_push_status = "pending"
+        story.wp_push_attempts = 0
+        story.wp_push_error = None
+
     db.commit()
     db.refresh(story)
 

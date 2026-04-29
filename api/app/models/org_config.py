@@ -79,6 +79,19 @@ class OrgConfig(Base):
     # work the same as for a regular reporter.
     whitelisted_contributors = Column(JSON, nullable=False, default=list)
     default_language = Column(String, nullable=False, default="odia")
+    # Optional per-org WordPress publishing config. Shape:
+    #   {
+    #     "base_url": "https://pragativadi.com",
+    #     "username": "vrittant-bot",
+    #     "app_password_secret": "WP_PRAGATIVADI_APP_PASSWORD",
+    #     "default_author_id": 12,
+    #     "default_status": "draft",
+    #     "category_map": { "crime": 5, "politics": 8, ... }
+    #   }
+    # The app_password itself lives in Secret Manager — only its name
+    # sits here. None / empty dict = WP integration disabled for this
+    # org; the sweep skips its stories with status='skipped_no_config'.
+    wordpress_config = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=now_ist)
     updated_at = Column(
         DateTime,

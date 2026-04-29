@@ -606,6 +606,18 @@ export default function ReviewSidePanel({
           <EditionPlacementMatrix storyId={id} />
         </Card>
 
+        {/* ─────────── Card 2.5: WordPress publishing state ───────────
+            Only shown once a story has a known wp_push_status (set
+            on approve, retract, or any save after first push). Hidden
+            for fresh / draft stories so the panel doesn't carry a
+            "WordPress: nothing yet" row at all times. */}
+        {story?.wpPushStatus && (
+          <Card className="shrink-0">
+            <SectionHeader>{t('review.wordpress', 'WordPress')}</SectionHeader>
+            <_WpStatusChip story={story} t={t} />
+          </Card>
+        )}
+
         {/* ─────────── Card 3: Comments (fills remaining height) ─────────── */}
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <SectionHeader>
@@ -684,5 +696,76 @@ export default function ReviewSidePanel({
         </Card>
       </div>
     </aside>
+  );
+}
+
+
+// ── WordPress status chip ────────────────────────────────────────────────
+// Maps the server's wp_push_status onto a label + color + optional link.
+// Editors see this in the review side panel once a story enters the WP
+// pipeline (i.e. has been approved at least once). The state space is
+// intentionally small — colour signals "is there anything I need to do?"
+// rather than the granular WP-side status.
+function _WpStatusChip({ story, t }) {
+  const status = story.wpPushStatus;
+  const url = story.wpUrl;
+  const error = story.wpPushError;
+
+  let label;
+  let color;
+  let hint;
+  if (status === 'pending' || status === 'retract') {
+    label = status === 'retract'
+      ? t('review.wpRetracting', 'Retracting from website…')
+      : t('review.wpPushing', 'Sending to website…');
+    color = 'bg-amber-100 text-amber-800 border-amber-200';
+  } else if (status === 'ok') {
+    label = t('review.wpPushedDraft', 'Sent to website (pending review)');
+    color = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  } else if (status === 'failed') {
+    label = t('review.wpFailed', 'Push failed');
+    color = 'bg-red-50 text-red-700 border-red-200';
+    hint = error;
+  } else if (status === 'skipped_no_config') {
+    label = t('review.wpNoConfig', 'WordPress not configured for this org');
+    color = 'bg-stone-50 text-stone-600 border-stone-200';
+  } else if (status?.startsWith('skipped_wp_status_publish')) {
+    label = t('review.wpLive', 'Live on website');
+    color = 'bg-blue-50 text-blue-700 border-blue-200';
+  } else if (status?.startsWith('skipped_wp_status_trash')) {
+    label = t('review.wpTrashed', 'Rejected by website');
+    color = 'bg-stone-50 text-stone-600 border-stone-200';
+  } else if (status?.startsWith('skipped_')) {
+    label = t('review.wpSkipped', 'Skipped — owned by website team');
+    color = 'bg-stone-50 text-stone-600 border-stone-200';
+  } else {
+    label = status;
+    color = 'bg-stone-50 text-stone-600 border-stone-200';
+  }
+
+  return (
+    <div className="px-4 pb-3">
+      <span
+        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${color}`}
+        title={hint || ''}
+      >
+        {label}
+      </span>
+      {url && (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-2 inline-flex items-center text-xs font-medium text-blue-600 hover:underline"
+        >
+          {t('review.wpOpenLink', 'Open on website ↗')}
+        </a>
+      )}
+      {error && (
+        <div className="mt-1.5 text-[11px] text-red-700 break-words">
+          {error}
+        </div>
+      )}
+    </div>
   );
 }
