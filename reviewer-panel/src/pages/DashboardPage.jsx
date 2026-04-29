@@ -315,12 +315,12 @@ export default function DashboardPage() {
                           >
                             {story.headline}
                           </Link>
-                          {story.displayId && (
-                            <span className="font-mono text-[11px] font-medium tracking-wider text-muted-foreground">
-                              {story.displayId}
-                            </span>
-                          )}
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                            {story.displayId && (
+                              <span className="inline-flex items-center font-mono font-semibold tracking-wider text-blue-600 whitespace-nowrap">
+                                {story.displayId}
+                              </span>
+                            )}
                             <span className="inline-flex items-center gap-1 whitespace-nowrap">
                               <Avatar
                                 initials={story.reporter.initials}
