@@ -34,6 +34,21 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_BASE_URL: str = "https://api.anthropic.com"
 
+    # Gemini (Google AI Studio API). Created in vrittant-f5ef2 GCP
+    # project so billing flows back to the same Cloud bill we're already
+    # paying. Calls go to ``generativelanguage.googleapis.com`` directly
+    # (no Vertex AI auth dance). Empty key = endpoints that have an
+    # Anthropic/Sarvam fallback continue to work via the legacy path;
+    # Gemini-only call sites (most of them after the migration) error
+    # cleanly with a 503.
+    GEMINI_API_KEY: str = ""
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com"
+    # Default model for chat / translate. Flash-Lite is ~3-4× cheaper
+    # than Flash and quality has tested OK for Odia journalism. Override
+    # per-call site (e.g. story generation can pass the heavier Flash
+    # model) when needed.
+    GEMINI_DEFAULT_MODEL: str = "gemini-2.5-flash-lite"
+
     # OTP provider — "twilio" (default) or "msg91". Switch via env without code changes.
     OTP_PROVIDER: str = "twilio"
 

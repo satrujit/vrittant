@@ -240,17 +240,13 @@ async def search_news_articles_by_title(
     has_odia = bool(re.search(r'[\u0B00-\u0B7F]', q))
     if has_odia:
         try:
-            payload = {
-                "input": q,
-                "source_language_code": "od-IN",
-                "target_language_code": "en-IN",
-                "model": "mayura:v1",
-            }
+            from ..services import gemini_client
             with sarvam_client.cost_context(bucket="search"):
-                data = await sarvam_client.translate(payload=payload, timeout=15.0)
-            translated = data.get("translated_text", "")
-            if translated and translated.strip() and translated != q:
-                search_terms.append(translated.strip())
+                translated = (await gemini_client.translate(
+                    text=q, source_lang="Odia", target_lang="English", timeout=15.0,
+                )).strip()
+            if translated and translated != q:
+                search_terms.append(translated)
                 logger.info("search-by-title: translated %r -> %r", q, translated)
         except Exception as exc:
             logger.warning("search-by-title: translate failed: %s", exc)
@@ -401,30 +397,8 @@ async def research_story_from_article(
     max_tokens = min(max(word_count * 8, 4000), 8192)
 
     try:
-        messages = [
-            {"role": "system", "content": system_prompt + "\n\nDo not output markdown formatting (no **, ##, -, etc). Return plain text only."},
-            {"role": "user", "content": user_prompt},
-        ]
-        payload = {
-            # sarvam-105b is Sarvam's flagship — better Odia proper-noun
-            # handling than 30b at ~1.6x the cost (~₹0.03 vs ₹0.02 per
-            # research call). For editorial story drafting the quality
-            # delta is worth the trivial cost bump.
-            "model": "sarvam-105b",
-            "messages": messages,
-            "temperature": 0.6,
-            "max_tokens": max_tokens,
-            # Both 30b and 105b are reasoning models. Empirically tested
-            # matrix (2026-04-25) on a 400-word Odia generation prompt:
-            #   reasoning_effort=null   → content=0 chars, reasoning=8.5K, cutoff
-            #   reasoning_effort=low    → content=118,    reasoning=9.6K, cutoff
-            #   reasoning_effort=medium → content=0,      reasoning=8.7K, cutoff
-            #   reasoning_effort=high   → content=1217,   reasoning=4.2K, clean stop
-            # High forces tight, goal-directed reasoning that leaves room
-            # for the final JSON answer. The reasoning text itself goes to
-            # the separate `reasoning_content` field — we ignore it.
-            "reasoning_effort": "high",
-        }
+        from ..services import gemini_client
+        full_system = system_prompt + "\n\nDo not output markdown formatting (no **, ##, -, etc). Return plain text only."
 
         # This is the "Research with AI" path — the user is creating a
         # story FROM a news article, so we attribute to the resulting story
@@ -434,14 +408,25 @@ async def research_story_from_article(
         ctx = sarvam_client.current_cost_context()
         if ctx.story_id is None and ctx.bucket is None:
             with sarvam_client.cost_context(bucket="news_fetcher"):
-                data = await sarvam_client.chat(payload=payload, timeout=180.0)
+                raw = await gemini_client.chat(
+                    prompt=user_prompt,
+                    system=full_system,
+                    model="gemini-2.5-flash",
+                    max_tokens=max_tokens,
+                    temperature=0.6,
+                    timeout=180.0,
+                )
         else:
-            data = await sarvam_client.chat(payload=payload, timeout=180.0)
-        raw = data["choices"][0]["message"]["content"] or ""
+            raw = await gemini_client.chat(
+                prompt=user_prompt,
+                system=full_system,
+                model="gemini-2.5-flash",
+                max_tokens=max_tokens,
+                temperature=0.6,
+                timeout=180.0,
+            )
 
-        logger.info("Sarvam raw (before strip) length: %d, first 300: %s", len(raw), raw[:300])
-        raw = strip_think_tags(raw)
-        logger.info("Sarvam raw (after strip) length: %d, first 300: %s", len(raw), raw[:300])
+        logger.info("Gemini raw length: %d, first 300: %s", len(raw), raw[:300])
 
         parsed = parse_sarvam_response(raw)
         if parsed:
@@ -466,32 +451,24 @@ async def research_story_from_article(
             ratio = _odia_ratio(gen_body)
             if ratio < 0.6:
                 logger.warning(
-                    "Sarvam returned non-Odia-script body for article %s (odia_ratio=%.2f); retrying with stricter prompt",
+                    "Gemini returned non-Odia-script body for article %s (odia_ratio=%.2f); retrying with stricter prompt",
                     article_id,
                     ratio,
                 )
-                retry_messages = [
-                    {
-                        "role": "system",
-                        "content": (
-                            system_prompt
-                            + "\n\nDo not output markdown formatting (no **, ##, -, etc). Return plain text only."
-                            + "\n\nYour previous attempt used Romanised Odia (Latin letters spelling Odia phonetically). That is INVALID."
-                            + " Rewrite headline AND body using ONLY characters in the Odia Unicode block (U+0B00–U+0B7F)."
-                            + " Every word — including names of people and places — must be in Odia script."
-                        ),
-                    },
-                    {"role": "user", "content": user_prompt},
-                ]
-                retry_payload = {**payload, "messages": retry_messages, "temperature": 0.4}
-                # Use the shared sarvam_client.chat() so the retry attributes
-                # cost to the same bucket/story as the initial call. The
-                # earlier raw-httpx version referenced undefined `url` and
-                # `headers` (refactor leftover) and crashed every Odia retry —
-                # the outer try/except swallowed the NameError and the user
-                # silently got the article's English title back.
-                retry_data = await sarvam_client.chat(payload=retry_payload, timeout=180.0)
-                retry_raw = strip_think_tags(retry_data["choices"][0]["message"]["content"] or "")
+                strict_system = (
+                    full_system
+                    + "\n\nYour previous attempt used Romanised Odia (Latin letters spelling Odia phonetically). That is INVALID."
+                    + " Rewrite headline AND body using ONLY characters in the Odia Unicode block (U+0B00–U+0B7F)."
+                    + " Every word — including names of people and places — must be in Odia script."
+                )
+                retry_raw = await gemini_client.chat(
+                    prompt=user_prompt,
+                    system=strict_system,
+                    model="gemini-2.5-flash",
+                    max_tokens=max_tokens,
+                    temperature=0.4,
+                    timeout=180.0,
+                )
                 retry_parsed = parse_sarvam_response(retry_raw)
                 if retry_parsed:
                     retry_body = retry_parsed.get("body", "").replace('\\n', '\n').strip()
@@ -500,15 +477,15 @@ async def research_story_from_article(
                         gen_body = retry_body
                         gen_category = retry_parsed.get("category", gen_category)
                         location = retry_parsed.get("location", location)
-                        logger.info("Sarvam retry produced valid Odia script for article %s", article_id)
+                        logger.info("Gemini retry produced valid Odia script for article %s", article_id)
 
-            logger.info("Sarvam research completed for article %s (word_count=%d)", article_id, word_count)
+            logger.info("Gemini research completed for article %s (word_count=%d)", article_id, word_count)
         else:
-            logger.warning("Sarvam returned non-JSON for article %s, raw[:500]: %s", article_id, raw[:500])
+            logger.warning("Gemini returned non-JSON for article %s, raw[:500]: %s", article_id, raw[:500])
             if raw.strip():
                 gen_body = raw.strip()
     except Exception as exc:
-        logger.error("Sarvam research failed for article %s: %s", article_id, exc)
+        logger.error("Gemini research failed for article %s: %s", article_id, exc)
         # Fall back to defaults
 
     return ResearchStoryResponse(

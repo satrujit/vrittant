@@ -12,6 +12,7 @@ from ..utils.tz import now_ist
 from ..models.user import User
 from ..models.story import Story
 from ..services.storage import save_file, _media_type_from_ext, UPLOAD_DIR
+from ..services.image_pipeline import is_image, process_image
 
 router = APIRouter()
 
@@ -38,8 +39,26 @@ async def upload_file(
         raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
 
     media_type = _media_type_from_ext(ext)
-    url = save_file(contents, file.filename)
 
+    # Photos: generate web-large + thumbnail variants alongside the
+    # original so list views can pull ~40 KB and the reviewer panel
+    # can pull ~250 KB instead of the 1-4 MB phone-camera original.
+    # Non-image uploads (audio, PDFs) go through the plain save_file
+    # path unchanged.
+    if is_image(file.filename):
+        variants = process_image(contents, file.filename)
+        url = variants["media_path"]
+        return {
+            "url": url,
+            "url_web": variants.get("media_path_web"),
+            "url_thumb": variants.get("media_path_thumb"),
+            "filename": file.filename,
+            "media_type": media_type,
+            "size": len(contents),
+            "uploaded_at": now_ist().isoformat(),
+        }
+
+    url = save_file(contents, file.filename)
     return {
         "url": url,
         "filename": file.filename,

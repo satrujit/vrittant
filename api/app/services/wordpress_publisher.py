@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 from ..models.org_config import OrgConfig
 from ..models.story import Story
 from ..utils.tz import now_ist
-from . import anthropic_client, sarvam_client
+from . import gemini_client, sarvam_client
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +117,7 @@ async def translate_story_to_english(
 
     Body keeps paragraph breaks (``\\n\\n`` separated). Excerpt is a
     single-sentence summary (~30 words). Cost lands in
-    ``sarvam_usage_log`` with ``service='anthropic_chat'`` via the
-    existing client.
+    ``sarvam_usage_log`` with ``service='gemini_chat'`` via the client.
     """
     user_prompt = (
         "Translate the following Odia news story into English. Return "
@@ -138,14 +137,12 @@ async def translate_story_to_english(
         story_id=story_id,
         user_id=user_id,
     ):
-        response = await anthropic_client.chat(
-            model="claude-haiku-4-5",
+        text = (await gemini_client.chat(
+            prompt=user_prompt,
             system=_TRANSLATE_SYSTEM,
-            messages=[{"role": "user", "content": user_prompt}],
             max_tokens=2000,
             temperature=0.2,
-        )
-    text = anthropic_client.extract_text(response).strip()
+        )).strip()
 
     # Tolerate an occasional ```json``` fence even though we asked for raw.
     if text.startswith("```"):
@@ -225,15 +222,25 @@ async def _upload_featured_media(
 def _featured_image_url(story: Story) -> Optional[tuple[str, str]]:
     """First photo paragraph's public URL + filename suggestion.
 
+    Prefers ``media_path_web`` (≤2000 px / ~250 KB JPEG) when available
+    — keeps WP uploads inside the typical 2-8 MB PHP limit and saves
+    bandwidth on every push. Falls back to the original ``media_path``
+    for legacy stories that pre-date the image pipeline.
+
     Only returns fully-qualified URLs (https://...) since WP fetches
-    the file directly from us. GCS-backed uploads are already stored as
-    public storage.googleapis.com URLs in ``media_path``; local-disk
-    paths are skipped (no featured image attached on dev).
+    the file directly from us. Local-disk paths are skipped (no
+    featured image attached on dev).
     """
     for p in (story.paragraphs or []):
         if not isinstance(p, dict):
             continue
-        media_path = p.get("media_path") or p.get("photo_path")
+        # Prefer the smaller web variant; fall back to the original
+        # if the paragraph predates the image pipeline.
+        media_path = (
+            p.get("media_path_web")
+            or p.get("media_path")
+            or p.get("photo_path")
+        )
         if not media_path or not isinstance(media_path, str):
             continue
         if not media_path.startswith(("http://", "https://")):

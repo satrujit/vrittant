@@ -242,14 +242,31 @@ async def email_inbound(
             continue
         if not blob:
             continue
-        media_url = save_file(blob, filename, subfolder="story-media")
-        media_paragraphs.append({
+        # Photos: generate web + thumbnail variants. Non-images
+        # (documents) keep the plain save_file path — Pillow won't
+        # decode a docx and we don't want list cards trying to render
+        # a thumbnail of one anyway.
+        media_para = {
             "id": str(uuid_mod.uuid4()),
             "text": "",
-            "media_path": media_url,
-            "media_type": media_type,  # "photo" or "document"
+            "media_type": media_type,
             "media_name": filename,
-        })
+        }
+        if media_type == "photo":
+            from ..services.image_pipeline import process_image
+            try:
+                variants = process_image(blob, filename)
+                media_para["media_path"] = variants["media_path"]
+                if variants.get("media_path_web"):
+                    media_para["media_path_web"] = variants["media_path_web"]
+                if variants.get("media_path_thumb"):
+                    media_para["media_path_thumb"] = variants["media_path_thumb"]
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("email-intake image_pipeline failed for %s: %s; falling back to plain upload", filename, exc)
+                media_para["media_path"] = save_file(blob, filename, subfolder="story-media")
+        else:
+            media_para["media_path"] = save_file(blob, filename, subfolder="story-media")
+        media_paragraphs.append(media_para)
 
     log_kwargs["attachment_count_accepted"] = len(media_paragraphs)
 
