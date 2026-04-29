@@ -273,10 +273,12 @@ async def email_inbound(
     )
 
     now = now_ist()
+    from ..services.story_seq import assign_next_seq
     story = Story(
         id=str(uuid_mod.uuid4()),
         reporter_id=sender.id,
         organization_id=org.id,
+        seq_no=assign_next_seq(db, org.id),
         headline=headline,
         paragraphs=paragraphs,
         category="",

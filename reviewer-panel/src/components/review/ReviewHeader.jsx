@@ -290,6 +290,11 @@ export default function ReviewHeader({
 
       {/* ── Headline (large, in-body) ── */}
       <div className="shrink-0 bg-background px-6 pt-4 pb-2">
+        {story.displayId && (
+          <div className="mb-1 font-mono text-xs font-medium tracking-wider text-muted-foreground">
+            {story.displayId}
+          </div>
+        )}
         <input
           type="text"
           className="w-full border-none bg-transparent px-0 text-2xl font-bold leading-tight text-foreground outline-none placeholder:text-muted-foreground/50"

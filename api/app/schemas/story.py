@@ -35,6 +35,12 @@ class StoryUpdate(BaseModel):
 
 class StoryResponse(BaseModel):
     id: str
+    seq_no: Optional[int] = None
+    # Human-readable display id derived from org code + year + seq_no
+    # (e.g. "PNS-26-1234"). Falls back to None when any component is
+    # missing — old/legacy stories from before the migration may not
+    # have a seq_no, in which case clients should show the UUID id.
+    display_id: Optional[str] = None
     reporter_id: str
     headline: str
     category: Optional[str]

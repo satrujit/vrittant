@@ -414,9 +414,11 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     category_keys = org_category_keys(db, user.organization_id)
     category = await classify_category(text, category_keys) if text else None
 
+    from ..services.story_seq import assign_next_seq
     story = Story(
         id=new_story_id,
         organization_id=user.organization_id,
+        seq_no=assign_next_seq(db, user.organization_id),
         reporter_id=user.id,
         # `assigned_to` is filled below via pick_assignee for reporters so
         # the story enters the same review queue as panel-created stories.

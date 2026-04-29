@@ -552,10 +552,12 @@ async def confirm_story_from_article(
     # Auto-assign to the user who researched/created the story so it lands
     # straight in their personal queue. They invoked the "generate from news"
     # flow, so they own follow-through. Reviewers can still reassign later.
+    from ..services.story_seq import assign_next_seq
     story = Story(
         id=str(uuid.uuid4()),
         reporter_id=current_user.id,
         organization_id=org_id,
+        seq_no=assign_next_seq(db, org_id),
         headline=body.headline,
         category=body.category or article.category or "general",
         location=body.location or "",

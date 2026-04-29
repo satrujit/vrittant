@@ -19,9 +19,11 @@ def create_story(
     org_id: str = Depends(get_current_org_id),
     db: Session = Depends(get_db),
 ):
+    from ..services.story_seq import assign_next_seq
     story = Story(
         reporter_id=user.id,
         organization_id=org_id,
+        seq_no=assign_next_seq(db, org_id),
         headline=body.headline,
         category=body.category,
         location=body.location,
