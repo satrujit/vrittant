@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Avatar } from '../common';
 import { formatDate } from '../../utils/helpers';
+import { categoryDotColor } from '../../utils/categoryColors';
 import { useI18n } from '../../i18n';
 import { DENSITIES } from '../../hooks/useDensityPreference';
 import InlineStatusPill from './InlineStatusPill';
@@ -21,26 +22,6 @@ function formatSource(source) {
   // The research-from-article flow stores the article URL as `source`.
   if (s.startsWith('http://') || s.startsWith('https://')) return 'AI Generated';
   return s;
-}
-
-// Per-category dot colour. Stable mapping so the same category always reads
-// the same hue across the panel. Falls back to slate for unknown categories.
-const CATEGORY_DOT = {
-  general:        '#94a3b8', // slate
-  crime:          '#ef4444', // red
-  governance:     '#3b82f6', // blue
-  politics:       '#f59e0b', // amber
-  science:        '#10b981', // emerald
-  business:       '#8b5cf6', // violet
-  entertainment:  '#ec4899', // pink
-  sports:         '#f97316', // orange
-  health:         '#14b8a6', // teal
-  education:      '#06b6d4', // cyan
-  weather:        '#0ea5e9', // sky
-};
-function categoryDotColor(category) {
-  if (!category) return '#cbd5e1'; // slate-300 for empty
-  return CATEGORY_DOT[String(category).toLowerCase()] || '#94a3b8';
 }
 
 // Column geometry — kept identical between header and rows so they line up.

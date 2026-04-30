@@ -1,90 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import {
-  ExternalLink,
-  Loader2,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  Newspaper,
-  CheckCircle2,
-  Sparkles,
-  Image as ImageIcon,
-  Layers,
-  X,
-} from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import {
   fetchNewsArticles,
   researchStoryFromArticle,
   confirmResearchedStory,
 } from '../services/api';
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
-import { PageHeader, SearchBar, SearchableSelect } from '../components/common';
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
+import { SearchableSelect } from '../components/common';
+import NewsFeedTable from '../components/news_feed/NewsFeedTable';
 import StoryPreviewDialog from '../components/StoryPreviewDialog';
 
-const PAGE_SIZE = 16;
-
-function timeAgo(dateStr) {
-  if (!dateStr) return '';
-  const now = new Date();
-  const d = new Date(dateStr);
-  const diffMs = now - d;
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'Just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH}h ago`;
-  const diffD = Math.floor(diffH / 24);
-  if (diffD < 7) return `${diffD}d ago`;
-  return d.toLocaleDateString();
-}
-
-/** Expandable cluster badge showing related articles from other sources */
-function RelatedArticles({ related }) {
-  const [expanded, setExpanded] = useState(false);
-
-  if (!related || related.length === 0) return null;
-
-  return (
-    <div className="border-t border-border mt-1.5 pt-1.5">
-      <button
-        onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-        className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer bg-transparent border-none p-0 w-full"
-      >
-        <Layers size={10} />
-        <span>{related.length} more source{related.length > 1 ? 's' : ''}</span>
-        <ChevronDown size={10} className={cn('ml-auto transition-transform', expanded && 'rotate-180')} />
-      </button>
-      {expanded && (
-        <div className="mt-1 space-y-1">
-          {related.map((r) => (
-            <a
-              key={r.id}
-              href={r.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors no-underline"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {r.source && (
-                <span className="rounded-full bg-muted px-1.5 py-0.5 font-medium truncate max-w-[80px] shrink-0">
-                  {r.source}
-                </span>
-              )}
-              <span className="truncate">{r.title}</span>
-              <ExternalLink size={8} className="shrink-0 ml-auto" />
-            </a>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+const PAGE_SIZE = 25;
 
 export default function NewsFeedPage() {
   const { t } = useI18n();
@@ -225,264 +153,121 @@ export default function NewsFeedPage() {
   ];
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Fixed top: page header + filters. Only the article grid below
-          scrolls so reviewers keep filters in view while paging. */}
-      <div className="shrink-0 max-w-[1400px] mx-auto w-full px-6 lg:px-8 pt-6 lg:pt-8 pb-3 flex flex-col gap-4">
-        <PageHeader
-          icon={Newspaper}
-          title={t('newsFeed.title', 'News Feed')}
-          subtitle={t('newsFeed.subtitle', 'Latest news articles — create stories from any article.')}
-          className="mb-0"
-        />
+    <div className="flex h-full flex-col">
+      {/* Header strip — same shape as the dashboard: title + inline stat
+          + filters beneath in a single tight row. */}
+      <header className="flex flex-wrap items-center justify-between gap-4 px-6 pt-6">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            {t('newsFeed.title') || 'News Feed'}
+          </h1>
+          <div className="flex items-baseline gap-1.5 text-[13px] text-muted-foreground">
+            <span className="font-semibold tabular-nums text-foreground">
+              {loading ? '—' : (total ?? 0).toLocaleString()}
+            </span>
+            <span>{t('newsFeed.showingResults', '{total} articles').replace('{total} ', '').replace('{total}', '')}</span>
+          </div>
+        </div>
+      </header>
 
-      {/* Filters — canonical pattern: label (text-[10px] uppercase) above
-          h-8 controls, gap-3 between fields, gap-0.5 between label and
-          control. SearchBar lives at the right via ml-auto, mirroring
-          AllStoriesPage. */}
-      <div className="flex items-end gap-3 flex-wrap">
-        <div className="flex flex-col gap-0.5">
-          <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
-            {t('allStories.filterByCategory', 'Category')}
-          </Label>
+      {/* Filter bar — single row, segmented look. Search left, category +
+          source dropdowns next to it, clear-button when any filter set. */}
+      <div className="px-6">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-1 py-2.5">
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('newsFeed.searchPlaceholder', 'Search articles...')}
+              className="h-8 w-56 rounded-md border border-border/60 bg-card pl-8 pr-7 text-xs outline-none transition-colors focus:border-ring focus:shadow-[0_0_0_3px_rgba(250,108,56,0.08)]"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent"
+                aria-label="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
           <SearchableSelect
-            triggerClassName="min-w-[140px]"
+            triggerClassName="h-8 min-w-[140px] rounded-md border border-border/60 bg-card px-2 text-xs"
             value={category}
             onChange={setCategory}
-            placeholder={t('allStories.all', 'All')}
-            allLabel={t('allStories.all', 'All')}
+            placeholder={t('allStories.all', 'All categories')}
+            allLabel={t('allStories.all', 'All categories')}
             options={categories
               .filter((c) => c.value)
               .map((c) => ({ value: c.value, label: c.label }))}
           />
-        </div>
 
-        {sources.length > 0 && (
-          <div className="flex flex-col gap-0.5">
-            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
-              {t('newsFeed.source', 'Source')}
-            </Label>
+          {sources.length > 0 && (
             <SearchableSelect
-              triggerClassName="min-w-[140px]"
+              triggerClassName="h-8 min-w-[140px] rounded-md border border-border/60 bg-card px-2 text-xs"
               value={source}
               onChange={setSource}
-              placeholder={t('newsFeed.allSources', 'All Sources')}
-              allLabel={t('newsFeed.allSources', 'All Sources')}
+              placeholder={t('newsFeed.allSources', 'All sources')}
+              allLabel={t('newsFeed.allSources', 'All sources')}
               options={sources.map((s) => ({ value: s, label: s }))}
             />
-          </div>
-        )}
-
-        {(category || source || search) && (
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => {
-              setCategory('');
-              setSource('');
-              setSearch('');
-            }}
-            className="h-8 text-muted-foreground hover:text-foreground"
-          >
-            <X size={12} />
-            {t('allStories.clearFilters', 'Clear')}
-          </Button>
-        )}
-
-        <div className="ml-auto flex items-end gap-3">
-          {!loading && (
-            <span className="text-xs text-muted-foreground h-8 inline-flex items-center">
-              {t('newsFeed.showingResults', '{total} articles').replace('{total}', total)}
-            </span>
           )}
-          <div className="w-full max-w-[280px] min-w-[200px]">
-            <SearchBar
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('newsFeed.searchPlaceholder', 'Search articles...')}
-            />
-          </div>
+
+          {(category || source || search) && (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => { setCategory(''); setSource(''); setSearch(''); }}
+              className="h-8 text-muted-foreground hover:text-foreground"
+            >
+              <X size={12} />
+              {t('allStories.clearFilters', 'Clear')}
+            </Button>
+          )}
         </div>
       </div>
-      </div>
 
-      {/* Scrollable region: only the article grid scrolls. */}
-      <div className="flex-1 min-h-0 overflow-auto">
-      <div className="max-w-[1400px] mx-auto w-full px-6 lg:px-8 pb-6 lg:pb-8 pt-1 flex flex-col gap-5">
-      {/* Loading */}
-      {loading && (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 size={24} className="animate-spin text-primary" />
+      {/* Table + pagination — table scrolls, pager is sticky below. */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
+          <NewsFeedTable
+            articles={articles}
+            loading={loading}
+            createdIds={createdIds}
+            onCreateStory={handleOpenConfig}
+          />
         </div>
-      )}
-
-      {/* Empty */}
-      {!loading && articles.length === 0 && (
-        <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
-          <Newspaper size={36} />
-          <p className="text-sm">{t('newsFeed.noArticles', 'No articles found.')}</p>
-        </div>
-      )}
-
-      {/* Card grid */}
-      {!loading && articles.length > 0 && (
-        <TooltipProvider delayDuration={300}>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {articles.map((article) => {
-            const isCreated = createdIds.has(article.id);
-            const hasRelated = article.related && article.related.length > 0;
-
-            return (
-              <Card
-                key={article.id}
-                className={cn(
-                  'flex flex-col overflow-hidden border bg-card transition-shadow hover:shadow-md',
-                  hasRelated ? 'border-primary/30' : 'border-border'
-                )}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-border/40 px-6 py-2 text-xs text-muted-foreground">
+            <span>
+              {((page - 1) * PAGE_SIZE) + 1}–{Math.min(total, page * PAGE_SIZE)} of {total}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                aria-label="Previous page"
+                className="rounded-md border border-border/60 bg-card px-2 py-1 transition-colors hover:bg-accent disabled:opacity-40 disabled:hover:bg-card"
               >
-                {/* Image */}
-                <div className="h-[110px] w-full overflow-hidden bg-muted relative">
-                  {article.image_url ? (
-                    <img
-                      src={article.image_url}
-                      alt=""
-                      className="size-full object-cover"
-                      onError={(e) => {
-                        const parent = e.target.parentElement;
-                        e.target.style.display = 'none';
-                        if (!parent.querySelector('.img-placeholder')) {
-                          const ph = document.createElement('div');
-                          ph.className = 'img-placeholder flex size-full items-center justify-center';
-                          ph.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground/30"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>`;
-                          parent.appendChild(ph);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <div className="flex size-full items-center justify-center bg-gradient-to-br from-muted to-muted/60">
-                      <ImageIcon size={28} className="text-muted-foreground/25" />
-                    </div>
-                  )}
-
-                  {/* Cluster badge overlay */}
-                  {hasRelated && (
-                    <div className="absolute top-1.5 right-1.5 inline-flex items-center gap-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-                      <Layers size={9} />
-                      {article.related.length + 1}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-1 flex-col gap-1.5 p-3">
-                  {/* Source + Category + Time */}
-                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                    {article.source && (
-                      <span className="rounded-full bg-primary/10 px-1.5 py-0.5 font-medium text-primary truncate max-w-[100px]">
-                        {article.source}
-                      </span>
-                    )}
-                    {article.category && (
-                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-muted-foreground capitalize">
-                        {article.category}
-                      </span>
-                    )}
-                    <span className="ml-auto text-muted-foreground whitespace-nowrap">
-                      {timeAgo(article.published_at)}
-                    </span>
-                  </div>
-
-                  {/* Title */}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <h3 className="line-clamp-2 cursor-default text-[13px] font-semibold leading-snug text-foreground">
-                        {article.title}
-                      </h3>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="bottom"
-                      sideOffset={6}
-                      className="max-w-[320px] rounded-xl border border-border/50 bg-popover px-4 py-3 text-[13px] font-medium leading-relaxed text-popover-foreground shadow-xl shadow-black/10 backdrop-blur-sm"
-                    >
-                      {article.title}
-                    </TooltipContent>
-                  </Tooltip>
-
-                  {/* Description */}
-                  {article.description && (
-                    <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                      {article.description}
-                    </p>
-                  )}
-
-                  {/* Related articles (clustered) */}
-                  <RelatedArticles related={article.related} />
-
-                  {/* Spacer */}
-                  <div className="flex-1" />
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 pt-1.5 border-t border-border">
-                    <a
-                      href={article.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <ExternalLink size={11} />
-                      View Original
-                    </a>
-
-                    <div className="ml-auto">
-                      {isCreated ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-700">
-                          <CheckCircle2 size={11} />
-                          Story Created
-                        </span>
-                      ) : (
-                        <Button
-                          size="sm"
-                          className="h-6 gap-1 px-2 text-[11px]"
-                          onClick={() => handleOpenConfig(article)}
-                        >
-                          <Sparkles size={11} />
-                          Create Story
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-        </TooltipProvider>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 py-1">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-          >
-            <ChevronLeft size={14} />
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            {page} / {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-          >
-            <ChevronRight size={14} />
-          </Button>
-        </div>
-      )}
-      </div>
+                ←
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                aria-label="Next page"
+                className="rounded-md border border-border/60 bg-card px-2 py-1 transition-colors hover:bg-accent disabled:opacity-40 disabled:hover:bg-card"
+              >
+                →
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Two-phase dialog: configure → generate → preview */}
