@@ -103,7 +103,6 @@ export default function ReviewQueueTable({
                 gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.4fr) 110px 110px 130px 32px',
                 height: rowHeight,
               }}
-              onMouseEnter={() => onRowFocus?.(idx)}
               onClick={() => navigate(`/review/${story.id}`)}
             >
               {/* Story title */}
