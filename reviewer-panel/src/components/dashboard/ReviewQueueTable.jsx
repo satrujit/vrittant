@@ -103,19 +103,24 @@ export default function ReviewQueueTable({
             style={{ gridTemplateColumns: GRID_COLS, height: rowHeight }}
             onClick={() => navigate(`/review/${story.id}`)}
           >
-            {/* Story title — only this cell triggers the hover-peek so the
-                preview doesn't pop while the cursor is grazing the time
-                or category cells. The rest of the row is just clickable. */}
-            <RowHoverPeek story={story}>
-              <div className="min-w-0">
-                <div className="truncate text-[13.5px] font-medium text-foreground">
-                  {story.headline || t('table.untitled') || 'Untitled'}
-                </div>
-                {story.display_id && (
-                  <div className="text-[11px] font-medium text-blue-600">{story.display_id}</div>
-                )}
+            {/* Story title — the hover-peek triggers ONLY on the headline
+                text glyphs, not the surrounding cell. Wrapping the inline
+                <span> in a truncating block keeps the ellipsis behaviour
+                while letting mouseenter fire only when the cursor is on
+                the rendered text. hover:text-primary turns the headline
+                coral as a visual confirmation that the peek is armed. */}
+            <div className="min-w-0">
+              <div className="truncate text-[13.5px] font-medium text-foreground">
+                <RowHoverPeek story={story}>
+                  <span className="cursor-pointer transition-colors hover:text-primary">
+                    {story.headline || t('table.untitled') || 'Untitled'}
+                  </span>
+                </RowHoverPeek>
               </div>
-            </RowHoverPeek>
+              {story.display_id && (
+                <div className="text-[11px] font-medium text-blue-600">{story.display_id}</div>
+              )}
+            </div>
 
               {/* Submitted — time on top, ingest mode below */}
               <div className="min-w-0">
