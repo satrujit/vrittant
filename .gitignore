@@ -34,3 +34,6 @@ api/uploads/
 htmlcov/
 .coverage
 coverage/
+
+# Local git worktrees (used by subagent-driven workflows)
+.worktrees/
