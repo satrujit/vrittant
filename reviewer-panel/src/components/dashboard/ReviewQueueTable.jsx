@@ -15,7 +15,6 @@ export default function ReviewQueueTable({
   density = 'comfortable',
   focusedIndex = -1,
   onRowFocus,
-  onStatusChange,
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -23,8 +22,14 @@ export default function ReviewQueueTable({
 
   // Track which IDs were on the previous frame so we can highlight new arrivals.
   const prevIdsRef = useRef(new Set());
+  // First render is always "all rows are new" against an empty set, which
+  // would light up every row in coral on initial load and on every page
+  // change. Skip the highlight until we have a real "previous frame" to
+  // diff against (i.e. from the second render onward).
+  const isFirstRenderRef = useRef(true);
 
   const arrivedIds = useMemo(() => {
+    if (isFirstRenderRef.current) return new Set();
     return new Set(
       stories
         .map((s) => s.id)
@@ -32,10 +37,11 @@ export default function ReviewQueueTable({
     );
   }, [stories]);
 
-  // Side-effect: update the ref AFTER render. This is the React-correct way
-  // to keep "previous" data; mutating during render breaks StrictMode.
+  // Side-effect: update the previous-IDs ref AFTER render and flip the
+  // first-render flag. Mutating during render breaks StrictMode.
   useEffect(() => {
     prevIdsRef.current = new Set(stories.map((s) => s.id));
+    isFirstRenderRef.current = false;
   }, [stories]);
 
   // Clear the arrival class after the animation duration so re-renders
@@ -145,12 +151,12 @@ export default function ReviewQueueTable({
                 <span className="truncate">{story.category || '—'}</span>
               </div>
 
-              {/* Status pill (inline editable) */}
-              <div onClick={(e) => e.stopPropagation()}>
-                <InlineStatusPill
-                  status={story.status}
-                  onChange={(next) => onStatusChange?.(story.id, next)}
-                />
+              {/* Status pill — read-only on the queue table.
+                  Clicking through to the review page is the only path for
+                  changing status; inline edit on a long table makes
+                  accidental approvals/rejections too easy. */}
+              <div>
+                <InlineStatusPill status={story.status} disabled />
               </div>
 
               {/* Action chevron */}

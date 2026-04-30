@@ -4,11 +4,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 // to a follow-up plan. See docs/plans/2026-04-30-dashboard-redesign-design.md
 // "Out of scope" section.
 import {
-  fetchStats, fetchStories, transformStory, updateStoryStatus,
+  fetchStats, fetchStories, transformStory,
 } from '../services/api';
 import { useDensityPreference } from '../hooks/useDensityPreference';
 import { useKeyboardRowNav } from '../hooks/useKeyboardRowNav';
-import { cycleStatus } from '../components/dashboard/inlineStatus';
 import StatStrip from '../components/dashboard/StatStrip';
 import FilterBar from '../components/dashboard/FilterBar';
 import ReviewQueueTable from '../components/dashboard/ReviewQueueTable';
@@ -118,32 +117,17 @@ export default function DashboardPage() {
     return () => clearInterval(intervalRef.current);
   }, [loadStats, loadStories]);
 
-  // Inline status change (optimistic)
-  const handleStatusChange = useCallback(async (storyId, nextStatus) => {
-    setStories((prev) => prev.map((s) => s.id === storyId ? { ...s, status: nextStatus } : s));
-    try {
-      await updateStoryStatus(storyId, nextStatus);
-      loadStats();
-    } catch (err) {
-      console.error('Status change failed:', err);
-      loadStories(); // revert by re-fetching
-    }
-  }, [loadStats, loadStories]);
-
-  // Keyboard nav
+  // Keyboard nav. Status changes are deliberately NOT exposed from the
+  // queue table — too easy to misclick / miskey through 25 rows. The review
+  // page is the only path for changing a story's status.
   const onOpenRow = useCallback((idx) => {
     const story = stories[idx];
     if (story) navigate(`/review/${story.id}`);
   }, [stories, navigate]);
-  const onCycleRowStatus = useCallback((idx) => {
-    const story = stories[idx];
-    if (story) handleStatusChange(story.id, cycleStatus(story.status));
-  }, [stories, handleStatusChange]);
 
   const { focusedIndex, setFocusedIndex, handleKeyDown } = useKeyboardRowNav({
     rowCount: stories.length,
     onOpen: onOpenRow,
-    onCycleStatus: onCycleRowStatus,
   });
 
   useEffect(() => {
@@ -192,7 +176,6 @@ export default function DashboardPage() {
             density={density}
             focusedIndex={focusedIndex}
             onRowFocus={setFocusedIndex}
-            onStatusChange={handleStatusChange}
           />
         </div>
         {total > PAGE_SIZE && (
