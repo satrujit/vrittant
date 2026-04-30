@@ -21,16 +21,21 @@ export default function ReviewQueueTable({
   const { t } = useI18n();
   const rowHeight = DENSITIES[density].rowHeight;
 
-  // Track which IDs were already on the page. New IDs (i.e. arrived during
-  // this render compared to the previous render) get the arrival highlight.
+  // Track which IDs were on the previous frame so we can highlight new arrivals.
   const prevIdsRef = useRef(new Set());
+
   const arrivedIds = useMemo(() => {
-    const next = new Set(stories.map((s) => s.id));
-    const arrived = stories
-      .map((s) => s.id)
-      .filter((id) => !prevIdsRef.current.has(id));
-    prevIdsRef.current = next;
-    return new Set(arrived);
+    return new Set(
+      stories
+        .map((s) => s.id)
+        .filter((id) => !prevIdsRef.current.has(id))
+    );
+  }, [stories]);
+
+  // Side-effect: update the ref AFTER render. This is the React-correct way
+  // to keep "previous" data; mutating during render breaks StrictMode.
+  useEffect(() => {
+    prevIdsRef.current = new Set(stories.map((s) => s.id));
   }, [stories]);
 
   // Clear the arrival class after the animation duration so re-renders
