@@ -384,8 +384,16 @@ class AppStrings {
   String get tooltipKeyboard => isOdia ? 'ଲେଖି ଯୋଗ କରନ୍ତୁ' : 'Type to add';
   String get tooltipAI => isOdia ? 'AI ସୁଧାର' : 'AI assist';
   String get tooltipClose => isOdia ? 'ବନ୍ଦ କରନ୍ତୁ' : 'Close';
-  String get generateStory => isOdia ? 'କାହାଣୀ ତିଆରି କରନ୍ତୁ' : 'Generate Story';
-  String get generatingStory => isOdia ? 'କାହାଣୀ ତିଆରି କରୁଛି...' : 'Generating story...';
+  // "AI Refine" replaces "Generate Story" — same backend call, but the
+  // verb communicates what actually happens: clean up the dictation
+  // (English slips → Odia script, dedupe phrases, fix punctuation,
+  // tighten paragraphs). "Generate" misled reporters into thinking it
+  // would invent content, which made them hesitant to use it.
+  String get generateStory => isOdia ? 'AI ସଂଶୋଧନ' : 'AI Refine';
+  String get generatingStory => isOdia ? 'ସଂଶୋଧନ ହେଉଛି…' : 'Refining…';
+  String get aiRefineHint => isOdia
+      ? 'ଓଡ଼ିଆ ଲିପିରେ ସଠିକ୍, ଡୁପ୍ଲିକେଟ୍ ସଫା'
+      : 'Clean Odia, dedupe & polish';
   String get userNotes => isOdia ? 'ଉପଯୋଗକର୍ତ୍ତା ଟିପ୍ପଣୀ' : 'User Notes';
   String get processingDontLeave => isOdia
       ? 'ପ୍ରକ୍ରିୟାକରଣ ଚାଲିଛି। ବାହାରକୁ ଗଲେ ବି ସୁରକ୍ଷିତ ରହିବ।'

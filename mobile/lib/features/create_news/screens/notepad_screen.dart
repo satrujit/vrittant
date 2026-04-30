@@ -4202,73 +4202,139 @@ class _AdvancedSettingsRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.t;
     final s = AppStrings.of(ref);
+    final canTap = onGenerateStory != null && canGenerate && !isGenerating;
+
     return Container(
       color: t.cardBg,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.base,
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.base,
+          AppSpacing.sm,
+          AppSpacing.base,
+          AppSpacing.xs,
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            GestureDetector(
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      LucideIcons.settings,
-                      size: 14,
-                      color: t.mutedColor,
+            // ── Prominent AI Refine button ──────────────────────────────
+            // Big primary-coloured pill with the sparkles icon, two-line
+            // label (action + hint). Replaces the old tiny TextButton
+            // that reporters couldn't see / understand. The verb "Refine"
+            // also matches what the action actually does (cleanup), vs
+            // "Generate" which mis-suggested invention.
+            if (onGenerateStory != null)
+              Material(
+                color: canTap
+                    ? t.primary
+                    : t.primary.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(12),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: canTap ? onGenerateStory : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.base,
+                      vertical: AppSpacing.sm + 2,
                     ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Text(
-                      s.advancedSettings,
-                      style: AppTypography.odiaBodySmall.copyWith(
+                    child: Row(
+                      children: [
+                        // Leading icon — spinner while refining
+                        SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: isGenerating
+                              ? const CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                )
+                              : const Icon(
+                                  LucideIcons.sparkles,
+                                  size: 20,
+                                  color: Colors.white,
+                                ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm + 2),
+                        // Two-line label: action + brief hint
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                isGenerating
+                                    ? s.generatingStory
+                                    : s.generateStory,
+                                style: AppTypography.odiaTitleLarge.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.1,
+                                ),
+                              ),
+                              if (!isGenerating)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 1),
+                                  child: Text(
+                                    s.aiRefineHint,
+                                    style: AppTypography.bodySmall.copyWith(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.78,
+                                      ),
+                                      height: 1.2,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (!isGenerating)
+                          Icon(
+                            LucideIcons.arrowRight,
+                            size: 18,
+                            color: Colors.white.withValues(alpha: 0.92),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+            // ── Quiet "Advanced settings" link ─────────────────────────
+            // Tucked below the AI Refine CTA. Most reporters never need
+            // this; keeping it small keeps the screen breathable.
+            Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                onTap: onTap,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppSpacing.sm,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        LucideIcons.settings,
+                        size: 13,
                         color: t.mutedColor,
-                        fontWeight: FontWeight.w500,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: AppSpacing.xs),
+                      Text(
+                        s.advancedSettings,
+                        style: AppTypography.odiaBodySmall.copyWith(
+                          color: t.mutedColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-            const Spacer(),
-            if (onGenerateStory != null)
-              Tooltip(
-                message: s.generateStory,
-                child: TextButton.icon(
-                  onPressed: (canGenerate && !isGenerating)
-                      ? onGenerateStory
-                      : null,
-                  icon: isGenerating
-                      ? SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: t.primary,
-                          ),
-                        )
-                      : Icon(LucideIcons.sparkles, size: 14, color: t.primary),
-                  label: Text(
-                    isGenerating ? s.generatingStory : s.generateStory,
-                    style: AppTypography.odiaBodySmall.copyWith(
-                      color: t.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
-                      vertical: 0,
-                    ),
-                    minimumSize: const Size(0, 28),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-              ),
           ],
         ),
       ),
