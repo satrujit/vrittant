@@ -30,6 +30,24 @@ import '../../home/providers/stories_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 
 // =============================================================================
+// Feature flags
+// =============================================================================
+
+/// Hide the on-photo "OCR" sparkle button + the OCR processing banner.
+///
+/// Why a flag instead of ripping out the wiring: OCR has a live backend
+/// (Sarvam Document Intelligence), a working notifier method
+/// (`runOcrOnParagraph`), and a polished UI — but the output quality on
+/// Odia newspaper cuttings hasn't been good enough to ship to reporters
+/// yet, and reviewers were getting confused by the button promising
+/// something it couldn't deliver. Setting this to false everywhere it's
+/// checked makes the feature invisible to the user while keeping every
+/// call path intact, so re-enabling is a one-line flip when we're
+/// happy with the OCR quality. Don't delete the OCR code paths until
+/// we've decided to remove the feature permanently.
+const bool _kEnableOcr = false;
+
+// =============================================================================
 // NotepadScreen — single-screen voice notepad that replaces the old wizard
 // =============================================================================
 
@@ -712,8 +730,12 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                             }
                           });
                         },
-                        onOcrPhoto: (index) =>
-                            notifier.runOcrOnParagraph(index),
+                        // Pass null when the feature flag is off so the
+                        // body-level `widget.onOcr != null` checks all
+                        // resolve to false too — belt + suspenders.
+                        onOcrPhoto: _kEnableOcr
+                            ? (index) => notifier.runOcrOnParagraph(index)
+                            : null,
                         onUpdateTable: (index, data) =>
                             notifier.updateParagraphTable(index, data),
                         onTapEmptySpace: () {
@@ -739,7 +761,11 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
               // re-added once we know where it should live.
 
               // === File attachment progress indicator ===
-              if (state.isOcrProcessing)
+              // Same flag-gating as the OCR button: the notifier path
+              // can still set isOcrProcessing (defensive, in case
+              // anything else triggers it), but with the feature
+              // hidden the banner stays invisible.
+              if (_kEnableOcr && state.isOcrProcessing)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.lg,
@@ -2997,8 +3023,13 @@ class _MediaBlockState extends ConsumerState<_MediaBlock> {
                           ),
                         ),
                       ),
-                      // OCR sparkle button
-                      if (widget.onOcr != null)
+                      // OCR sparkle button — hidden behind the
+                      // _kEnableOcr feature flag while the OCR quality
+                      // story is sorted out. The widget.onOcr callback
+                      // still gets passed in by the parent so flipping
+                      // the flag lights the button up immediately, no
+                      // other plumbing changes.
+                      if (_kEnableOcr && widget.onOcr != null)
                         Positioned(
                           bottom: AppSpacing.sm,
                           right: AppSpacing.sm,
