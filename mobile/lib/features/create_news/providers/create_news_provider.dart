@@ -145,6 +145,7 @@ class Paragraph {
 
 class NotepadState {
   final String headline; // AI auto-generated, editable
+  final String? displayId; // server-computed "PNS-26-1234"; null for new drafts
   final String? category; // AI auto-inferred (String, not enum)
   final String? location; // AI auto-inferred
   final List<Paragraph> paragraphs;
@@ -177,6 +178,7 @@ class NotepadState {
 
   const NotepadState({
     this.headline = '',
+    this.displayId,
     this.category,
     this.location,
     this.paragraphs = const [],
@@ -207,6 +209,7 @@ class NotepadState {
 
   NotepadState copyWith({
     String? headline,
+    String? displayId,
     String? category,
     bool clearCategory = false,
     String? location,
@@ -244,6 +247,7 @@ class NotepadState {
   }) {
     return NotepadState(
       headline: headline ?? this.headline,
+      displayId: displayId ?? this.displayId,
       category: clearCategory ? null : (category ?? this.category),
       location: clearLocation ? null : (location ?? this.location),
       paragraphs: paragraphs ?? this.paragraphs,
@@ -426,7 +430,12 @@ class NotepadNotifier extends Notifier<NotepadState> {
     try {
       final story = await _api.createStory();
       _serverStoryId = story.id;
-      debugPrint('[create_news] initWithNewStory OK serverStoryId=$_serverStoryId');
+      // Stamp the server-assigned display id on the editor state so the
+      // headline area can render "PNS-26-1234" right from the first save.
+      if (story.displayId != null) {
+        state = state.copyWith(displayId: story.displayId);
+      }
+      debugPrint('[create_news] initWithNewStory OK serverStoryId=$_serverStoryId displayId=${story.displayId}');
     } catch (e) {
       debugPrint('[create_news] initWithNewStory FAILED: $e');
       // If server unreachable, work locally without server ID
@@ -482,6 +491,7 @@ class NotepadNotifier extends Notifier<NotepadState> {
 
       state = NotepadState(
         headline: story.headline,
+        displayId: story.displayId,
         category: story.category,
         location: story.location,
         paragraphs: paragraphs,
@@ -1520,6 +1530,69 @@ class NotepadNotifier extends Notifier<NotepadState> {
     final updated = List<Paragraph>.from(state.paragraphs);
     updated[index] = updated[index].copyWith(text: sanitized);
     state = state.copyWith(paragraphs: updated);
+
+    _scheduleAutoSave();
+  }
+
+  /// Replaces a contiguous run of text paragraphs with the given texts.
+  /// Used by the simplified body editor: the user types into one TextField
+  /// spanning multiple text paragraphs, and on debounced commit we split by
+  /// '\n\n' and persist. Existing paragraph IDs are reused where possible
+  /// so audio/transcription metadata survives.
+  ///
+  /// `firstIdx`..`lastIdxInclusive` must reference text paragraphs only
+  /// (no media/table). Empty entries in [newTexts] are dropped.
+  void replaceTextRun(int firstIdx, int lastIdxInclusive, List<String> newTexts) {
+    if (firstIdx < 0 ||
+        lastIdxInclusive >= state.paragraphs.length ||
+        firstIdx > lastIdxInclusive) {
+      return;
+    }
+    for (int i = firstIdx; i <= lastIdxInclusive; i++) {
+      final p = state.paragraphs[i];
+      if (p.hasMedia || p.isTable) return;
+    }
+
+    final sanitized = newTexts
+        .map((t) => toOdiaDigits(t).trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    final existing = state.paragraphs.sublist(firstIdx, lastIdxInclusive + 1);
+    final oldTexts = existing.map((p) => p.text).toList();
+    if (sanitized.length == oldTexts.length) {
+      bool same = true;
+      for (int i = 0; i < sanitized.length; i++) {
+        if (sanitized[i] != oldTexts[i]) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return;
+    }
+
+    _pushUndo();
+
+    final newParagraphs = <Paragraph>[];
+    for (int i = 0; i < sanitized.length; i++) {
+      if (i < existing.length) {
+        newParagraphs.add(existing[i].copyWith(text: sanitized[i]));
+      } else {
+        newParagraphs.add(Paragraph(
+          id: '${DateTime.now().millisecondsSinceEpoch}-$i',
+          text: sanitized[i],
+          createdAt: DateTime.now(),
+        ));
+      }
+    }
+
+    final updated = List<Paragraph>.from(state.paragraphs)
+      ..replaceRange(firstIdx, lastIdxInclusive + 1, newParagraphs);
+    state = state.copyWith(paragraphs: updated);
+
+    if (fullBodyText.isEmpty) {
+      state = state.copyWith(headline: '');
+    }
 
     _scheduleAutoSave();
   }

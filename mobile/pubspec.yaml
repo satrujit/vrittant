@@ -72,6 +72,7 @@ dependencies:
   path_provider: ^2.1.5
   sherpa_onnx: ^1.12.28
   package_info_plus: ^8.1.2
+  wakelock_plus: ^1.2.10
 
 dev_dependencies:
   flutter_test:
