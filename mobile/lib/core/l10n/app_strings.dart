@@ -429,6 +429,13 @@ class AppStrings {
       ? 'ସଂଶୋଧନ ପରେ କିଛି ବଦଳ କରିନାହାଁନ୍ତି'
       : 'No changes since last refine';
 
+  /// Tooltip when the reporter has typed too little for AI Refine
+  /// to do anything useful (under 20 words). The hint nudges them
+  /// to keep going rather than asking the LLM to polish a stub.
+  String get aiRefineTooShortHint => isOdia
+      ? 'ଅଧିକ ଲେଖନ୍ତୁ — କମ୍ ଶବ୍ଦରେ ସଂଶୋଧନ ଦରକାର ନୁହେଁ'
+      : 'Add more text — refine needs a paragraph or so';
+
   /// Snackbar shown when recording auto-stopped at the 10-minute
   /// hard cap. The "tap mic to continue" hint is critical: reporters
   /// keep dictating with eyes closed; without telling them how to

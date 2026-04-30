@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_config.dart';
+import 'image_compression_service.dart';
 
 // -- Response models --
 
@@ -351,15 +352,42 @@ class ApiService {
   // -- Files --
 
   /// Upload a file to the server. Returns the file metadata including URL.
+  ///
+  /// Photos that exceed [ImageCompressionService]'s 2 MB threshold
+  /// are recompressed to JPEG before transmission so newsroom
+  /// reporters on flaky 3G/4G aren't waiting 30+ seconds for a 6 MB
+  /// camera shot to upload. Files under the threshold AND non-image
+  /// types (audio / video / PDF) pass through unchanged.
   Future<Map<String, dynamic>> uploadFile(
     List<int> bytes,
     String filename,
   ) async {
+    var outBytes = bytes;
+    var outName = filename;
+    if (ImageCompressionService.shouldCompress(bytes, filename)) {
+      final compressed =
+          await ImageCompressionService.compress(bytes, filename);
+      // The compressor always emits JPEG. Swap the extension so the
+      // content-type sniffer on the server sees a consistent
+      // image/jpeg attachment regardless of the source format
+      // (PNG/HEIC/WebP all collapse to .jpg here).
+      outBytes = compressed;
+      outName = _withJpegExtension(filename);
+    }
     final formData = FormData.fromMap({
-      'file': MultipartFile.fromBytes(bytes, filename: filename),
+      'file': MultipartFile.fromBytes(outBytes, filename: outName),
     });
     final res = await _dio.post('/files/upload', data: formData);
     return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  /// Replace the file extension on [name] with `.jpg`, preserving
+  /// the rest of the filename so the server-side blob path keeps a
+  /// recognisable identifier. "IMG_4520.heic" → "IMG_4520.jpg".
+  String _withJpegExtension(String name) {
+    final dot = name.lastIndexOf('.');
+    if (dot < 0) return '$name.jpg';
+    return '${name.substring(0, dot)}.jpg';
   }
 
   /// Upload an audio recording for the always-upload pipeline.

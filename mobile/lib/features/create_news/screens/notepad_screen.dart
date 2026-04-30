@@ -892,11 +892,14 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
             child: _AiRefineFab(
               onTap: () => notifier.generateStory(),
               isGenerating: state.isGeneratingStory,
-              // Disabled when the reporter just ran AI Refine and
-              // hasn't changed the body since. Re-enables the moment
-              // anything in the canonical body text differs from the
-              // post-refine snapshot.
-              disabled: !state.isRefineStale,
+              // The FAB is disabled in two distinct cases:
+              //   - body has fewer than 20 words (LLM has no
+              //     structure to work with; would just waste cents)
+              //   - reporter just refined and hasn't changed
+              //     anything since (no-op refine)
+              // The reason string drives both the disabled state AND
+              // the tooltip copy so the reporter knows why.
+              disableReason: state.aiRefineDisableReason,
             ),
           ),
       ],
@@ -4007,23 +4010,30 @@ class _AiRefineFab extends ConsumerWidget {
   final VoidCallback onTap;
   final bool isGenerating;
 
-  /// Disable the button when there's nothing meaningful to refine —
-  /// today, that means "the reporter just ran AI Refine and hasn't
-  /// changed anything since". Re-running the LLM on identical input
-  /// wastes a server round-trip + a Gemini call, and the polished
-  /// output is almost always indistinguishable from the previous
-  /// run, so the FAB makes the no-op path visually obvious.
-  final bool disabled;
+  /// Reason string explaining why the FAB shouldn't fire right now,
+  /// or null when it should. Comes from
+  /// `NotepadState.aiRefineDisableReason`. Today's recognised values:
+  ///
+  ///   - `'too_short'` — body has fewer than 20 words. Tooltip
+  ///     prompts the reporter to keep typing.
+  ///   - `'no_changes'` — reporter just refined and hasn't edited
+  ///     anything since. Tooltip says so.
+  ///
+  /// Anything else falls through to the generic refine hint as a
+  /// safety net — better to show a slightly off tooltip than to
+  /// crash on an unknown reason.
+  final String? disableReason;
 
   const _AiRefineFab({
     required this.onTap,
     required this.isGenerating,
-    this.disabled = false,
+    this.disableReason,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = AppStrings.of(ref);
+    final disabled = disableReason != null;
     final inactive = isGenerating || disabled;
     // Keep the button visible (never hide it) but desaturate it when
     // disabled — the reporter can see the tool is there but understand
@@ -4078,8 +4088,17 @@ class _AiRefineFab extends ConsumerWidget {
         ),
       ),
     );
+    // Tooltip resolves the disable reason to a localized hint. Each
+    // reason gets its own copy because reporters benefit from a
+    // specific explanation ("type a few more words" vs. "no changes
+    // since last refine") rather than a generic "disabled" placeholder.
+    final tooltipMessage = switch (disableReason) {
+      'too_short' => s.aiRefineTooShortHint,
+      'no_changes' => s.aiRefineNoChangesHint,
+      _ => s.aiRefineHint,
+    };
     return Tooltip(
-      message: disabled ? s.aiRefineNoChangesHint : s.aiRefineHint,
+      message: tooltipMessage,
       child: Material(
         color: Colors.transparent,
         elevation: 0,

@@ -334,6 +334,41 @@ class NotepadState {
     return canonicalBodyText != snapshot;
   }
 
+  /// Word count of the current article body. Counts whitespace-
+  /// separated tokens after trimming — works for Odia, Hindi, English
+  /// alike (Unicode whitespace splits are consistent across these
+  /// scripts for our purposes; we don't need a real CLDR
+  /// segmenter here). Used by [aiRefineDisableReason] to gate the
+  /// AI Refine button on stub-length input.
+  int get bodyWordCount {
+    final text = canonicalBodyText.trim();
+    if (text.isEmpty) return 0;
+    return text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+  }
+
+  /// Minimum body length (in words) before AI Refine becomes
+  /// actionable. The model needs SOME structure to work with — under
+  /// ~20 words it has nothing to dedupe, no paragraphs to reorder,
+  /// no script-slips to fix. Letting the FAB fire on stub input
+  /// would just spend cents per round-trip producing output the
+  /// reporter has to throw away. 20 words is one short paragraph,
+  /// which is the smallest unit Refine can meaningfully improve.
+  static const int aiRefineMinWords = 20;
+
+  /// String reason the AI Refine FAB should be inactive, or null when
+  /// the FAB is good to fire. Codifies all the gating conditions in
+  /// one place so the FAB widget doesn't have to know any of them
+  /// individually — it just looks at this and the matching tooltip
+  /// string in AppStrings. Order matters: "too_short" is checked
+  /// first so the reporter who has typed a couple of words sees the
+  /// minimum-length hint rather than a "no changes since last
+  /// refine" hint that would be confusing on an empty draft.
+  String? get aiRefineDisableReason {
+    if (bodyWordCount < aiRefineMinWords) return 'too_short';
+    if (!isRefineStale) return 'no_changes';
+    return null;
+  }
+
   NotepadState copyWith({
     String? headline,
     String? displayId,
@@ -1355,12 +1390,13 @@ class NotepadNotifier extends Notifier<NotepadState> {
 
     final raw = textParas.map((p) => p.text.trim()).join('\n\n');
 
-    // Cheap guard: if the reporter just refined and hasn't changed
-    // anything since, the FAB should already be disabled — but the
-    // public API of this method gets called from menus and shortcut
-    // intents too, so re-check at the source. Avoids a wasted server
-    // round-trip + LLM call on identical input.
-    if (!state.isRefineStale) return;
+    // Cheap guard: the FAB is disabled in either of these cases, but
+    // the public API of this method gets called from menus and
+    // shortcut intents too. Re-checking at the source avoids a
+    // wasted server round-trip + LLM call on identical input AND on
+    // stub-length input. We use the consolidated reason getter so
+    // the gating logic stays in lockstep with what the FAB shows.
+    if (state.aiRefineDisableReason != null) return;
 
     _pushUndo();
     state = state.copyWith(
