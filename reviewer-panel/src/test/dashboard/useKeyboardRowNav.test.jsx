@@ -62,4 +62,18 @@ describe('useKeyboardRowNav', () => {
     act(() => result.current.handleKeyDown(mkEvent('Escape')));
     expect(result.current.focusedIndex).toBe(-1);
   });
+
+  it('clamps focusedIndex when rowCount shrinks', () => {
+    const { result, rerender } = renderHook(({ rowCount }) => useKeyboardRowNav({ rowCount }), {
+      initialProps: { rowCount: 5 },
+    });
+    act(() => result.current.handleKeyDown(mkEvent('ArrowDown')));
+    act(() => result.current.handleKeyDown(mkEvent('ArrowDown')));
+    act(() => result.current.handleKeyDown(mkEvent('ArrowDown')));
+    expect(result.current.focusedIndex).toBe(2);
+    rerender({ rowCount: 2 });
+    expect(result.current.focusedIndex).toBe(1);
+    rerender({ rowCount: 0 });
+    expect(result.current.focusedIndex).toBe(-1);
+  });
 });

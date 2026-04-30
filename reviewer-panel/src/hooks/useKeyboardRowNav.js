@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 
@@ -53,6 +53,13 @@ export function useKeyboardRowNav({ rowCount, onOpen, onCycleStatus }) {
       onCycleStatus?.(current);
     }
   }, [rowCount, onOpen, onCycleStatus, setFocusedIndex]);
+
+  useEffect(() => {
+    if (focusedIndex >= rowCount) {
+      // Clamp to last row, or clear focus if the list is now empty.
+      setFocusedIndex(rowCount > 0 ? rowCount - 1 : -1);
+    }
+  }, [rowCount, focusedIndex, setFocusedIndex]);
 
   return { focusedIndex, setFocusedIndex, handleKeyDown };
 }
