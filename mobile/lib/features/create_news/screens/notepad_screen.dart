@@ -569,15 +569,35 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                               _focusedCursorOffset == cursorOffset) {
                             return;
                           }
-                          setState(() {
-                            _focusedParagraphIndex = paraIdx;
-                            _focusedCursorOffset = cursorOffset;
+                          // Defer to after the current build — this
+                          // callback fires during didUpdateWidget when
+                          // _SimpleNotepadBody syncs controllers from
+                          // state, which is mid-build for NotepadScreen.
+                          // setState there throws a "setState during build"
+                          // assertion; post-frame schedules the rebuild
+                          // for the very next frame instead.
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!mounted) return;
+                            if (_focusedParagraphIndex == paraIdx &&
+                                _focusedCursorOffset == cursorOffset) {
+                              return;
+                            }
+                            setState(() {
+                              _focusedParagraphIndex = paraIdx;
+                              _focusedCursorOffset = cursorOffset;
+                            });
                           });
                         },
                         onTextSelectionChanged: (hasSelection) {
-                          if (_hasTextSelection != hasSelection) {
+                          if (_hasTextSelection == hasSelection) return;
+                          // Same post-frame deferral as onCursorChanged —
+                          // selection-change notifications also originate
+                          // from the controller-sync path during build.
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!mounted) return;
+                            if (_hasTextSelection == hasSelection) return;
                             setState(() => _hasTextSelection = hasSelection);
-                          }
+                          });
                         },
                         onRemoveMedia: (index) {
                           final para = state.paragraphs[index];
