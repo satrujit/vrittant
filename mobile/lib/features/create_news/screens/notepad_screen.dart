@@ -2946,300 +2946,6 @@ class _FullScreenImageViewer extends StatelessWidget {
   }
 }
 
-
-// =============================================================================
-// Insert divider (dashed line + "+" button)
-// =============================================================================
-
-class _InsertDivider extends StatelessWidget {
-  final VoidCallback? onTap;
-
-  const _InsertDivider({this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.t;
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.base,
-        vertical: AppSpacing.xs,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: CustomPaint(
-              size: const Size(double.infinity, 1),
-              painter: _DashedLinePainter(color: t.dividerColor),
-            ),
-          ),
-          if (onTap != null) ...[
-            const SizedBox(width: AppSpacing.sm),
-            GestureDetector(
-              onTap: onTap,
-              child: Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: t.dividerColor),
-                ),
-                child: Icon(
-                  LucideIcons.plus,
-                  size: 12,
-                  color: t.mutedColor,
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: CustomPaint(
-                size: const Size(double.infinity, 1),
-                painter: _DashedLinePainter(color: t.dividerColor),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _DashedLinePainter extends CustomPainter {
-  final Color color;
-
-  _DashedLinePainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1;
-
-    const dashWidth = 4.0;
-    const gapWidth = 3.0;
-    double x = 0;
-
-    while (x < size.width) {
-      canvas.drawLine(
-        Offset(x, size.height / 2),
-        Offset(math.min(x + dashWidth, size.width), size.height / 2),
-        paint,
-      );
-      x += dashWidth + gapWidth;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedLinePainter oldDelegate) =>
-      color != oldDelegate.color;
-}
-
-// =============================================================================
-// Edit action chips
-// =============================================================================
-
-class _EditActionChips extends StatelessWidget {
-  final VoidCallback onDelete;
-  final VoidCallback? onMoveUp;
-  final VoidCallback? onMoveDown;
-
-  const _EditActionChips({
-    required this.onDelete,
-    this.onMoveUp,
-    this.onMoveDown,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.t;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.base,
-        AppSpacing.sm,
-        AppSpacing.base,
-        AppSpacing.sm,
-      ),
-      child: Wrap(
-        spacing: AppSpacing.sm,
-        runSpacing: AppSpacing.sm,
-        children: [
-          if (onMoveUp != null)
-            _IconOnlyChip(
-              icon: LucideIcons.arrowUp,
-              bgColor: t.actionChipBg,
-              iconColor: t.actionChipIcon,
-              onTap: onMoveUp!,
-            ),
-          if (onMoveDown != null)
-            _IconOnlyChip(
-              icon: LucideIcons.arrowDown,
-              bgColor: t.actionChipBg,
-              iconColor: t.actionChipIcon,
-              onTap: onMoveDown!,
-            ),
-          _IconOnlyChip(
-            icon: LucideIcons.trash2,
-            bgColor: AppColors.coral50,
-            iconColor: AppColors.coral500,
-            onTap: onDelete,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
-
-class _IconOnlyChip extends StatelessWidget {
-  final IconData icon;
-  final Color bgColor;
-  final Color iconColor;
-  final VoidCallback onTap;
-
-  const _IconOnlyChip({
-    required this.icon,
-    required this.bgColor,
-    required this.iconColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: bgColor,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.sm),
-          child: Icon(icon, size: 16, color: iconColor),
-        ),
-      ),
-    );
-  }
-}
-
-// =============================================================================
-// Ghost paragraph (live recording transcript)
-// =============================================================================
-
-class _GhostParagraph extends ConsumerWidget {
-  final String liveTranscript;
-  final AnimationController typingDotsController;
-
-  const _GhostParagraph({
-    required this.liveTranscript,
-    required this.typingDotsController,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = context.t;
-    final s = AppStrings.of(ref);
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        decoration: BoxDecoration(
-          color: t.recordingBg.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-          border: Border.all(
-            color: t.recordingTextColor.withValues(alpha: 0.4),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Recording indicator
-            Row(
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: t.recordingTextColor,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  s.directDictation,
-                  style: AppTypography.odiaBodySmall.copyWith(
-                    color: t.recordingTextColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-
-            // Live transcript text
-            if (liveTranscript.isNotEmpty)
-              Text(
-                liveTranscript,
-                style: AppTypography.odiaBodyLarge.copyWith(
-                  color: t.primary,
-                ),
-              ),
-
-            // Typing dots
-            const SizedBox(height: AppSpacing.xs),
-            _TypingDots(controller: typingDotsController),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TypingDots extends StatelessWidget {
-  final AnimationController controller;
-
-  const _TypingDots({required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    final dotColor = context.t.primary;
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(3, (i) {
-            final delay = i * 0.3;
-            final t = (controller.value + delay) % 1.0;
-            final opacity = (math.sin(t * math.pi)).clamp(0.3, 1.0);
-
-            return Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Opacity(
-                opacity: opacity,
-                child: Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: dotColor,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
-              ),
-            );
-          }),
-        );
-      },
-    );
-  }
-}
-
-// =============================================================================
-// Zone 3: Bottom bar — idle mode
-// =============================================================================
-
 class _IdleBottomBar extends ConsumerWidget {
   final bool canSubmit;
   final bool isProcessing;
@@ -4032,24 +3738,126 @@ class _AdvancedSettingsRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.t;
     final s = AppStrings.of(ref);
+    final canTap = onGenerateStory != null && canGenerate && !isGenerating;
+
     return Container(
       color: t.cardBg,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.base,
-        ),
-        child: Row(
-          children: [
-            GestureDetector(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.base,
+        AppSpacing.sm,
+        AppSpacing.base,
+        AppSpacing.xs,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Prominent AI Refine button ──────────────────────────────────
+          // Wide primary-tinted pill, sparkle icon, two-line label (action +
+          // hint), trailing arrow. Replaces the old TextButton.icon that
+          // reporters consistently missed in the corner of the row. The
+          // tinted background (`primary.withValues(alpha: 0.10)`) keeps the
+          // colour palette of the surrounding chrome calm — coral filled
+          // would compete with the recording mic FAB below.
+          if (onGenerateStory != null)
+            Material(
+              color: canTap
+                  ? t.primary.withValues(alpha: 0.10)
+                  : t.primary.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(12),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: canTap ? onGenerateStory : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.base,
+                    vertical: AppSpacing.sm + 2,
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: isGenerating
+                            ? CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                                color: t.primary,
+                              )
+                            : Icon(
+                                LucideIcons.sparkles,
+                                size: 20,
+                                color: canTap
+                                    ? t.primary
+                                    : t.primary.withValues(alpha: 0.45),
+                              ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm + 2),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              isGenerating
+                                  ? s.generatingStory
+                                  : s.generateStory,
+                              style: AppTypography.odiaTitleLarge.copyWith(
+                                fontSize: 15,
+                                color: canTap
+                                    ? t.primary
+                                    : t.primary.withValues(alpha: 0.5),
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.1,
+                              ),
+                            ),
+                            if (!isGenerating)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 1),
+                                child: Text(
+                                  s.aiRefineHint,
+                                  style: AppTypography.bodySmall.copyWith(
+                                    color: t.primary.withValues(
+                                      alpha: canTap ? 0.7 : 0.4,
+                                    ),
+                                    height: 1.2,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (!isGenerating)
+                        Icon(
+                          LucideIcons.arrowRight,
+                          size: 18,
+                          color: t.primary.withValues(
+                            alpha: canTap ? 0.85 : 0.35,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // ── Quiet "Advanced settings" link below ───────────────────────
+          // Tucked beneath the AI Refine CTA. Most reporters never need it;
+          // keeping it small and muted preserves the breathing room.
+          Align(
+            alignment: Alignment.centerLeft,
+            child: GestureDetector(
               onTap: onTap,
+              behavior: HitTestBehavior.opaque,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppSpacing.sm,
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       LucideIcons.settings,
-                      size: 14,
+                      size: 13,
                       color: t.mutedColor,
                     ),
                     const SizedBox(width: AppSpacing.xs),
@@ -4064,43 +3872,8 @@ class _AdvancedSettingsRow extends ConsumerWidget {
                 ),
               ),
             ),
-            const Spacer(),
-            if (onGenerateStory != null)
-              Tooltip(
-                message: s.generateStory,
-                child: TextButton.icon(
-                  onPressed: (canGenerate && !isGenerating)
-                      ? onGenerateStory
-                      : null,
-                  icon: isGenerating
-                      ? SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: t.primary,
-                          ),
-                        )
-                      : Icon(LucideIcons.sparkles, size: 14, color: t.primary),
-                  label: Text(
-                    isGenerating ? s.generatingStory : s.generateStory,
-                    style: AppTypography.odiaBodySmall.copyWith(
-                      color: t.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
-                      vertical: 0,
-                    ),
-                    minimumSize: const Size(0, 28),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
