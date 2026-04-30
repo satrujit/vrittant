@@ -389,6 +389,44 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
       },
     );
 
+    // Auto-stop notification. The recording timer in
+    // create_news_provider sets recordingAutoStopReason to either
+    // "max_duration" (10-minute hard cap) or "silence" (10-minute
+    // no-transcript safety net) right before it dispatches the stop.
+    // Reporters frequently dictate eyes-closed and used to keep
+    // talking long after the mic shut off — losing minutes of work
+    // they thought were captured. We hit them with a haptic AND a
+    // 6-second snackbar so the cue is felt, not just visible.
+    ref.listen<String?>(
+      notepadProvider.select((s) => s.recordingAutoStopReason),
+      (prev, next) {
+        if (next == null || next == prev || !mounted) return;
+        // Heavy impact > medium: this is a "you need to look at your
+        // phone" cue, not a tap-confirmation tick. Distinct from the
+        // medium-impact taps used for paragraph add etc.
+        HapticFeedback.heavyImpact();
+        final s = AppStrings.of(ref);
+        final message = next == 'max_duration'
+            ? s.recordingAutoStoppedMaxDuration
+            : s.recordingAutoStoppedSilence;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(message),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: const Color(0xFFB91C1C), // red-700
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              duration: const Duration(seconds: 6),
+            ),
+          );
+        // Acknowledge so the next session starts clean.
+        ref.read(notepadProvider.notifier).clearRecordingAutoStopReason();
+      },
+    );
+
     // Auto-stop recording when the OS reports an active phone call. The
     // mic stream is owned by the call once it connects, so anything we
     // record after that point is silent garbage. Stop, commit whatever
@@ -753,6 +791,20 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                         : state.isRecording
                             ? _RecordingBottomBar(
                                 formattedDuration: state.formattedDuration,
+                                // Compute the "0:30 left" label here
+                                // where AppStrings is in scope. The bar
+                                // shows the chip whenever this is
+                                // non-null. Threshold = within last 60
+                                // seconds of the 600-second cap.
+                                timeLeftLabel: state.recordingDuration.inSeconds
+                                                >= 540
+                                            && state.recordingDuration.inSeconds
+                                                < 600
+                                    ? s.recordingTimeLeft(
+                                        600 -
+                                            state.recordingDuration.inSeconds,
+                                      )
+                                    : null,
                                 waveformController: _waveformController,
                                 isAudioSaveMode: state.isAudioSaveMode,
                                 isNoisy: state.isNoisyEnvironment,
@@ -3442,6 +3494,14 @@ class _AIInstructionBottomBar extends ConsumerWidget {
 
 class _RecordingBottomBar extends StatefulWidget {
   final String formattedDuration;
+
+  /// Localized "0:30 left" countdown label, set by the parent only
+  /// during the last 60 seconds before the 10-minute auto-stop. Null
+  /// outside the warning window — the chip is hidden then. Computed
+  /// in the parent because that's where AppStrings.of(ref) is in
+  /// scope; passing the formatted string keeps this widget free of
+  /// the ConsumerWidget plumbing.
+  final String? timeLeftLabel;
   final AnimationController waveformController;
   final bool isAudioSaveMode;
   final bool isNoisy;
@@ -3452,6 +3512,7 @@ class _RecordingBottomBar extends StatefulWidget {
 
   const _RecordingBottomBar({
     required this.formattedDuration,
+    this.timeLeftLabel,
     required this.waveformController,
     this.isAudioSaveMode = false,
     this.isNoisy = false,
@@ -3532,6 +3593,43 @@ class _RecordingBottomBarState extends State<_RecordingBottomBar>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // ── Approaching-cap warning chip ─────────────────────
+              // The recording timer auto-stops at 10:00 (600s). When
+              // the reporter is within the last 60 seconds, the
+              // parent passes a non-null timeLeftLabel and we surface
+              // a red countdown chip so eyes-off dictators have a
+              // chance to wrap their thought before the mic dies.
+              if (widget.timeLeftLabel != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFB91C1C), // red-700
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(LucideIcons.timer,
+                            size: 14, color: Colors.white),
+                        const SizedBox(width: 6),
+                        Text(
+                          widget.timeLeftLabel!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               // Noise hint chip
               AnimatedSize(
                 duration: const Duration(milliseconds: 300),

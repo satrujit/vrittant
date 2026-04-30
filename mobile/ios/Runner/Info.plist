@@ -4,6 +4,18 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Vrittant needs microphone access for speech-to-text transcription of news articles.</string>
+	<!-- Reporters routinely dictate stories that span 10 minutes without
+	     touching the screen. Without "audio" in UIBackgroundModes, iOS
+	     will suspend the app the moment another sheet (Control Centre,
+	     incoming notification banner taps, focus-mode change) takes
+	     foreground priority — and our mic stream + STT websocket dies
+	     silently, mid-sentence. The wakelock keeps the screen lit but
+	     does NOT stop the OS from suspending the process; only this
+	     entitlement does. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Vrittant needs access to your photo library to attach images to your news stories.</string>
 	<key>NSCameraUsageDescription</key>

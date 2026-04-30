@@ -266,6 +266,17 @@ class NotepadState {
   /// re-enables. Cleared on draft load (paragraphs reset → mismatch).
   final String? lastRefineSnapshot;
 
+  /// Set to a non-null reason string when the recording timer auto-
+  /// stopped without the reporter tapping mic (10-minute hard cap or
+  /// 10-minute silence safety net). The notepad screen listens for
+  /// this transitioning to non-null, fires a haptic + shows a snack
+  /// bar so the reporter knows their words went uncaptured, and then
+  /// clears the field via [clearRecordingAutoStopReason]. Without
+  /// this, reporters who dictate eyes-closed kept talking long after
+  /// the mic shut off and lost work — see field-report from
+  /// 2026-04-30.
+  final String? recordingAutoStopReason;
+
   const NotepadState({
     this.headline = '',
     this.displayId,
@@ -298,6 +309,7 @@ class NotepadState {
     this.isGeneratingStory = false,
     this.pendingFocusParagraphIndex,
     this.lastRefineSnapshot,
+    this.recordingAutoStopReason,
   });
 
   /// The reporter's current article body as a single canonical string
@@ -364,6 +376,8 @@ class NotepadState {
     bool clearPendingFocus = false,
     String? lastRefineSnapshot,
     bool clearLastRefineSnapshot = false,
+    String? recordingAutoStopReason,
+    bool clearRecordingAutoStopReason = false,
   }) {
     return NotepadState(
       headline: headline ?? this.headline,
@@ -415,6 +429,9 @@ class NotepadState {
       lastRefineSnapshot: clearLastRefineSnapshot
           ? null
           : (lastRefineSnapshot ?? this.lastRefineSnapshot),
+      recordingAutoStopReason: clearRecordingAutoStopReason
+          ? null
+          : (recordingAutoStopReason ?? this.recordingAutoStopReason),
     );
   }
 
@@ -1243,6 +1260,11 @@ class NotepadNotifier extends Notifier<NotepadState> {
           final silenceDuration =
               DateTime.now().difference(_lastTranscriptChangeTime);
           if (silenceDuration.inSeconds >= 600) {
+            // Flag BEFORE toggling. toggleRecording sets isRecording=false
+            // which the screen listens to; we want the reason field set
+            // by the time that listener fires so a single rebuild can
+            // surface the snackbar + haptic.
+            state = state.copyWith(recordingAutoStopReason: 'silence');
             toggleRecording();
             return;
           }
@@ -1253,6 +1275,7 @@ class NotepadNotifier extends Notifier<NotepadState> {
       // which commits the live transcript as a paragraph and queues the
       // captured WAV for upload — nothing is lost on a timeout.
       if (newDuration.inMinutes >= 10) {
+        state = state.copyWith(recordingAutoStopReason: 'max_duration');
         toggleRecording();
         return;
       }
@@ -1266,6 +1289,15 @@ class NotepadNotifier extends Notifier<NotepadState> {
     _lastTranscriptChangeTime = DateTime.now();
     _autoParagraphTimer?.cancel();
     _autoParagraphTimer = null;
+  }
+
+  /// Acknowledge the auto-stop notification. Called by the notepad
+  /// screen after it shows the snackbar / fires haptic, so the next
+  /// recording session starts clean and the listener doesn't re-fire
+  /// on the same reason.
+  void clearRecordingAutoStopReason() {
+    if (state.recordingAutoStopReason == null) return;
+    state = state.copyWith(clearRecordingAutoStopReason: true);
   }
 
   /// Commits the current live transcript as a paragraph mid-recording,

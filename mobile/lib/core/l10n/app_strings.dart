@@ -404,6 +404,42 @@ class AppStrings {
   String get aiRefineNoChangesHint => isOdia
       ? 'ସଂଶୋଧନ ପରେ କିଛି ବଦଳ କରିନାହାଁନ୍ତି'
       : 'No changes since last refine';
+
+  /// Snackbar shown when recording auto-stopped at the 10-minute
+  /// hard cap. The "tap mic to continue" hint is critical: reporters
+  /// keep dictating with eyes closed; without telling them how to
+  /// resume, they think the app died and stop trusting it.
+  String get recordingAutoStoppedMaxDuration => isOdia
+      ? '୧୦ ମିନିଟ୍ ସମୟ ସମାପ୍ତ। ଚାଲୁ ରଖିବାକୁ ମାଇକ୍ ଚାପନ୍ତୁ।'
+      : 'Recording stopped — 10 minute limit reached. Tap mic to continue.';
+
+  /// Snackbar shown when recording auto-stopped because no transcript
+  /// arrived for 10 minutes (silence safety net — usually a wedged
+  /// websocket).
+  String get recordingAutoStoppedSilence => isOdia
+      ? 'ଶବ୍ଦ ସୁନାଗଲାନାହିଁ। ମାଇକ୍ ବନ୍ଦ ହୋଇଛି।'
+      : 'Recording stopped — no speech detected for 10 minutes.';
+
+  /// Countdown chip shown in the last 60 seconds before the auto-stop
+  /// fires. e.g. "0:42 left" / "୦:୪୨ ବାକି". [secondsLeft] is the
+  /// integer count of seconds remaining (1..60).
+  String recordingTimeLeft(int secondsLeft) {
+    final m = secondsLeft ~/ 60;
+    final s = secondsLeft.remainder(60).toString().padLeft(2, '0');
+    final base = '$m:$s';
+    return isOdia ? '${_toOdiaDigits(base)} ବାକି' : '$base left';
+  }
+
+  /// Tiny helper for the countdown chip — converts ASCII digits to
+  /// Odia digits inline. We don't want to pull in the toOdiaDigits
+  /// import here, the logic is one line.
+  String _toOdiaDigits(String s) {
+    const map = {
+      '0': '୦', '1': '୧', '2': '୨', '3': '୩', '4': '୪',
+      '5': '୫', '6': '୬', '7': '୭', '8': '୮', '9': '୯',
+    };
+    return s.split('').map((c) => map[c] ?? c).join();
+  }
   String get userNotes => isOdia ? 'ଉପଯୋଗକର୍ତ୍ତା ଟିପ୍ପଣୀ' : 'User Notes';
   String get processingDontLeave => isOdia
       ? 'ପ୍ରକ୍ରିୟାକରଣ ଚାଲିଛି। ବାହାରକୁ ଗଲେ ବି ସୁରକ୍ଷିତ ରହିବ।'
