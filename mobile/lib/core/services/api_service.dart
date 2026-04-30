@@ -407,6 +407,13 @@ class ApiService {
   Future<void> deleteEnrollment() async {
     await _dio.delete('/api/speaker/enrollment');
   }
+
+  /// Request account deactivation: anonymises PII, revokes sessions,
+  /// leaves published stories attributed to "Former Reporter".
+  /// Server-side is idempotent; the client should log the user out after.
+  Future<void> requestAccountDeletion() async {
+    await _dio.delete('/auth/me');
+  }
 }
 
 // -- Provider --
