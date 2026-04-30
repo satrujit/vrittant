@@ -12,6 +12,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/theme_extensions.dart';
 import '../../../core/services/api_config.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/services/story_image_cache_manager.dart';
 import '../../../core/l10n/app_strings.dart';
 import '../../../core/providers/connectivity_provider.dart';
 import '../../../core/providers/phone_call_provider.dart';
@@ -156,6 +157,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           constraints: BoxConstraints(maxWidth: 160, maxHeight: height),
           child: CachedNetworkImage(
             imageUrl: fullUrl,
+            cacheManager: StoryImageCacheManager.instance,
             height: height,
             fit: BoxFit.contain,
             errorWidget: (_, __, ___) => Text(

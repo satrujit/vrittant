@@ -14,6 +14,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../core/services/api_config.dart';
 import '../../../core/services/mic_permission_ui.dart';
+import '../../../core/services/story_image_cache_manager.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_gradients.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -2643,6 +2644,7 @@ class _MediaBlockState extends ConsumerState<_MediaBlock> {
     final url = _resolveUrl(mediaPath);
     return CachedNetworkImage(
       imageUrl: url,
+      cacheManager: StoryImageCacheManager.instance,
       fit: BoxFit.cover,
       width: double.infinity,
       height: 200,
@@ -3003,6 +3005,7 @@ class _FullScreenImageViewer extends StatelessWidget {
     } else {
       imageWidget = CachedNetworkImage(
         imageUrl: _resolveUrl(mediaPath),
+        cacheManager: StoryImageCacheManager.instance,
         fit: BoxFit.contain,
         errorWidget: (_, __, ___) => Center(
           child: Icon(LucideIcons.imageOff, size: 48, color: Colors.white.withValues(alpha: 0.5)),

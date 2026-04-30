@@ -7,6 +7,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/services/api_config.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/services/story_image_cache_manager.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_data.dart';
 import '../../../core/theme/app_typography.dart';
@@ -53,6 +54,7 @@ class ProfileScreen extends ConsumerWidget {
           logoUrl.startsWith('http') ? logoUrl : '${ApiConfig.baseUrl}$logoUrl';
       return CachedNetworkImage(
         imageUrl: fullUrl,
+        cacheManager: StoryImageCacheManager.instance,
         height: height,
         fit: BoxFit.contain,
         errorWidget: (_, __, ___) => Text(
