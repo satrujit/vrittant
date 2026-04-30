@@ -27,7 +27,10 @@
     "searchPlaceholder": "Search reports...",
     "noReports": "No pending reports.",
     "showingResults": "Showing {start} to {end} of {total} reports",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "filterAll": "All",
+    "filterAllCategories": "All categories",
+    "density": { "compact": "Compact", "comfortable": "Comfortable", "cozy": "Cozy" }
   },
   "table": {
     "storyTitle": "Story",
