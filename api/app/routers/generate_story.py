@@ -207,11 +207,22 @@ async def generate_story(
     )
 
     # ── Try Gemini primary ──────────────────────────────────────────────
+    #
+    # We route through chat_with_cached_system so the SYSTEM_PROMPT is
+    # served from a Gemini explicit cache when it qualifies (≥1024
+    # tokens for Flash). Today the prompt is borderline (~700–900
+    # tokens) and the call falls through to plain chat with implicit
+    # caching; the moment we expand the prompt past the threshold,
+    # explicit caching auto-engages with no further code change. The
+    # cache_key is a fixed string because there's exactly one
+    # SYSTEM_PROMPT per process — bumping the suffix invalidates the
+    # cache deliberately when we ship a prompt edit.
     with attribution:
         try:
-            text = await gemini_client.chat(
+            text = await gemini_client.chat_with_cached_system(
                 prompt=notes,
                 system=SYSTEM_PROMPT,
+                cache_key="generate_story.system_prompt.v1",
                 model=PRIMARY_MODEL,
                 max_tokens=PRIMARY_MAX_TOKENS,
                 temperature=0.3,
