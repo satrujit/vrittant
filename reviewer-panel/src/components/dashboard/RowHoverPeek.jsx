@@ -32,15 +32,18 @@ export default function RowHoverPeek({ children, story, enabled = true }) {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         {/*
-          Wrapper MUST have a real DOM box so Radix can position the popover
-          against it. `display: contents` (the previous attempt) strips the
-          wrapper from the box tree and Radix falls back to the top-left of
-          the viewport. A plain block-level div with `w-full` keeps the row's
-          full-width grid layout intact and gives Radix something to anchor.
+          Inline wrapper sized to its text content. Crucial: by using a
+          <span> (inline by default) the mouseenter/mouseleave events only
+          fire when the cursor is actually over the text glyphs — not the
+          empty stretch of the title cell beside the truncated headline.
+          This keeps the popover from opening (and the preview <img> from
+          mounting and fetching) every time the cursor grazes a row.
+          Radix asChild forwards the events + ref to this span, so the
+          popover anchors precisely against the rendered text rect.
         */}
-        <div onMouseEnter={onEnter} onMouseLeave={onLeave} className="block w-full">
+        <span onMouseEnter={onEnter} onMouseLeave={onLeave}>
           {children}
-        </div>
+        </span>
       </PopoverTrigger>
       {/*
         Anchor under the LEFT edge of the row (the title cell) so the peek
