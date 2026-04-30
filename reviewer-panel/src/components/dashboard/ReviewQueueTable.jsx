@@ -1,4 +1,3 @@
-import { useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -8,6 +7,32 @@ import { useI18n } from '../../i18n';
 import { DENSITIES } from '../../hooks/useDensityPreference';
 import InlineStatusPill from './InlineStatusPill';
 import RowHoverPeek from './RowHoverPeek';
+
+// Per-category dot colour. Stable mapping so the same category always reads
+// the same hue across the panel. Falls back to slate for unknown categories.
+const CATEGORY_DOT = {
+  general:        '#94a3b8', // slate
+  crime:          '#ef4444', // red
+  governance:     '#3b82f6', // blue
+  politics:       '#f59e0b', // amber
+  science:        '#10b981', // emerald
+  business:       '#8b5cf6', // violet
+  entertainment:  '#ec4899', // pink
+  sports:         '#f97316', // orange
+  health:         '#14b8a6', // teal
+  education:      '#06b6d4', // cyan
+  weather:        '#0ea5e9', // sky
+};
+function categoryDotColor(category) {
+  if (!category) return '#cbd5e1'; // slate-300 for empty
+  return CATEGORY_DOT[String(category).toLowerCase()] || '#94a3b8';
+}
+
+// Column geometry — kept identical between header and rows so they line up.
+// Story gets the most space; reporter sits AFTER submitted/category so the
+// title is the first thing the eye lands on.
+const GRID_COLS =
+  'minmax(0,3fr) 100px 130px minmax(0,1.4fr) 130px 32px';
 
 export default function ReviewQueueTable({
   stories,
@@ -19,42 +44,6 @@ export default function ReviewQueueTable({
   const navigate = useNavigate();
   const { t } = useI18n();
   const rowHeight = DENSITIES[density].rowHeight;
-
-  // Track which IDs were on the previous frame so we can highlight new arrivals.
-  const prevIdsRef = useRef(new Set());
-  // First render is always "all rows are new" against an empty set, which
-  // would light up every row in coral on initial load and on every page
-  // change. Skip the highlight until we have a real "previous frame" to
-  // diff against (i.e. from the second render onward).
-  const isFirstRenderRef = useRef(true);
-
-  const arrivedIds = useMemo(() => {
-    if (isFirstRenderRef.current) return new Set();
-    return new Set(
-      stories
-        .map((s) => s.id)
-        .filter((id) => !prevIdsRef.current.has(id))
-    );
-  }, [stories]);
-
-  // Side-effect: update the previous-IDs ref AFTER render and flip the
-  // first-render flag. Mutating during render breaks StrictMode.
-  useEffect(() => {
-    prevIdsRef.current = new Set(stories.map((s) => s.id));
-    isFirstRenderRef.current = false;
-  }, [stories]);
-
-  // Clear the arrival class after the animation duration so re-renders
-  // don't re-trigger it.
-  useEffect(() => {
-    const timers = [...arrivedIds].map((id) =>
-      setTimeout(() => {
-        const el = document.querySelector(`[data-row-id="${id}"]`);
-        el?.classList.remove('vr-row-arrival');
-      }, 2200)
-    );
-    return () => timers.forEach(clearTimeout);
-  }, [arrivedIds]);
 
   if (loading && stories.length === 0) {
     return (
@@ -74,26 +63,22 @@ export default function ReviewQueueTable({
   }
 
   return (
-    <div role="grid" className="divide-y divide-border/40">
+    <div role="grid" className="divide-y divide-border/80">
       {/* Sticky header */}
       <div
         className="sticky top-0 z-10 grid items-center gap-4 bg-background/95 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur"
-        style={{
-          gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.4fr) 110px 110px 130px 32px',
-          height: 36,
-        }}
+        style={{ gridTemplateColumns: GRID_COLS, height: 36 }}
       >
         <div>{t('table.storyTitle')}</div>
-        <div>{t('table.reporterSubject')}</div>
         <div>{t('table.submissionTime')}</div>
         <div>{t('table.category')}</div>
+        <div>{t('table.reporterSubject')}</div>
         <div>{t('table.status')}</div>
         <div />
       </div>
 
       {stories.map((story, idx) => {
         const isFocused = idx === focusedIndex;
-        const isArrived = arrivedIds.has(story.id);
         return (
           <RowHoverPeek key={story.id} story={story}>
             <div
@@ -103,25 +88,35 @@ export default function ReviewQueueTable({
                 'group grid cursor-pointer items-center gap-4 px-4 transition-colors',
                 'hover:bg-accent/40',
                 isFocused && 'bg-primary/[0.04] shadow-[inset_2px_0_0_0_var(--primary)]',
-                isArrived && 'vr-row-arrival',
               )}
-              style={{
-                gridTemplateColumns: 'minmax(0,2fr) minmax(0,1.4fr) 110px 110px 130px 32px',
-                height: rowHeight,
-              }}
+              style={{ gridTemplateColumns: GRID_COLS, height: rowHeight }}
               onClick={() => navigate(`/review/${story.id}`)}
             >
-              {/* Story title */}
+              {/* Story title — gets the most horizontal space */}
               <div className="min-w-0">
                 <div className="truncate text-[13.5px] font-medium text-foreground">
                   {story.headline || t('table.untitled') || 'Untitled'}
                 </div>
                 {story.display_id && (
-                  <div className="text-[11px] text-primary/80">{story.display_id}</div>
+                  <div className="text-[11px] font-medium text-blue-600">{story.display_id}</div>
                 )}
               </div>
 
-              {/* Reporter */}
+              {/* Submitted time */}
+              <div className="text-xs tabular-nums text-muted-foreground">
+                {formatDate(story.submittedAt)}
+              </div>
+
+              {/* Category — coloured dot + capitalised label */}
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span
+                  className="inline-block size-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: categoryDotColor(story.category) }}
+                />
+                <span className="truncate capitalize">{story.category || '—'}</span>
+              </div>
+
+              {/* Reporter — pushed right of category */}
               <div className="flex min-w-0 items-center gap-2">
                 <Avatar
                   initials={story.reporter?.initials}
@@ -138,17 +133,6 @@ export default function ReviewQueueTable({
                     </div>
                   )}
                 </div>
-              </div>
-
-              {/* Time */}
-              <div className="text-xs tabular-nums text-muted-foreground">
-                {formatDate(story.submittedAt)}
-              </div>
-
-              {/* Category — dot + label */}
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="inline-block size-1.5 rounded-full bg-muted-foreground/40 transition-colors group-hover:bg-primary" />
-                <span className="truncate">{story.category || '—'}</span>
               </div>
 
               {/* Status pill — read-only on the queue table.
