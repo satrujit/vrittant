@@ -15,6 +15,9 @@ export default function RowHoverPeek({ children, story, enabled = true }) {
   const firstParagraph = (story.paragraphs?.[0]?.text || '').slice(0, 240);
   const firstImage = story.paragraphs?.find((p) => p.media_path)?.media_path;
 
+  // Nothing to peek — render children without the popover wrapper at all.
+  if (!firstParagraph && !firstImage) return children;
+
   const onEnter = () => {
     const timer = setTimeout(() => setOpen(true), HOVER_DELAY_MS);
     setPendingTimer(timer);
