@@ -323,6 +323,64 @@ def _apply_transcript(story_id: str, paragraph_id: str, transcript: str) -> None
         db.close()
 
 
+@router.post("/sweep-news-retention")
+async def sweep_news_retention(
+    x_internal_token: Optional[str] = Header(default=None, alias="X-Internal-Token"),
+    days: int = 60,
+):
+    """Delete news_articles older than ``days`` days (default 60).
+
+    Designed to be hit once daily by Cloud Scheduler. Reviewers don't
+    research multi-month-old articles; the news feed exists to surface
+    fresh material. Without a retention sweep the table accumulates
+    forever (~2.3K/day current ingest rate → 500K rows in ~7 months,
+    ~1 GB with indexes), and every INSERT pays the maintenance cost of
+    the running indexes.
+
+    The DELETE is a single statement scoped by ``published_at`` so it
+    plays nice with the index on that column. Falls back to
+    ``fetched_at`` for rows missing ``published_at``.
+
+    Returns the count of deleted rows so observability can spot if
+    ingest has dropped (deleted == 0 over a long horizon would mean we
+    aren't expiring anything, which would mean either the table is
+    empty or the cron is broken).
+    """
+    _require_internal_token(x_internal_token)
+    from sqlalchemy import text
+
+    if days < 1:
+        raise HTTPException(status_code=400, detail="days must be >= 1")
+
+    db = SessionLocal()
+    try:
+        # Two-phase delete: published_at-bound rows first (covered by
+        # ix_news_articles_published_at), then the no-published_at
+        # rows by fetched_at fallback. Both phases run in a single tx.
+        result_a = db.execute(text(
+            "DELETE FROM news_articles "
+            "WHERE published_at IS NOT NULL "
+            "  AND published_at < now() - (:days || ' days')::interval"
+        ), {"days": days})
+        result_b = db.execute(text(
+            "DELETE FROM news_articles "
+            "WHERE published_at IS NULL "
+            "  AND fetched_at < now() - (:days || ' days')::interval"
+        ), {"days": days})
+        db.commit()
+        deleted = (result_a.rowcount or 0) + (result_b.rowcount or 0)
+        logger.info(
+            "news-retention-sweep: deleted %d articles older than %d days",
+            deleted, days,
+        )
+        return {"deleted": deleted, "days": days}
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 @router.post("/sweep-wp-push")
 async def sweep_wp_push(
     x_internal_token: Optional[str] = Header(default=None, alias="X-Internal-Token"),

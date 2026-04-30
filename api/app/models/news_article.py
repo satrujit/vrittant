@@ -26,8 +26,12 @@ class NewsArticle(Base):
 
     __table_args__ = (
         Index("ix_news_articles_published_at", "published_at"),
-        Index("ix_news_articles_category", "category"),
-        Index("ix_news_articles_country", "country"),
         Index("ix_news_articles_source", "source"),
+        # Composite (category, published_at) covers any "WHERE category = ?"
+        # lookup too, so a standalone category index would be redundant.
         Index("ix_news_articles_cat_pub", "category", "published_at"),
+        # Note: dropped ix_news_articles_category (covered by cat_pub) and
+        # ix_news_articles_country (always 'IN', zero discriminating power)
+        # in 2026-04-30-news-articles-index-cleanup.sql — see that migration
+        # for context.
     )
