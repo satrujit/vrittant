@@ -8,6 +8,22 @@ import { DENSITIES } from '../../hooks/useDensityPreference';
 import InlineStatusPill from './InlineStatusPill';
 import RowHoverPeek from './RowHoverPeek';
 
+// Map the backend `source` string (heterogeneous, set by various ingest
+// paths) into a human-readable submission mode shown below the time. The
+// values here are the strings that get written by the routers/services
+// that create stories — keep this map in sync if a new ingest path lands.
+function formatSource(source) {
+  if (!source) return '';
+  const s = String(source);
+  if (s === 'whatsapp') return 'WhatsApp';
+  if (s === 'Reporter Submitted') return 'Mobile App';
+  if (s === 'Editor Created') return 'Editor';
+  if (s.startsWith('Email · ') || s.startsWith('Email')) return 'Email';
+  // The research-from-article flow stores the article URL as `source`.
+  if (s.startsWith('http://') || s.startsWith('https://')) return 'AI Generated';
+  return s;
+}
+
 // Per-category dot colour. Stable mapping so the same category always reads
 // the same hue across the panel. Falls back to slate for unknown categories.
 const CATEGORY_DOT = {
@@ -30,9 +46,10 @@ function categoryDotColor(category) {
 
 // Column geometry — kept identical between header and rows so they line up.
 // Story gets the most space; reporter sits AFTER submitted/category so the
-// title is the first thing the eye lands on.
+// title is the first thing the eye lands on. Submitted is wide enough for a
+// time stamp on the first line and a submission-mode label below.
 const GRID_COLS =
-  'minmax(0,3fr) 100px 130px minmax(0,1.4fr) 130px 32px';
+  'minmax(0,3fr) 140px 130px minmax(0,1.4fr) 130px 32px';
 
 export default function ReviewQueueTable({
   stories,
@@ -102,9 +119,16 @@ export default function ReviewQueueTable({
                 )}
               </div>
 
-              {/* Submitted time */}
-              <div className="text-xs tabular-nums text-muted-foreground">
-                {formatDate(story.submittedAt)}
+              {/* Submitted — time on top, ingest mode below */}
+              <div className="min-w-0">
+                <div className="truncate text-xs tabular-nums text-foreground">
+                  {formatDate(story.submittedAt)}
+                </div>
+                {formatSource(story.source) && (
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {formatSource(story.source)}
+                  </div>
+                )}
               </div>
 
               {/* Category — coloured dot + capitalised label */}
