@@ -285,21 +285,22 @@ class SarvamApiService {
   // LLM Chat Completions (via backend proxy)
   // ---------------------------------------------------------------------------
 
-  /// Sends a list of [messages] to the backend's LLM chat endpoint,
-  /// which proxies to Sarvam's chat completions API.
+  /// Sends a list of [messages] to the backend's LLM chat endpoint.
+  ///
+  /// The backend chooses the model — the client is intentionally
+  /// model-agnostic so swapping providers (Sarvam → Gemini → whatever
+  /// comes next) is a server-only deploy, never a forced app update.
   ///
   /// [temperature] ranges from 0 to 2 (default 0.2).
   ///
   /// Returns an OpenAI-compatible [ChatResponse].
   Future<ChatResponse> chat({
     required List<ChatMessage> messages,
-    String model = SarvamConfig.chatModel,
     double? temperature,
     int? maxTokens,
   }) async {
     try {
       final body = <String, dynamic>{
-        'model': model,
         'messages': messages.map((m) => m.toJson()).toList(),
         if (temperature != null) 'temperature': temperature,
         if (maxTokens != null) 'max_tokens': maxTokens,

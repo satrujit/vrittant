@@ -23,7 +23,18 @@ class AuthState {
     this.initialized = false,
   });
 
-  bool get isLoggedIn => token != null && reporter != null;
+  /// Logged in = we have a token. Reporter profile is just data — it
+  /// can be null on first launch when /me hasn't returned yet, or when
+  /// the device is offline at boot. Conflating "no profile loaded" with
+  /// "not authenticated" used to dump offline users at the login screen
+  /// even though their session was valid; the router now keeps them in
+  /// the app and lets the background /me retry hydrate the profile.
+  bool get isLoggedIn => token != null;
+
+  /// Profile-ready flag for screens that genuinely need reporter data
+  /// (e.g. profile screen, name in the header). Use this — not
+  /// isLoggedIn — when the UI requires the loaded profile.
+  bool get hasProfile => reporter != null;
 
   AuthState copyWith({
     ReporterProfile? reporter,
