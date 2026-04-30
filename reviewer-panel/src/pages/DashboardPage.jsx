@@ -14,6 +14,7 @@ import ReviewQueueTable from '../components/dashboard/ReviewQueueTable';
 import DensityToggle from '../components/dashboard/DensityToggle';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
+import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 25;
 const REFRESH_INTERVAL = 30_000;
@@ -130,6 +131,80 @@ export default function DashboardPage() {
     onOpen: onOpenRow,
   });
 
+  // ── Quick-jump by display-id digits ───────────────────────────────────────
+  // Type the trailing digits of a story's display id (e.g. "499" for
+  // PNS-26-499) and press Enter to open it. The buffer accumulates digits
+  // for as long as the reviewer keeps typing; Escape clears, any non-digit
+  // non-Enter key cancels (so j/k/↑↓ row nav still feels native). When the
+  // buffer is non-empty, useKeyboardRowNav is bypassed for Enter so we don't
+  // accidentally open the focused row instead of the typed seq_no.
+  const [jumpBuffer, setJumpBuffer] = useState('');
+  const jumpBufferRef = useRef('');
+  useEffect(() => { jumpBufferRef.current = jumpBuffer; }, [jumpBuffer]);
+
+  const tryJumpToSeq = useCallback((digitsStr) => {
+    if (!digitsStr) return false;
+    const n = parseInt(digitsStr, 10);
+    if (Number.isNaN(n)) return false;
+    // Match by exact seq_no first, then by display_id ending in the digits
+    // (so "499" matches PNS-26-499 even when the buffer is short).
+    let match = stories.find((s) => s.seqNo === n);
+    if (!match) {
+      match = stories.find((s) => s.display_id?.endsWith(`-${digitsStr}`));
+    }
+    if (match) {
+      navigate(`/review/${match.id}`);
+      return true;
+    }
+    return false;
+  }, [stories, navigate]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = e.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.target?.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      // Digit pressed → append, suppress row-nav handling for this tick.
+      if (e.key >= '0' && e.key <= '9') {
+        e.preventDefault();
+        e.stopPropagation();
+        setJumpBuffer((prev) => (prev + e.key).slice(-9));
+        return;
+      }
+      // Active buffer + Enter → open matching story; otherwise let row-nav handle.
+      if (e.key === 'Enter' && jumpBufferRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        tryJumpToSeq(jumpBufferRef.current);
+        setJumpBuffer('');
+        return;
+      }
+      // Active buffer + Backspace → delete one digit.
+      if (e.key === 'Backspace' && jumpBufferRef.current) {
+        e.preventDefault();
+        setJumpBuffer((prev) => prev.slice(0, -1));
+        return;
+      }
+      // Active buffer + Escape → clear.
+      if (e.key === 'Escape' && jumpBufferRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        setJumpBuffer('');
+        return;
+      }
+      // Any other key while a buffer is active → cancel quietly so row-nav
+      // (j/k/↑/↓) doesn't get a stale jump indicator hanging around.
+      if (jumpBufferRef.current) {
+        setJumpBuffer('');
+      }
+    };
+    // Capture phase so we run before useKeyboardRowNav's window listener.
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [tryJumpToSeq]);
+
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -140,8 +215,46 @@ export default function DashboardPage() {
     [config]
   );
 
+  // Whether the typed seq matches anything in the loaded queue. Drives the
+  // jump indicator's colour so reviewers see at-a-glance if Enter will land.
+  const jumpMatch = useMemo(() => {
+    if (!jumpBuffer) return null;
+    const n = parseInt(jumpBuffer, 10);
+    if (Number.isNaN(n)) return null;
+    return (
+      stories.find((s) => s.seqNo === n) ||
+      stories.find((s) => s.display_id?.endsWith(`-${jumpBuffer}`)) ||
+      null
+    );
+  }, [jumpBuffer, stories]);
+
   return (
     <div className="flex h-full flex-col">
+      {/* Quick-jump indicator — appears bottom-right while the user types
+          digits; coral when a match exists in the visible queue, muted when
+          not (still typing). Press Enter to commit, Escape to clear. */}
+      {jumpBuffer && (
+        <div className="pointer-events-none fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm shadow-lg animate-in fade-in slide-in-from-bottom-2">
+          <span className="text-muted-foreground">Open</span>
+          <span
+            className={cn(
+              'rounded-md px-1.5 py-0.5 font-mono text-xs font-semibold tabular-nums',
+              jumpMatch
+                ? 'bg-primary/10 text-primary'
+                : 'bg-muted text-muted-foreground',
+            )}
+          >
+            #{jumpBuffer}
+          </span>
+          {jumpMatch ? (
+            <span className="text-xs text-muted-foreground">
+              <kbd className="rounded border border-border bg-background px-1 text-[10px]">↵</kbd> to open
+            </span>
+          ) : (
+            <span className="text-[11px] text-muted-foreground">no match</span>
+          )}
+        </div>
+      )}
       {/* Header strip */}
       <header className="flex flex-wrap items-center justify-between gap-4 px-6 pt-6">
         <div className="flex flex-col gap-1">

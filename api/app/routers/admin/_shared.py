@@ -1,4 +1,5 @@
 """Schemas and query helpers shared across admin sub-modules."""
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -302,13 +303,31 @@ def _build_story_query(
         query = query.filter(Story.category == category)
     if search:
         like_pat = f"%{search}%"
-        query = query.filter(
-            or_(
-                Story.headline.ilike(like_pat),
-                Story.location.ilike(like_pat),
-                cast(Story.paragraphs, String).ilike(like_pat),
-            )
+        clauses = [
+            Story.headline.ilike(like_pat),
+            Story.location.ilike(like_pat),
+            cast(Story.paragraphs, String).ilike(like_pat),
+        ]
+        # Also match the per-org display id. Reviewers expect to type
+        # "499" or "PNS-26-499" in the search box and have that story
+        # surface even if it isn't on the current page. display_id is a
+        # computed property (org.display_code + YY + seq_no), so we
+        # extract the trailing sequence number from the search term and
+        # filter on the underlying Story.seq_no column.
+        # Patterns matched (case-insensitive):
+        #   "PNS-26-499"  → seq=499
+        #   "26-499"      → seq=499
+        #   "499"         → seq=499
+        m = re.fullmatch(
+            r"\s*(?:[a-zA-Z]+-)?(?:\d{2}-)?(\d{1,9})\s*",
+            search,
         )
+        if m:
+            try:
+                clauses.append(Story.seq_no == int(m.group(1)))
+            except (ValueError, TypeError):
+                pass
+        query = query.filter(or_(*clauses))
     if location:
         query = query.filter(Story.location.ilike(f"%{location}%"))
     if date_from:
