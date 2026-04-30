@@ -10,6 +10,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../core/services/api_config.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/services/story_image_cache_manager.dart';
 import '../../../core/services/stt_service.dart';
 import '../../../core/services/mic_permission_ui.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -181,6 +182,7 @@ class _AllNewsScreenState extends ConsumerState<AllNewsScreen>
           logoUrl.startsWith('http') ? logoUrl : '${ApiConfig.baseUrl}$logoUrl';
       return CachedNetworkImage(
         imageUrl: fullUrl,
+        cacheManager: StoryImageCacheManager.instance,
         height: height,
         fit: BoxFit.contain,
         errorWidget: (_, __, ___) => Text(

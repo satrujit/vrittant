@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/services/api_config.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/services/story_image_cache_manager.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
@@ -55,6 +56,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
           logoUrl.startsWith('http') ? logoUrl : '${ApiConfig.baseUrl}$logoUrl';
       return CachedNetworkImage(
         imageUrl: fullUrl,
+        cacheManager: StoryImageCacheManager.instance,
         height: height,
         fit: BoxFit.contain,
         errorWidget: (_, __, ___) => Text(
@@ -639,6 +641,7 @@ class _ScenePhotoCard extends StatelessWidget {
             child: url.isNotEmpty
                 ? CachedNetworkImage(
                     imageUrl: _fullUrl(url),
+                    cacheManager: StoryImageCacheManager.instance,
                     fit: BoxFit.cover,
                     width: 170,
                     height: 130,
@@ -874,6 +877,7 @@ class _FilesFullScreenImage extends StatelessWidget {
           maxScale: 4.0,
           child: CachedNetworkImage(
             imageUrl: url,
+            cacheManager: StoryImageCacheManager.instance,
             fit: BoxFit.contain,
             errorWidget: (_, __, ___) => Icon(
               LucideIcons.imageOff,
