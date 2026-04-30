@@ -51,6 +51,8 @@
   },
   "status": {
     "pendingReview": "Pending Review",
+    "inProgress": "In Progress",
+    "in_progress": "In Progress",
     "approved": "Approved",
     "rejected": "Rejected",
     "flagged": "Flagged",

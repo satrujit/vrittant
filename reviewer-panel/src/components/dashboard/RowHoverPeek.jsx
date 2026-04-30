@@ -31,13 +31,22 @@ export default function RowHoverPeek({ children, story, enabled = true }) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <div onMouseEnter={onEnter} onMouseLeave={onLeave} className="contents">
+        {/*
+          Wrapper MUST have a real DOM box so Radix can position the popover
+          against it. `display: contents` (the previous attempt) strips the
+          wrapper from the box tree and Radix falls back to the top-left of
+          the viewport. A plain block-level div with `w-full` keeps the row's
+          full-width grid layout intact and gives Radix something to anchor.
+        */}
+        <div onMouseEnter={onEnter} onMouseLeave={onLeave} className="block w-full">
           {children}
         </div>
       </PopoverTrigger>
       <PopoverContent
         side="right"
         align="start"
+        sideOffset={8}
+        collisionPadding={16}
         className="w-80 p-3"
         onPointerEnter={(e) => e.preventDefault()}
       >

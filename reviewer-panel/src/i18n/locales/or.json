@@ -51,6 +51,8 @@
   },
   "status": {
     "pendingReview": "ସମୀକ୍ଷା ବାକି",
+    "inProgress": "ଚାଲୁଛି",
+    "in_progress": "ଚାଲୁଛି",
     "approved": "ଅନୁମୋଦିତ",
     "rejected": "ପ୍ରତ୍ୟାଖ୍ୟାତ",
     "flagged": "ଚିହ୍ନିତ",
