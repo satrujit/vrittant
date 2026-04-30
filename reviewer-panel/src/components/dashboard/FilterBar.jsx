@@ -2,12 +2,14 @@ import { Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '../../i18n';
 
+// Status filter chips. We deliberately omit 'in_progress' — it's a
+// transient state, not a bucket reviewers triage. They want to see what's
+// reported, what they've approved, and what's flagged.
 const STATUS_FILTERS = [
-  { value: '',            labelKey: 'dashboard.filterAll' },
-  { value: 'submitted',   labelKey: 'status.submitted' },
-  { value: 'in_progress', labelKey: 'status.inProgress' },
-  { value: 'approved',    labelKey: 'status.approved' },
-  { value: 'flagged',     labelKey: 'status.flagged' },
+  { value: '',          labelKey: 'dashboard.filterAll' },
+  { value: 'submitted', labelKey: 'status.submitted' },
+  { value: 'approved',  labelKey: 'status.approved' },
+  { value: 'flagged',   labelKey: 'status.flagged' },
 ];
 
 export default function FilterBar({
