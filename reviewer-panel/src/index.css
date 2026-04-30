@@ -203,12 +203,3 @@ input, textarea, select, button {
   --animate-vr-sparkle-glow: vr-sparkle-glow 2s infinite;
 }
 
-@keyframes vr-row-arrival {
-  0%   { background-color: rgba(250, 108, 56, 0.18); }
-  60%  { background-color: rgba(250, 108, 56, 0.12); }
-  100% { background-color: transparent; }
-}
-
-.vr-row-arrival {
-  animation: vr-row-arrival 2s ease-out;
-}
