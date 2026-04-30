@@ -30,6 +30,9 @@
     "refresh": "ରିଫ୍ରେସ",
     "filterAll": "ସମସ୍ତ",
     "filterAllCategories": "ସମସ୍ତ ବିଭାଗ",
+    "filterAllReporters": "ସମସ୍ତ ସାମ୍ବାଦିକ",
+    "assignedTo": "ନ୍ୟସ୍ତ",
+    "unassigned": "ଅନିର୍ଦ୍ଧାରିତ",
     "density": { "compact": "ସଂକୁଚିତ", "comfortable": "ସୁଖଦ", "cozy": "ଆରାମଦାୟକ" }
   },
   "table": {
