@@ -39,5 +39,21 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    # permission_handler iOS plugin opt-ins. Without these macros, every
+    # Permission.*.status call returns `permanentlyDenied` immediately
+    # — a deliberate safety mechanism so apps don't accidentally ship
+    # with usage descriptions for permissions they don't actually use
+    # (App Store rejects that). Each macro = "yes, this app really
+    # uses this permission". Mirror the matching NSXxxUsageDescription
+    # entries in Info.plist.
+    target.build_configurations.each do |config|
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
+        '$(inherited)',
+      ]
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] += [
+        'PERMISSION_MICROPHONE=1',
+        'PERMISSION_SPEECH_RECOGNIZER=1',
+      ]
+    end
   end
 end
