@@ -103,11 +103,22 @@ class GeminiError(RuntimeError):
 def is_transient_error(exc: BaseException) -> bool:
     """Same predicate shape as anthropic_client.is_transient_error so
     callers that already know how to retry around Anthropic can swap
-    providers without changing their retry logic."""
+    providers without changing their retry logic.
+
+    Status codes treated as transient:
+      - 408, 429, 500, 502, 503, 504 — standard server-side / rate-
+        limit signals that callers should retry.
+      - 599 — synthetic "client-observed empty content" signal raised
+        by callers when Gemini returns a 200 OK with zero text in
+        candidates. The empty-turn case happens on safety-filter
+        refusals and on rare model hiccups; treating it as transient
+        lets generate_story.py fall through to the Sarvam fallback
+        instead of surfacing a 502 to the reporter.
+    """
     if isinstance(exc, httpx.RequestError):
         return True
     if isinstance(exc, GeminiError) and exc.status_code is not None:
-        return exc.status_code in (408, 429, 500, 502, 503, 504)
+        return exc.status_code in (408, 429, 500, 502, 503, 504, 599)
     return False
 
 

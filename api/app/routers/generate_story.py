@@ -347,11 +347,20 @@ async def generate_story(
                 temperature=0.3,
             )
             if not text:
-                # Empty response is treated as a transient failure — fall
-                # back to Sarvam rather than returning an empty body to the
-                # user. Models occasionally emit only a refusal/empty turn.
+                # Empty response — fall back to Sarvam rather than
+                # returning an empty body. Models occasionally emit
+                # only a refusal/empty turn (especially on the older
+                # short PROD prompt where the safety filter has more
+                # latitude). We use status_code=599 as a synthetic
+                # "client-observed empty" signal that is_transient_error
+                # treats as transient, so the except branch below
+                # falls through to the Sarvam path instead of the
+                # bubble-up path. (The previous status_code=None
+                # silently routed through the non-transient branch and
+                # surfaced as a 502 to the reporter — see fix in this
+                # commit.)
                 raise GeminiError(
-                    "gemini returned empty content", status_code=None
+                    "gemini returned empty content", status_code=599
                 )
             return GenerateStoryResponse(
                 body=_post_process(text),
