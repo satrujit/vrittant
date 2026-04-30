@@ -14,7 +14,6 @@ import '../../../core/theme/theme_extensions.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/l10n/app_strings.dart';
 import '../../../core/l10n/language_provider.dart';
-import '../../../core/providers/auto_polish_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../home/providers/stories_provider.dart';
 import '../providers/voice_enrollment_provider.dart';
@@ -186,13 +185,11 @@ class ProfileScreen extends ConsumerWidget {
         : 'English';
     final enrollmentState = ref.watch(voiceEnrollmentProvider);
     final voiceSubtitle = enrollmentState.isEnrolled ? s.enrolled : s.notEnrolled;
-    final autoPolish = ref.watch(autoPolishProvider);
     final items = [
       (LucideIcons.languages, s.language, langSubtitle, 'language'),
       (LucideIcons.mic, s.voiceEnrollment, voiceSubtitle, 'voice_enrollment'),
       (LucideIcons.shield, s.privacyPolicy, s.privacyPolicySubtitle, 'privacy_policy'),
       (LucideIcons.info, s.about, 'Version 1.0.0', 'about'),
-      (LucideIcons.userX, s.deleteAccount, s.deleteAccountSubtitle, 'delete_account'),
       (LucideIcons.logOut, s.logout, s.signOut, 'logout'),
     ];
 
@@ -200,52 +197,6 @@ class ProfileScreen extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
       child: Column(
         children: [
-          // Auto-polish toggle
-          Container(
-            margin: const EdgeInsets.only(bottom: AppSpacing.md),
-            decoration: BoxDecoration(
-              color: t.cardBg,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
-              border: Border.all(color: AppColors.vrCardBorder),
-            ),
-            child: SwitchListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 4,
-              ),
-              secondary: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.vrCoralLight,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  LucideIcons.sparkles,
-                  size: 18,
-                  color: AppColors.vrCoral,
-                ),
-              ),
-              title: Text(
-                s.autoPolish,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.vrHeading,
-                ),
-              ),
-              subtitle: Text(
-                s.autoPolishDesc,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12,
-                  color: AppColors.vrBody,
-                ),
-              ),
-              value: autoPolish,
-              activeTrackColor: AppColors.vrCoral,
-              onChanged: (_) => ref.read(autoPolishProvider.notifier).toggle(),
-            ),
-          ),
           // Settings list
           Container(
             decoration: BoxDecoration(
@@ -257,7 +208,7 @@ class ProfileScreen extends ConsumerWidget {
               children: items.asMap().entries.map((entry) {
                 final (icon, title, subtitle, action) = entry.value;
                 final isLast = entry.key == items.length - 1;
-                final isLogout = action == 'logout' || action == 'delete_account';
+                final isLogout = action == 'logout';
 
                 return Column(
                   children: [
@@ -343,9 +294,6 @@ class ProfileScreen extends ConsumerWidget {
       case 'privacy_policy':
         _openPrivacyPolicy(context, ref);
         break;
-      case 'delete_account':
-        _showDeleteAccountConfirmation(context, ref);
-        break;
       case 'notifications':
       case 'help':
         final s = AppStrings.of(ref);
@@ -428,78 +376,6 @@ class ProfileScreen extends ConsumerWidget {
     }
   }
 
-  void _showDeleteAccountConfirmation(BuildContext context, WidgetRef ref) {
-    final s = AppStrings.of(ref);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          s.deleteAccountTitle,
-          style: GoogleFonts.plusJakartaSans(
-            fontWeight: FontWeight.w700,
-            color: AppColors.vrHeading,
-          ),
-        ),
-        content: Text(
-          s.deleteAccountBody,
-          style: GoogleFonts.plusJakartaSans(color: AppColors.vrBody),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              s.cancel,
-              style: GoogleFonts.plusJakartaSans(
-                fontWeight: FontWeight.w600,
-                color: AppColors.vrSection,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final messenger = ScaffoldMessenger.of(context);
-              try {
-                await ref.read(apiServiceProvider).requestAccountDeletion();
-                if (!context.mounted) return;
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(s.deleteAccountRequestSent),
-                    backgroundColor: AppColors.vrCoral,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                );
-                await ref.read(authProvider.notifier).logout();
-                if (context.mounted) context.go('/login');
-              } catch (_) {
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(s.deleteAccountError),
-                    backgroundColor: AppColors.error,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                );
-              }
-            },
-            child: Text(
-              s.deleteAccountConfirm,
-              style: GoogleFonts.plusJakartaSans(
-                fontWeight: FontWeight.w600,
-                color: AppColors.error,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _showAboutDialog(BuildContext context, {required AppStrings s}) {
     showDialog(
