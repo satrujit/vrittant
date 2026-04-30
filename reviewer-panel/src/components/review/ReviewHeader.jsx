@@ -297,6 +297,7 @@ export default function ReviewHeader({
         )}
         <input
           type="text"
+          data-shortcut-target="headline"
           className="w-full border-none bg-transparent px-0 text-2xl font-bold leading-tight text-foreground outline-none placeholder:text-muted-foreground/50"
           value={headline}
           onChange={(e) => setHeadline(e.target.value)}

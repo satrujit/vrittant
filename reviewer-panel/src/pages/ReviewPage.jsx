@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, Pencil, FileText, Languages, Share2 } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -7,6 +7,7 @@ import ReviewHeader from '../components/review/ReviewHeader';
 import ReviewEditor, { getFabIcon } from '../components/review/ReviewEditor';
 import ReviewSidebar from '../components/review/ReviewSidebar';
 import ReviewSidePanel from '../components/review/ReviewSidePanel';
+import ShortcutsHelpOverlay from '../components/review/ShortcutsHelpOverlay';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 
@@ -56,6 +57,88 @@ function ReviewPage() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [s.handleSaveContent, s.saving]);
+
+  // ── Section-jump shortcuts (Alt/Option + letter) ─────────────────────
+  // Combo modifier chosen because:
+  //   • Alt avoids the most common single-key conflicts inside TipTap.
+  //   • Plain letters (h/b/i/c/r) would fire while typing in the body
+  //     editor; Alt-combos pass through cleanly.
+  //   • Cmd/Ctrl letters collide with browser/system shortcuts (Cmd+S
+  //     save, Cmd+T new tab, Cmd+R reload, etc.); Alt is mostly free.
+  // Alt+/ toggles the help overlay; the overlay lists every binding.
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  useEffect(() => {
+    const focusBy = (selector) => {
+      const el = document.querySelector(selector);
+      if (!el) return;
+      el.focus();
+      // For text inputs/textareas, also place caret at end so the user can
+      // start typing immediately without re-clicking.
+      if (typeof el.setSelectionRange === 'function') {
+        const len = el.value?.length ?? 0;
+        try { el.setSelectionRange(len, len); } catch { /* not all inputs support selection */ }
+      }
+    };
+
+    const onKeyDown = (e) => {
+      // Alt is the gate — never fire on bare letters.
+      if (!e.altKey) return;
+      // Don't ride along with Cmd/Ctrl/Shift combos. Browsers and editors
+      // bind a lot of those (e.g. ⌥⌘I = devtools); we want clean Alt-only.
+      if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+
+      const key = e.key.toLowerCase();
+      // Alt+/ → help overlay (toggle). e.key on Alt+/ is "/" on most
+      // layouts; check both for safety.
+      if (key === '/' || e.code === 'Slash') {
+        e.preventDefault();
+        setHelpOpen((v) => !v);
+        return;
+      }
+
+      switch (key) {
+        case 'h':
+          e.preventDefault();
+          focusBy('[data-shortcut-target="headline"]');
+          break;
+        case 'b':
+          e.preventDefault();
+          // Body = TipTap. Use the editor's own focus command so the caret
+          // lands at the last known position instead of bouncing to start.
+          s.editor?.commands.focus();
+          break;
+        case 'i':
+          e.preventDefault();
+          focusBy('[data-shortcut-target="instruction"]');
+          break;
+        case 'c':
+          e.preventDefault();
+          focusBy('[data-shortcut-target="comment"]');
+          break;
+        case 'r':
+          e.preventDefault();
+          if (!s.refining) s.handleRefineStory?.();
+          break;
+        case 'e':
+          e.preventDefault();
+          s.setActiveTab('editor');
+          break;
+        case 'o':
+          e.preventDefault();
+          s.setActiveTab('original');
+          break;
+        case 't':
+          e.preventDefault();
+          s.setActiveTab('english');
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [s.editor, s.handleRefineStory, s.refining, s.setActiveTab]);
 
   // Esc → close the review and go back to the list. Skipped when the
   // user is typing in any editable surface (input, textarea, TipTap's
@@ -235,6 +318,8 @@ function ReviewPage() {
         handleRemoveFromEdition={s.handleRemoveFromEdition}
       />
       )}
+
+      <ShortcutsHelpOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

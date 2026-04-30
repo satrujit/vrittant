@@ -500,6 +500,7 @@ export default function ReviewEditor({
         <div className="relative flex flex-1 items-center">
           <input
             type="text"
+            data-shortcut-target="instruction"
             className="h-10 w-full rounded-full border border-border bg-background pl-4 pr-10 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary focus:shadow-[0_0_0_2px_rgba(250,108,56,0.1)]"
             placeholder={hasSelection ? t('review.instructionPlaceholderEdit', 'Type an editing instruction...') : t('review.instructionPlaceholder', 'Type an instruction...')}
             value={instructionText}

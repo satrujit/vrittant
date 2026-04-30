@@ -669,6 +669,7 @@ export default function ReviewSidePanel({
           <div className="shrink-0 border-t border-border p-2">
             <div className="relative">
               <textarea
+                data-shortcut-target="comment"
                 className="w-full resize-none rounded-md border border-border bg-background py-2 pl-3 pr-9 text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring"
                 placeholder={t('review.comments.placeholder', 'Add a comment…')}
                 rows={2}
