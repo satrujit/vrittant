@@ -14,6 +14,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../../core/services/api_config.dart';
 import '../../../core/services/mic_permission_ui.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_gradients.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/theme_extensions.dart';
@@ -3742,138 +3743,139 @@ class _AdvancedSettingsRow extends ConsumerWidget {
 
     return Container(
       color: t.cardBg,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.base,
-        AppSpacing.sm,
-        AppSpacing.base,
-        AppSpacing.xs,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.base),
+      child: Row(
         children: [
-          // ── Prominent AI Refine button ──────────────────────────────────
-          // Wide primary-tinted pill, sparkle icon, two-line label (action +
-          // hint), trailing arrow. Replaces the old TextButton.icon that
-          // reporters consistently missed in the corner of the row. The
-          // tinted background (`primary.withValues(alpha: 0.10)`) keeps the
-          // colour palette of the surrounding chrome calm — coral filled
-          // would compete with the recording mic FAB below.
-          if (onGenerateStory != null)
-            Material(
-              color: canTap
-                  ? t.primary.withValues(alpha: 0.10)
-                  : t.primary.withValues(alpha: 0.04),
-              borderRadius: BorderRadius.circular(12),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: canTap ? onGenerateStory : null,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.base,
-                    vertical: AppSpacing.sm + 2,
+          // Quiet "Advanced settings" link on the left.
+          GestureDetector(
+            onTap: onTap,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    LucideIcons.settings,
+                    size: 14,
+                    color: t.mutedColor,
                   ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: isGenerating
-                            ? CircularProgressIndicator(
-                                strokeWidth: 2.4,
-                                color: t.primary,
-                              )
-                            : Icon(
-                                LucideIcons.sparkles,
-                                size: 20,
-                                color: canTap
-                                    ? t.primary
-                                    : t.primary.withValues(alpha: 0.45),
-                              ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm + 2),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              isGenerating
-                                  ? s.generatingStory
-                                  : s.generateStory,
-                              style: AppTypography.odiaTitleLarge.copyWith(
-                                fontSize: 15,
-                                color: canTap
-                                    ? t.primary
-                                    : t.primary.withValues(alpha: 0.5),
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.1,
-                              ),
-                            ),
-                            if (!isGenerating)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 1),
-                                child: Text(
-                                  s.aiRefineHint,
-                                  style: AppTypography.bodySmall.copyWith(
-                                    color: t.primary.withValues(
-                                      alpha: canTap ? 0.7 : 0.4,
-                                    ),
-                                    height: 1.2,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (!isGenerating)
-                        Icon(
-                          LucideIcons.arrowRight,
-                          size: 18,
-                          color: t.primary.withValues(
-                            alpha: canTap ? 0.85 : 0.35,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-          // ── Quiet "Advanced settings" link below ───────────────────────
-          // Tucked beneath the AI Refine CTA. Most reporters never need it;
-          // keeping it small and muted preserves the breathing room.
-          Align(
-            alignment: Alignment.centerLeft,
-            child: GestureDetector(
-              onTap: onTap,
-              behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: AppSpacing.sm,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      LucideIcons.settings,
-                      size: 13,
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    s.advancedSettings,
+                    style: AppTypography.odiaBodySmall.copyWith(
                       color: t.mutedColor,
+                      fontWeight: FontWeight.w500,
                     ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Text(
-                      s.advancedSettings,
-                      style: AppTypography.odiaBodySmall.copyWith(
-                        color: t.mutedColor,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
+          const Spacer(),
+
+          // AI Refine — compact button, but with the multi-colour
+          // electricPulse gradient (coral → pink → lavender) on both
+          // the sparkle icon and the label so it reads as an AI
+          // affordance the same way the recording mic ripple does.
+          // Subtle (no filled background) yet visually distinct from a
+          // plain text link.
+          if (onGenerateStory != null)
+            Tooltip(
+              message: s.aiRefineHint,
+              child: InkWell(
+                onTap: canTap ? onGenerateStory : null,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs + 2,
+                  ),
+                  child: Opacity(
+                    opacity: canTap ? 1.0 : 0.45,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: isGenerating
+                              ? const _GradientSpinner()
+                              : ShaderMask(
+                                  blendMode: BlendMode.srcIn,
+                                  shaderCallback: (bounds) =>
+                                      AppGradients.electricPulse
+                                          .createShader(bounds),
+                                  child: const Icon(
+                                    LucideIcons.sparkles,
+                                    size: 16,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(width: AppSpacing.xs + 2),
+                        ShaderMask(
+                          blendMode: BlendMode.srcIn,
+                          shaderCallback: (bounds) =>
+                              AppGradients.electricPulse.createShader(bounds),
+                          child: Text(
+                            isGenerating
+                                ? s.generatingStory
+                                : s.generateStory,
+                            style: AppTypography.odiaBodySmall.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+/// Spinner whose stroke picks up the AI gradient. Small, used when AI
+/// Refine is actively running — keeps the same multi-colour identity
+/// as the resting state.
+class _GradientSpinner extends StatefulWidget {
+  const _GradientSpinner();
+
+  @override
+  State<_GradientSpinner> createState() => _GradientSpinnerState();
+}
+
+class _GradientSpinnerState extends State<_GradientSpinner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RotationTransition(
+      turns: _ctrl,
+      child: ShaderMask(
+        blendMode: BlendMode.srcIn,
+        shaderCallback: (bounds) =>
+            AppGradients.electricPulse.createShader(bounds),
+        child: const Icon(
+          LucideIcons.loader2,
+          size: 16,
+          color: Colors.white,
+        ),
       ),
     );
   }
