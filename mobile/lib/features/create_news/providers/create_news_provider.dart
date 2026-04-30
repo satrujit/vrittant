@@ -13,7 +13,6 @@ import '../../../core/services/enrollment_storage.dart';
 import '../../../core/services/file_picker_service.dart';
 import '../../../core/services/sarvam_api.dart';
 import '../../../core/services/stt_service.dart';
-import '../../../core/providers/auto_polish_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../core/l10n/language_provider.dart';
 
@@ -904,11 +903,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
         // Save paragraphs to server IMMEDIATELY (don't wait for title/metadata)
         _scheduleAutoSave();
 
-        // Auto-polish the newly transcribed paragraph (fire-and-forget)
-        if (polishTargetIndex != null && ref.read(autoPolishProvider)) {
-          polishTranscriptWithAI(polishTargetIndex);
-        }
-
         // Auto-generate headline ONLY for the first paragraph (when headline
         // is still empty). After that the user owns the headline — it should
         // only change via manual edit or voice dictation.
@@ -1109,11 +1103,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
     _streamingStt?.resetAccumulation();
 
     _scheduleAutoSave();
-
-    // Fire-and-forget auto-polish on the committed paragraph
-    if (ref.read(autoPolishProvider)) {
-      polishTranscriptWithAI(insertedAt);
-    }
   }
 
   /// Take all current text paragraphs (raw STT + typed input) and ask the
