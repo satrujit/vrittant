@@ -524,6 +524,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       textAlign: TextAlign.center,
       maxLength: 6,
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      // OTP autofill from the SMS the user just received. Zero
+      // permission required on either platform:
+      //
+      //   - iOS: oneTimeCode is a TextContentType that the keyboard
+      //     bar surfaces as a one-tap suggestion when an SMS with a
+      //     code arrives within the last ~3 minutes. No Info.plist
+      //     entry, no entitlements, no SMS access. Works on every
+      //     iPhone since iOS 12.
+      //
+      //   - Android: triggers Autofill Framework + Google's SMS code
+      //     suggestion, again no permission needed (READ_SMS would
+      //     be an absolute non-starter on Play Store review).
+      //
+      // No transparent-fill (the kind that pastes the code without a
+      // tap): that needs SMS Retriever API + a server-side app hash
+      // baked into the SMS body, or User Consent API + a per-message
+      // dialog. Both are heavier — left as a follow-up. The keyboard
+      // suggestion is one tap which is already a big win for older
+      // reporters who used to switch apps to copy the code.
+      autofillHints: const [AutofillHints.oneTimeCode],
       style: GoogleFonts.plusJakartaSans(
         fontSize: 32,
         fontWeight: FontWeight.w700,

@@ -956,25 +956,88 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
   }
 
   Future<void> _confirmDeleteStory(BuildContext context, NotepadNotifier notifier) async {
+    final headline = ref.read(notepadProvider).headline;
+    final paraCount = ref.read(notepadProvider).paragraphs
+        .where((p) => p.text.trim().isNotEmpty || p.hasMedia)
+        .length;
     final confirmed = await showDialog<bool>(
       context: context,
+      // Tap-outside dismisses to "no" — same as the No button. Reporters
+      // sometimes pull the dialog up by accident and we want a low-cost
+      // exit. The destructive action requires the explicit Delete tap.
+      barrierDismissible: true,
       builder: (ctx) => AlertDialog(
-        title: Text(s.deleteThisDraft),
-        content: Text(
-          ref.read(notepadProvider).headline.isNotEmpty
-            ? ref.read(notepadProvider).headline
-            : s.untitledDraft,
+        title: Row(
+          children: [
+            const Icon(LucideIcons.trash2,
+                size: 20, color: AppColors.coral500),
+            const SizedBox(width: 10),
+            Expanded(child: Text(s.deleteThisDraft)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Show the headline (or "Untitled draft") and a paragraph
+            // count so the reporter can clearly see WHAT they're about
+            // to lose, not just that they're deleting "something".
+            Text(
+              headline.isNotEmpty ? headline : s.untitledDraft,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (paraCount > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                s.draftParagraphCount(paraCount),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: context.t.mutedColor,
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            // Loud, unambiguous warning. The previous dialog only said
+            // "Delete this draft?" with the headline — many reporters
+            // tapped Remove on muscle memory because the destructive
+            // outcome wasn't spelled out. Now there's no doubt.
+            Text(
+              s.deleteDraftWarning,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFB91C1C), // red-700
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(s.no),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
             child: Text(
-              s.remove,
-              style: const TextStyle(color: AppColors.coral500),
+              s.cancel,
+              style: TextStyle(color: context.t.bodyColor),
+            ),
+          ),
+          // Filled red destructive button — visually committed, not
+          // a soft text link. Delete is irreversible (drafts don't go
+          // to trash) so the affordance should match the consequence.
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(LucideIcons.trash2, size: 16),
+            label: Text(s.deleteDraft),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFB91C1C), // red-700
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
           ),
         ],

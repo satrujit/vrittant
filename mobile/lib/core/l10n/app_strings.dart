@@ -362,6 +362,30 @@ class AppStrings {
   String get takeOrPickPhoto => isOdia ? 'ଫଟୋ ତୁଳନ୍ତୁ ବା ବାଛନ୍ତୁ' : 'Take or pick photo';
   String get attachDocument => isOdia ? 'ନଥିପତ୍ର ଯୋଡ଼ନ୍ତୁ' : 'Attach document';
   String get deleteDraft => isOdia ? 'ଡ୍ରାଫ୍ଟ ହଟାନ୍ତୁ' : 'Delete draft';
+
+  /// Warning line in the delete confirmation dialog. Drafts don't go
+  /// to a trash — once deleted they are gone, including any locally-
+  /// queued audio backups. Make that explicit so reporters don't tap
+  /// through on muscle memory.
+  String get deleteDraftWarning => isOdia
+      ? 'ଏହା ସ୍ଥାୟୀ ଭାବେ ହଟିଯିବ। ଫେରସ୍ତ ଆଣିହେବ ନାହିଁ।'
+      : 'This will be permanently removed. Cannot be undone.';
+
+  /// Pluralized "N paragraphs" subtitle in the delete dialog so the
+  /// reporter knows the size of what they're about to lose. The
+  /// pluralization uses Odia's invariant noun form (same word for
+  /// singular and plural) so we avoid the singular/plural fork.
+  String draftParagraphCount(int n) => isOdia
+      ? '$n ଅନୁଚ୍ଛେଦ'
+      : (n == 1 ? '1 paragraph' : '$n paragraphs');
+
+  /// Footer line shown at the end of a paginated story list when the
+  /// server has confirmed no more pages. Communicates "you've reached
+  /// the bottom" so the reporter doesn't keep scrolling expecting
+  /// more.
+  String get endOfStories => isOdia
+      ? '— ସମସ୍ତ ଖବର ଦେଖାଯାଇଛି —'
+      : '— end of stories —';
   String get titleHintWrite => isOdia ? 'ଟାଇଟଲ୍ ଲେଖନ୍ତୁ...' : 'Write the title...';
   String get titleHintSpeak => isOdia ? 'ଟାଇଟଲ୍ କୁହନ୍ତୁ...' : 'Speak the title...';
   String get statusReview => isOdia ? 'ସମୀକ୍ଷା' : 'Review';
