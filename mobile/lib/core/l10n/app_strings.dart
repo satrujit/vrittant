@@ -113,6 +113,9 @@ class AppStrings {
   String get moveCloserHint => isOdia
       ? '\u0B2B\u0B4B\u0B28 \u0B2A\u0B3E\u0B16\u0B15\u0B41 \u0B06\u0B23\u0B28\u0B4D\u0B24\u0B41'
       : 'Move closer';
+  String get recordingStoppedCall => isOdia
+      ? 'ଫୋନ କଲ ପାଇଁ ରେକର୍ଡିଂ ବନ୍ଦ ହେଲା'
+      : 'Recording stopped — phone call detected';
 
   // ===========================================================================
   // Edit actions
@@ -222,6 +225,13 @@ class AppStrings {
   String get comingSoon => isOdia ? '\u0B36\u0B40\u0B18\u0B4D\u0B30 \u0B06\u0B38\u0B41\u0B1B\u0B3F' : 'Coming soon';
   String get privacyPolicy => isOdia ? '\u0B17\u0B4B\u0B2A\u0B28\u0B40\u0B5F\u0B24\u0B3E \u0B28\u0B40\u0B24\u0B3F' : 'Privacy Policy';
   String get privacyPolicySubtitle => isOdia ? '\u0B06\u0B2E\u0B15\u0B41 \u0B2C\u0B4D\u0B30\u0B3E\u0B09\u0B1C\u0B30\u0B30\u0B47 \u0B16\u0B4B\u0B32\u0B28\u0B4D\u0B24\u0B41' : 'Open in browser';
+  String get deleteAccount => isOdia ? '\u0B16\u0B3E\u0B24\u0B3E \u0B21\u0B3F\u0B32\u0B3F\u0B1F \u0B15\u0B30\u0B28\u0B4D\u0B24\u0B41' : 'Delete Account';
+  String get deleteAccountSubtitle => isOdia ? '\u0B06\u0B2A\u0B23\u0B19\u0B4D\u0B15 \u0B16\u0B3E\u0B24\u0B3E \u0B05\u0B15\u0B4D\u0B37\u0B2E \u0B15\u0B30\u0B3F\u0B2C\u0B3E\u0B15\u0B41 \u0B05\u0B28\u0B41\u0B30\u0B4B\u0B27 \u0B15\u0B30\u0B28\u0B4D\u0B24\u0B41' : 'Request to deactivate your account';
+  String get deleteAccountTitle => isOdia ? '\u0B16\u0B3E\u0B24\u0B3E \u0B21\u0B3F\u0B32\u0B3F\u0B1F \u0B15\u0B30\u0B3F\u0B2C\u0B47?' : 'Delete your account?';
+  String get deleteAccountBody => isOdia ? '\u0B06\u0B2A\u0B23\u0B19\u0B4D\u0B15 \u0B16\u0B3E\u0B24\u0B3E \u0B05\u0B15\u0B4D\u0B37\u0B2E \u0B15\u0B30\u0B3F\u0B26\u0B3F\u0B06\u0B2F\u0B3F\u0B2C, \u0B15\u0B3E\u0B30\u0B3F\u0B17\u0B24 \u0B24\u0B25\u0B4D\u0B5F (\u0B28\u0B3E\u0B2E, \u0B2B\u0B4B\u0B28\u0B4D) \u0B05\u0B28\u0B3E\u0B2E\u0B40\u0B15\u0B43\u0B24 \u0B39\u0B47\u0B2C \u0B0F\u0B2C\u0B02 \u0B06\u0B2A\u0B23\u0B19\u0B4D\u0B15\u0B30 \u0B16\u0B2C\u0B30 \u0B38\u0B2E\u0B4D\u0B2A\u0B3E\u0B26\u0B3F\u0B24 \u0B15\u0B3E\u0B30\u0B4D\u0B2F\u0B30 \u0B28\u0B3E\u0B2E "\u0B2A\u0B42\u0B30\u0B4D\u0B2C\u0B24\u0B28 \u0B38\u0B02\u0B2C\u0B3E\u0B26\u0B26\u0B3E\u0B24\u0B3E" \u0B39\u0B47\u0B2C\u0964 \u0B0F\u0B39\u0B3E \u0B05\u0B2A\u0B30\u0B3F\u0B2C\u0B30\u0B4D\u0B24\u0B28\u0B40\u0B5F\u0964' : 'Your account will be deactivated, personal info (name, phone) anonymised, and your published stories will show as "Former Reporter". This is irreversible.';
+  String get deleteAccountConfirm => isOdia ? '\u0B39\u0B01, \u0B05\u0B28\u0B41\u0B30\u0B4B\u0B27 \u0B2A\u0B20\u0B3E\u0B0A\u0B20\u0B28\u0B4D\u0B24\u0B41' : 'Yes, submit request';
+  String get deleteAccountRequestSent => isOdia ? '\u0B05\u0B28\u0B41\u0B30\u0B4B\u0B27 \u0B2A\u0B20\u0B3E\u0B2F\u0B3E\u0B07\u0B1B\u0B3F\u0964 \u0B06\u0B2E\u0B47 \u09E8\u09EA \u0B18\u0B23\u0B4D\u0B1F\u0B3E \u0B2D\u0B3F\u0B24\u0B30\u0B47 \u0B06\u0B2A\u0B23\u0B19\u0B4D\u0B15\u0B41 \u0B38\u0B2E\u0B4D\u0B2A\u0B30\u0B4D\u0B15 \u0B15\u0B30\u0B3F\u0B2C\u0B41\u0964' : 'Request submitted. We\u2019ll contact you within 24 hours.';
+  String get deleteAccountError => isOdia ? '\u0B05\u0B28\u0B41\u0B30\u0B4B\u0B27 \u0B2A\u0B20\u0B3E\u0B07\u0B2A\u0B3E\u0B30\u0B3F\u0B32\u0B41 \u0B28\u0B3E\u0B39\u0B3F\u0B01\u0964 \u0B2A\u0B41\u0B23\u0B3F \u0B1A\u0B47\u0B37\u0B4D\u0B1F\u0B3E \u0B15\u0B30\u0B28\u0B4D\u0B24\u0B41\u0964' : 'Could not submit request. Please try again.';
   // Force-update gate
   String get forceUpdateTitle => isOdia ? '\u0B05\u0B2A\u0B21\u0B47\u0B1F \u0B06\u0B2C\u0B36\u0B4D\u0B2F\u0B15' : 'Update required';
   String get forceUpdateBody => isOdia ? '\u0B2C\u0B43\u0B24\u0B4D\u0B24\u0B3E\u0B28\u0B4D\u0B24\u0B30 \u0B0F\u0B15 \u0B28\u0B42\u0B24\u0B28 \u0B38\u0B02\u0B38\u0B4D\u0B15\u0B30\u0B23 \u0B09\u0B2A\u0B32\u0B2C\u0B4D\u0B27\u0964 \u0B05\u0B17\u0B4D\u0B30\u0B38\u0B30 \u0B39\u0B2C\u0B3E \u0B2A\u0B3E\u0B07\u0B01 \u0B05\u0B2D\u0B3F\u0B28\u0B2C \u0B38\u0B02\u0B38\u0B4D\u0B15\u0B30\u0B23\u0B15\u0B41 \u0B05\u0B2A\u0B21\u0B47\u0B1F \u0B15\u0B30\u0B28\u0B4D\u0B24\u0B41\u0964' : 'A new version of Vrittant is available. Please update to continue.';
@@ -311,6 +321,14 @@ class AppStrings {
       default: return all;
     }
   }
+
+  // ===========================================================================
+  // Auto-Polish
+  // ===========================================================================
+  String get autoPolish => isOdia ? 'ସ୍ୱୟଂଚାଳିତ ପରିଷ୍କାର' : 'Auto-Polish';
+  String get autoPolishDesc => isOdia
+      ? 'ରେକର୍ଡିଂ ପରେ AI ସ୍ୱୟଂଚାଳିତ ଭାବରେ ଲେଖାକୁ ଠିକ୍ କରିବ'
+      : 'AI automatically refines text after recording';
 
   // ===========================================================================
   // Voice Enrollment

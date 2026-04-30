@@ -100,7 +100,10 @@ class StreamingSttService {
       }
     }
 
-    // Connect WebSocket to backend proxy
+    // Connect WebSocket to backend proxy. The handshake (DNS + TCP +
+    // TLS + WS upgrade) can take 1–3s on a cold connection. We start it
+    // FIRST and run mic + denoiser setup in parallel so the slow paths
+    // overlap; then await readiness before pumping audio.
     final wsBase = ApiConfig.baseUrl.replaceFirst('http', 'ws');
     final uri = Uri.parse(
       '$wsBase/ws/stt?token=${authToken ?? ""}&language_code=$languageCode&model=$model',
@@ -144,7 +147,31 @@ class StreamingSttService {
     // Initialize on-device speech enhancement (fail-safe)
     await _denoiser.init();
 
-    // Forward audio chunks to WebSocket as JSON (Sarvam expected format)
+    // CRITICAL: wait for the WebSocket handshake to complete before
+    // pumping audio. Without this, audio chunks sent during the cold
+    // handshake either get dropped at the proxy or arrive before the
+    // upstream Sarvam session is set up — Sarvam silently discards them
+    // and the user sees zero transcripts during the FIRST recording.
+    // Subsequent recordings worked because TLS session resumption made
+    // the handshake fast enough that audio start happened to land after
+    // it. The 10s timeout exits the recording with a clear error rather
+    // than hanging forever on a broken connection.
+    final wsStartedAt = DateTime.now();
+    try {
+      await _channel!.ready.timeout(const Duration(seconds: 10));
+      final ms = DateTime.now().difference(wsStartedAt).inMilliseconds;
+      debugPrint('[STT] WebSocket ready in ${ms}ms');
+    } on TimeoutException {
+      throw StreamingSttException(
+        'Could not connect to transcription server. Check your internet.',
+      );
+    }
+
+    // Forward audio chunks to WebSocket as JSON (Sarvam expected format).
+    // Audio captured during the await above is buffered in [audioStream]
+    // (single-subscription stream) and flushes here in a burst — no
+    // speech is lost as long as the user started speaking after recorder
+    // start and before the burst.
     _audioSubscription = audioStream.listen(
       (data) {
         // Check ambient noise level on raw audio
@@ -360,6 +387,7 @@ class StreamingSttService {
             (json['data'] as Map<String, dynamic>?)?['transcript'] as String?;
         if (transcript != null && transcript.trim().isNotEmpty) {
           final newText = transcript.trim();
+          debugPrint('[STT] transcript chunk len=${newText.length} preview="${newText.length > 30 ? newText.substring(0, 30) : newText}"');
 
           // Detect new VAD window via common-prefix ratio
           if (_prevRawPartial.isNotEmpty && _prevRawPartial.length > 2) {
