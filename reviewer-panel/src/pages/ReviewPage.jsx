@@ -88,47 +88,52 @@ function ReviewPage() {
       // bind a lot of those (e.g. ⌥⌘I = devtools); we want clean Alt-only.
       if (e.metaKey || e.ctrlKey || e.shiftKey) return;
 
-      const key = e.key.toLowerCase();
-      // Alt+/ → help overlay (toggle). e.key on Alt+/ is "/" on most
-      // layouts; check both for safety.
-      if (key === '/' || e.code === 'Slash') {
+      // CRITICAL: use `e.code`, NOT `e.key`. On macOS, holding Option
+      // produces special characters — Option+H = "˙", Option+B = "∫",
+      // Option+/ = "÷" — so `e.key` no longer matches plain letters.
+      // `e.code` is the physical key identifier ("KeyH", "Slash", etc.)
+      // and is stable across all modifier states.
+      const code = e.code;
+
+      // Alt+/ → toggle the help overlay.
+      if (code === 'Slash') {
         e.preventDefault();
         setHelpOpen((v) => !v);
         return;
       }
 
-      switch (key) {
-        case 'h':
+      switch (code) {
+        case 'KeyH':
           e.preventDefault();
           focusBy('[data-shortcut-target="headline"]');
           break;
-        case 'b':
+        case 'KeyB':
           e.preventDefault();
           // Body = TipTap. Use the editor's own focus command so the caret
           // lands at the last known position instead of bouncing to start.
           s.editor?.commands.focus();
           break;
-        case 'i':
+        case 'KeyI':
           e.preventDefault();
           focusBy('[data-shortcut-target="instruction"]');
           break;
-        case 'c':
+        case 'KeyC':
           e.preventDefault();
           focusBy('[data-shortcut-target="comment"]');
           break;
-        case 'r':
+        case 'KeyR':
           e.preventDefault();
           if (!s.refining) s.handleRefineStory?.();
           break;
-        case 'e':
+        case 'KeyE':
           e.preventDefault();
           s.setActiveTab('editor');
           break;
-        case 'o':
+        case 'KeyO':
           e.preventDefault();
           s.setActiveTab('original');
           break;
-        case 't':
+        case 'KeyT':
           e.preventDefault();
           s.setActiveTab('english');
           break;
