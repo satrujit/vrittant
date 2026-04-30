@@ -255,6 +255,16 @@ class NotepadState {
   /// so it only fires once per signal.
   final int? pendingFocusParagraphIndex;
 
+  /// Canonical text of the article body immediately after the last
+  /// successful AI Refine. Used by the FAB to disable itself when the
+  /// reporter hasn't changed anything since the last refine — re-running
+  /// the LLM on identical input wastes a server round-trip and cents,
+  /// and produces an output that's almost always indistinguishable
+  /// from the previous one. The moment the reporter edits anything,
+  /// the canonical text drifts from this snapshot and the button
+  /// re-enables. Cleared on draft load (paragraphs reset → mismatch).
+  final String? lastRefineSnapshot;
+
   const NotepadState({
     this.headline = '',
     this.displayId,
@@ -286,7 +296,30 @@ class NotepadState {
     this.userNotes,
     this.isGeneratingStory = false,
     this.pendingFocusParagraphIndex,
+    this.lastRefineSnapshot,
   });
+
+  /// The reporter's current article body as a single canonical string
+  /// (paragraphs joined by blank lines, media/table rows excluded).
+  /// Used both as the input to AI Refine AND as the snapshot we compare
+  /// against [lastRefineSnapshot] to decide whether the FAB is stale.
+  String get canonicalBodyText => paragraphs
+      .where((p) => !p.hasMedia && !p.isTable && p.text.trim().isNotEmpty)
+      .map((p) => p.text.trim())
+      .join('\n\n');
+
+  /// True when the reporter has edited the body since the last AI
+  /// Refine ran (or has never refined yet). When false, the FAB is
+  /// disabled — running again on identical input would just waste an
+  /// LLM call. The comparison is on the canonical text so paragraph
+  /// reorders / whitespace tweaks that change rendering but not
+  /// content don't accidentally re-enable the button (and conversely,
+  /// genuine edits always do).
+  bool get isRefineStale {
+    final snapshot = lastRefineSnapshot;
+    if (snapshot == null) return true; // never refined → always enabled
+    return canonicalBodyText != snapshot;
+  }
 
   NotepadState copyWith({
     String? headline,
@@ -328,6 +361,8 @@ class NotepadState {
     bool? isGeneratingStory,
     int? pendingFocusParagraphIndex,
     bool clearPendingFocus = false,
+    String? lastRefineSnapshot,
+    bool clearLastRefineSnapshot = false,
   }) {
     return NotepadState(
       headline: headline ?? this.headline,
@@ -376,6 +411,9 @@ class NotepadState {
       pendingFocusParagraphIndex: clearPendingFocus
           ? null
           : (pendingFocusParagraphIndex ?? this.pendingFocusParagraphIndex),
+      lastRefineSnapshot: clearLastRefineSnapshot
+          ? null
+          : (lastRefineSnapshot ?? this.lastRefineSnapshot),
     );
   }
 
@@ -1245,6 +1283,14 @@ class NotepadNotifier extends Notifier<NotepadState> {
     if (textParas.isEmpty) return;
 
     final raw = textParas.map((p) => p.text.trim()).join('\n\n');
+
+    // Cheap guard: if the reporter just refined and hasn't changed
+    // anything since, the FAB should already be disabled — but the
+    // public API of this method gets called from menus and shortcut
+    // intents too, so re-check at the source. Avoids a wasted server
+    // round-trip + LLM call on identical input.
+    if (!state.isRefineStale) return;
+
     _pushUndo();
     state = state.copyWith(
       isGeneratingStory: true,
@@ -1253,41 +1299,26 @@ class NotepadNotifier extends Notifier<NotepadState> {
     );
 
     try {
-      final messages = [
-        const ChatMessage(
-          role: 'system',
-          content:
-              'You are a senior Odia news editor. The reporter has dictated '
-              'or typed raw notes for a news story. Your job is to weave '
-              'these notes into a publishable Odia article body:\n'
-              '1. Lead paragraph: who/what/when/where, in 1-2 sentences.\n'
-              '2. Follow with supporting paragraphs in logical order.\n'
-              '3. Use clean Odia, proper purna virama (।), and Odia numerals (୦-୯).\n'
-              '4. Preserve every fact and proper noun the reporter mentioned. '
-              'Do NOT invent names, places, dates, or quotes.\n'
-              '5. Keep it tight — newspapers, not blog posts.\n'
-              'Separate paragraphs with a blank line. Return ONLY the article '
-              'body. No headline, no byline, no commentary.',
-        ),
-        ChatMessage(role: 'user', content: raw),
-      ];
-
-      final response = await _sarvam.chat(
-        messages: messages,
-        temperature: 0.3,
-        maxTokens: 4096,
+      // Server-owned endpoint. The system prompt (Pragativadi
+      // editorial standards + legal safeguards), the model choice
+      // (Gemini 2.5 Flash → Sarvam fallback), and post-processing
+      // (Odia digit normalization, purna-virama spacing) all live on
+      // the backend so prompt edits ship as a Cloud Run deploy, not
+      // an APK release. Mobile passes only the raw notes plus the
+      // story id (when we have one) for cost attribution.
+      final body = await _api.generateStory(
+        notes: raw,
+        storyId: _serverStoryId,
       );
-
-      var body = toOdiaDigits(response.firstMessageContent.trim());
-      body = body.replaceAll(RegExp(r'(?<!\s)।'), ' ।');
       if (body.isEmpty) {
         state = state.copyWith(isGeneratingStory: false);
         return;
       }
 
-      // Split on blank lines into paragraphs. Preserve any existing media/
-      // table paragraphs in their original order, appended after the new
-      // text body so reporters don't lose attached photos.
+      // Split on blank lines into paragraphs. Preserve any existing
+      // media / table paragraphs in their original order, appended
+      // after the new text body so reporters don't lose attached
+      // photos when AI Refine runs.
       final newTextParas = body
           .split(RegExp(r'\n\s*\n'))
           .map((s) => s.trim())
@@ -1303,9 +1334,21 @@ class NotepadNotifier extends Notifier<NotepadState> {
           .where((p) => p.hasMedia || p.isTable)
           .toList();
 
+      // Snapshot the canonical text of the polished body. The FAB
+      // compares state.canonicalBodyText against this snapshot via
+      // isRefineStale; while they match, the button is disabled to
+      // stop the reporter from hammering the LLM with no-op refines.
+      // The snapshot must be derived from the SAME paragraphs we put
+      // into state below, otherwise the comparison races against
+      // ordering / id differences. We compute it from the new text +
+      // existing media in identical order to canonicalBodyText.
+      final refinedSnapshot =
+          newTextParas.map((p) => p.text.trim()).join('\n\n');
+
       state = state.copyWith(
         paragraphs: [...newTextParas, ...mediaParas],
         isGeneratingStory: false,
+        lastRefineSnapshot: refinedSnapshot,
       );
       _scheduleAutoSave();
     } catch (_) {

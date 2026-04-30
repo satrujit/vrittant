@@ -840,6 +840,11 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
             child: _AiRefineFab(
               onTap: () => notifier.generateStory(),
               isGenerating: state.isGeneratingStory,
+              // Disabled when the reporter just ran AI Refine and
+              // hasn't changed the body since. Re-enables the moment
+              // anything in the canonical body text differs from the
+              // post-refine snapshot.
+              disabled: !state.isRefineStale,
             ),
           ),
       ],
@@ -3818,66 +3823,92 @@ class _AiRefineFab extends ConsumerWidget {
   final VoidCallback onTap;
   final bool isGenerating;
 
-  const _AiRefineFab({required this.onTap, required this.isGenerating});
+  /// Disable the button when there's nothing meaningful to refine —
+  /// today, that means "the reporter just ran AI Refine and hasn't
+  /// changed anything since". Re-running the LLM on identical input
+  /// wastes a server round-trip + a Gemini call, and the polished
+  /// output is almost always indistinguishable from the previous
+  /// run, so the FAB makes the no-op path visually obvious.
+  final bool disabled;
+
+  const _AiRefineFab({
+    required this.onTap,
+    required this.isGenerating,
+    this.disabled = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = AppStrings.of(ref);
-    return Tooltip(
-      message: s.aiRefineHint,
-      child: Material(
-        color: Colors.transparent,
-        elevation: 0,
-        child: InkWell(
-          onTap: isGenerating ? null : onTap,
-          borderRadius: BorderRadius.circular(28),
-          child: Ink(
-            decoration: BoxDecoration(
-              gradient: AppGradients.electricPulse,
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [
+    final inactive = isGenerating || disabled;
+    // Keep the button visible (never hide it) but desaturate it when
+    // disabled — the reporter can see the tool is there but understand
+    // it's not currently actionable. Tooltip explains why on long press.
+    final ink = Ink(
+      decoration: BoxDecoration(
+        gradient: AppGradients.electricPulse,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: disabled
+            ? null
+            : [
                 BoxShadow(
                   color: AppColors.coral500.withValues(alpha: 0.32),
                   blurRadius: 20,
                   offset: const Offset(0, 6),
                 ),
               ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.base,
-                vertical: AppSpacing.sm + 2,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: isGenerating
-                        ? const CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                          )
-                        : const Icon(
-                            LucideIcons.sparkles,
-                            size: 18,
-                            color: Colors.white,
-                          ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs + 2),
-                  Text(
-                    isGenerating ? s.generatingStory : s.generateStory,
-                    style: AppTypography.odiaBodySmall.copyWith(
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.base,
+          vertical: AppSpacing.sm + 2,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: isGenerating
+                  ? const CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(Colors.white),
+                    )
+                  : const Icon(
+                      LucideIcons.sparkles,
+                      size: 18,
                       color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2,
                     ),
-                  ),
-                ],
+            ),
+            const SizedBox(width: AppSpacing.xs + 2),
+            Text(
+              isGenerating ? s.generatingStory : s.generateStory,
+              style: AppTypography.odiaBodySmall.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+    return Tooltip(
+      message: disabled ? s.aiRefineNoChangesHint : s.aiRefineHint,
+      child: Material(
+        color: Colors.transparent,
+        elevation: 0,
+        child: Opacity(
+          // Soft fade at ~45% — enough to read as inactive at a
+          // glance without making the button invisible. The gradient
+          // colour identity is preserved so the reporter still
+          // recognises this as the same AI Refine affordance.
+          opacity: disabled ? 0.45 : 1.0,
+          child: InkWell(
+            onTap: inactive ? null : onTap,
+            borderRadius: BorderRadius.circular(28),
+            child: ink,
           ),
         ),
       ),

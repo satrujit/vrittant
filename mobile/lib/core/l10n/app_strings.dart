@@ -398,6 +398,12 @@ class AppStrings {
   String get aiRefineHint => isOdia
       ? 'ଓଡ଼ିଆ ଲିପିରେ ସଠିକ୍, ଡୁପ୍ଲିକେଟ୍ ସଫା'
       : 'Clean Odia, dedupe & polish';
+  /// Tooltip on the disabled AI Refine button — shown when the
+  /// reporter just refined and hasn't changed anything since.
+  /// Re-enables the moment they edit any paragraph.
+  String get aiRefineNoChangesHint => isOdia
+      ? 'ସଂଶୋଧନ ପରେ କିଛି ବଦଳ କରିନାହାଁନ୍ତି'
+      : 'No changes since last refine';
   String get userNotes => isOdia ? 'ଉପଯୋଗକର୍ତ୍ତା ଟିପ୍ପଣୀ' : 'User Notes';
   String get processingDontLeave => isOdia
       ? 'ପ୍ରକ୍ରିୟାକରଣ ଚାଲିଛି। ବାହାରକୁ ଗଲେ ବି ସୁରକ୍ଷିତ ରହିବ।'

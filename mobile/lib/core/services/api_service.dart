@@ -242,6 +242,35 @@ class ApiService {
     return (reporter: ReporterProfile.fromJson(raw), raw: raw);
   }
 
+  // -- LLM (server-owned prompts) --
+
+  /// Polish raw reporter notes into a publishable Odia article body.
+  ///
+  /// Calls `POST /api/llm/generate-story`, the server-owned endpoint
+  /// where the system prompt, model choice (Gemini 2.5 Flash → Sarvam
+  /// fallback), and post-processing live. The mobile app sends only
+  /// the reporter's raw notes plus an optional [storyId] for cost
+  /// attribution; everything else is decided by the backend so prompt
+  /// edits ship as a Cloud Run deploy, not an APK release.
+  ///
+  /// Returns the polished body string. Throws on backend failure
+  /// (both Gemini AND Sarvam fallback failed) — the caller surfaces a
+  /// toast and leaves the existing notepad content untouched.
+  Future<String> generateStory({
+    required String notes,
+    String? storyId,
+  }) async {
+    final res = await _dio.post(
+      '/api/llm/generate-story',
+      data: {
+        'notes': notes,
+        if (storyId != null) 'story_id': storyId,
+      },
+    );
+    final body = (res.data as Map<String, dynamic>?)?['body'] as String?;
+    return body?.trim() ?? '';
+  }
+
   // -- Stories --
 
   Future<StoryDto> createStory({
