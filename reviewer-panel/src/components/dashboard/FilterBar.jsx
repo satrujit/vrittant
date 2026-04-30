@@ -48,6 +48,7 @@ export default function FilterBar({
             key={f.value || 'all'}
             type="button"
             onClick={() => onStatusChange(f.value)}
+            aria-pressed={status === f.value}
             className={cn(
               'rounded-[5px] px-2 py-1 text-[11.5px] font-medium transition-colors',
               status === f.value

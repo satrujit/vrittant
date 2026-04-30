@@ -205,6 +205,7 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => setPage(page - 1)}
                 disabled={page === 0}
+                aria-label="Previous page"
                 className="rounded-md border border-border/60 bg-card px-2 py-1 transition-colors hover:bg-accent disabled:opacity-40 disabled:hover:bg-card"
               >
                 ←
@@ -213,6 +214,7 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => setPage(page + 1)}
                 disabled={(page + 1) * PAGE_SIZE >= total}
+                aria-label="Next page"
                 className="rounded-md border border-border/60 bg-card px-2 py-1 transition-colors hover:bg-accent disabled:opacity-40 disabled:hover:bg-card"
               >
                 →

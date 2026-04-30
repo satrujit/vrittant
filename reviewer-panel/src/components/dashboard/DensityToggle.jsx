@@ -21,6 +21,8 @@ export default function DensityToggle({ value, onChange }) {
             key={key}
             type="button"
             onClick={() => onChange(key)}
+            aria-pressed={active}
+            aria-label={t(`dashboard.density.${key}`) || d.label}
             className={cn(
               'flex size-7 items-center justify-center rounded-[5px] transition-colors',
               active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
