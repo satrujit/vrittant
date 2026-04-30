@@ -92,18 +92,21 @@ export default function ReviewQueueTable({
 
       {stories.map((story) => {
         return (
-          <RowHoverPeek key={story.id} story={story}>
-            <div
-              role="row"
-              data-row-id={story.id}
-              className={cn(
-                'group grid cursor-pointer items-center gap-4 px-4 transition-colors',
-                'hover:bg-accent/40',
-              )}
-              style={{ gridTemplateColumns: GRID_COLS, height: rowHeight }}
-              onClick={() => navigate(`/review/${story.id}`)}
-            >
-              {/* Story title — gets the most horizontal space */}
+          <div
+            key={story.id}
+            role="row"
+            data-row-id={story.id}
+            className={cn(
+              'group grid cursor-pointer items-center gap-4 px-4 transition-colors',
+              'hover:bg-accent/40',
+            )}
+            style={{ gridTemplateColumns: GRID_COLS, height: rowHeight }}
+            onClick={() => navigate(`/review/${story.id}`)}
+          >
+            {/* Story title — only this cell triggers the hover-peek so the
+                preview doesn't pop while the cursor is grazing the time
+                or category cells. The rest of the row is just clickable. */}
+            <RowHoverPeek story={story}>
               <div className="min-w-0">
                 <div className="truncate text-[13.5px] font-medium text-foreground">
                   {story.headline || t('table.untitled') || 'Untitled'}
@@ -112,6 +115,7 @@ export default function ReviewQueueTable({
                   <div className="text-[11px] font-medium text-blue-600">{story.display_id}</div>
                 )}
               </div>
+            </RowHoverPeek>
 
               {/* Submitted — time on top, ingest mode below */}
               <div className="min-w-0">
@@ -160,8 +164,7 @@ export default function ReviewQueueTable({
               <div>
                 <InlineStatusPill status={story.status} disabled />
               </div>
-            </div>
-          </RowHoverPeek>
+          </div>
         );
       })}
     </div>
