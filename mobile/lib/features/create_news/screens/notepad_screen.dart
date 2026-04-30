@@ -116,13 +116,19 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
       duration: const Duration(milliseconds: 2500),
     )..repeat();
 
-    // Initialize story from server
+    // Initialize story. Three branches:
+    //   - "local-<localId>" → hydrate from Hive (local-first draft)
+    //   - "<serverUuid>"    → load existing server-side story
+    //   - null              → brand-new local draft (no server call)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final notifier = ref.read(notepadProvider.notifier);
-      if (widget.storyId != null) {
-        notifier.initWithExistingStory(widget.storyId!);
-      } else {
+      final id = widget.storyId;
+      if (id == null) {
         notifier.initWithNewStory();
+      } else if (id.startsWith('local-')) {
+        notifier.initWithLocalDraft(id.substring('local-'.length));
+      } else {
+        notifier.initWithExistingStory(id);
       }
     });
   }

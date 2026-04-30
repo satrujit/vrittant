@@ -57,6 +57,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       backgroundColor: context.t.scaffoldBg,
       floatingActionButton: FloatingActionButton(
+        // Local-first: tapping + creates a draft entirely on-device. The
+        // notepad / create_news_provider generates a fresh local id and
+        // persists to Hive on the first auto-save. No server call here.
         onPressed: () => context.push('/create'),
         backgroundColor: AppColors.vrCoral,
         elevation: 4,
@@ -183,11 +186,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Filter to only show today's stories
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
-    final stories = storiesState.stories
+    final serverStories = storiesState.serverStories
         .where((s) => s.createdAt.isAfter(todayStart))
         .toList();
+    final drafts = storiesState.localDrafts
+        .where((d) => d.createdAt.isAfter(todayStart))
+        .toList();
 
-    if (stories.isEmpty) {
+    final total = serverStories.length + drafts.length;
+    if (total == 0) {
       return _buildFullEmptyState();
     }
 
@@ -197,10 +204,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       children: [
         _buildSectionLabel(
           s.latestStories,
-          trailing: s.totalCount(stories.length),
+          trailing: s.totalCount(total),
         ),
         const SizedBox(height: 10),
-        ...stories.map((story) => _buildStoryCard(story)),
+        ...drafts.map(_buildDraftCard),
+        ...serverStories.map(_buildStoryCard),
         const SizedBox(height: 100), // space for FAB
       ],
     );
@@ -279,6 +287,84 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         decoration: const BoxDecoration(
           shape: BoxShape.circle,
           color: AppColors.vrMuted,
+        ),
+      ),
+    );
+  }
+
+  /// Render a local Hive draft as a story card. Drafts have no server
+  /// display_id (they haven't been submitted yet) so the chip is hidden.
+  Widget _buildDraftCard(DraftSummary draft) {
+    final s = AppStrings.of(ref);
+    final headline = draft.headline.isNotEmpty ? draft.headline : s.untitledDraft;
+    final category =
+        draft.category != null ? s.categoryLabel(draft.category) : null;
+
+    return InkWell(
+      onTap: () => context.push('/create?storyId=local-${draft.localId}'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: AppColors.vrCardBorder, width: 0.5),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    headline,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: draft.headline.isEmpty
+                          ? AppColors.vrMuted
+                          : AppColors.vrHeading,
+                      height: 1.35,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(
+                        _shortDate(draft.updatedAt),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: AppColors.vrCoral,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (category != null && category.isNotEmpty) ...[
+                        _dot(),
+                        Text(
+                          category,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: AppColors.vrMuted,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 8),
+                      _statusIcon('draft'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              LucideIcons.chevronRight,
+              size: 18,
+              color: AppColors.vrMuted,
+            ),
+          ],
         ),
       ),
     );

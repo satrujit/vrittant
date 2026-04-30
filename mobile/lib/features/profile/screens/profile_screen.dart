@@ -136,10 +136,11 @@ class ProfileScreen extends ConsumerWidget {
 
   Widget _buildStats(BuildContext context, StoriesState storiesState, AppStrings s) {
     final t = context.t;
-    final stories = storiesState.stories;
-    final total = stories.length;
-    final drafts = stories.where((s) => s.status == 'draft').length;
-    final published = stories.where((s) => s.status != 'draft').length;
+    // Drafts now live entirely on the device (Hive); submitted+ stories
+    // come from the server. Total is the union.
+    final drafts = storiesState.localDrafts.length;
+    final published = storiesState.serverStories.length;
+    final total = drafts + published;
 
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.xl),
