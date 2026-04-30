@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -153,11 +154,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             logoUrl.startsWith('http') ? logoUrl : '${ApiConfig.baseUrl}$logoUrl';
         return ConstrainedBox(
           constraints: BoxConstraints(maxWidth: 160, maxHeight: height),
-          child: Image.network(
-            fullUrl,
+          child: CachedNetworkImage(
+            imageUrl: fullUrl,
             height: height,
             fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => Text(
+            errorWidget: (_, __, ___) => Text(
               reporter?.org?.name ?? '',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
@@ -165,6 +166,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 color: AppColors.vrHeading,
               ),
             ),
+            placeholder: (_, __) => SizedBox(height: height),
           ),
         );
       }

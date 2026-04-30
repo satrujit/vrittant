@@ -1,4 +1,5 @@
 import 'package:audioplayers/audioplayers.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -52,11 +53,11 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     if (logoUrl != null && logoUrl.isNotEmpty) {
       final fullUrl =
           logoUrl.startsWith('http') ? logoUrl : '${ApiConfig.baseUrl}$logoUrl';
-      return Image.network(
-        fullUrl,
+      return CachedNetworkImage(
+        imageUrl: fullUrl,
         height: height,
         fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => Text(
+        errorWidget: (_, __, ___) => Text(
           reporter?.org?.name ?? '',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 14,
@@ -64,6 +65,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
             color: AppColors.vrHeading,
           ),
         ),
+        placeholder: (_, __) => SizedBox(height: height),
       );
     }
     return Text(
@@ -635,17 +637,21 @@ class _ScenePhotoCard extends StatelessWidget {
             ),
             clipBehavior: Clip.antiAlias,
             child: url.isNotEmpty
-                ? Image.network(
-                    _fullUrl(url),
+                ? CachedNetworkImage(
+                    imageUrl: _fullUrl(url),
                     fit: BoxFit.cover,
                     width: 170,
                     height: 130,
-                    errorBuilder: (_, __, ___) => Center(
+                    errorWidget: (_, __, ___) => Center(
                       child: Icon(
                         LucideIcons.image,
                         size: 32,
                         color: AppColors.vrCoral.withValues(alpha: 0.6),
                       ),
+                    ),
+                    placeholder: (_, __) => const SizedBox(
+                      width: 170,
+                      height: 130,
                     ),
                   )
                 : Center(
@@ -866,14 +872,15 @@ class _FilesFullScreenImage extends StatelessWidget {
         child: InteractiveViewer(
           minScale: 0.5,
           maxScale: 4.0,
-          child: Image.network(
-            url,
+          child: CachedNetworkImage(
+            imageUrl: url,
             fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => Icon(
+            errorWidget: (_, __, ___) => Icon(
               LucideIcons.imageOff,
               size: 48,
               color: Colors.white.withValues(alpha: 0.5),
             ),
+            placeholder: (_, __) => const SizedBox.shrink(),
           ),
         ),
       ),

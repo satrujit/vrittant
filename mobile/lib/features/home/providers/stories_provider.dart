@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/api_service.dart';
 import '../../../core/services/local_drafts_store.dart';
+import '../../../core/services/local_stories_cache.dart';
 
 /// Lightweight summary of a local Hive draft, surfaced to the home screen
 /// so it can render a card without rehydrating the full payload.
@@ -106,10 +107,25 @@ class StoriesNotifier extends Notifier<StoriesState> {
       _draftsSub?.cancel();
       _draftsSub = null;
     });
-    return StoriesState(localDrafts: _readDrafts());
+
+    // Stale-while-revalidate: seed serverStories synchronously from the
+    // on-disk cache so the UI renders instantly. We then kick off a
+    // background refresh in a microtask — no spinner unless the cache
+    // was empty (cold start).
+    final cached = ref
+        .read(localStoriesCacheProvider)
+        .all()
+        .where((s) => s.status != 'draft')
+        .toList();
+    Future.microtask(() => fetchStories());
+    return StoriesState(
+      localDrafts: _readDrafts(),
+      serverStories: cached,
+    );
   }
 
   ApiService get _api => ref.read(apiServiceProvider);
+  LocalStoriesCache get _cache => ref.read(localStoriesCacheProvider);
 
   List<DraftSummary> _readDrafts() {
     return ref
@@ -120,18 +136,28 @@ class StoriesNotifier extends Notifier<StoriesState> {
   }
 
   Future<void> fetchStories() async {
-    state = state.copyWith(isLoading: true, clearError: true);
+    // Only show the spinner on a cold cache — otherwise we already have
+    // something on-screen and the refresh runs silently in the background.
+    final coldCache = state.serverStories.isEmpty;
+    state = state.copyWith(
+      isLoading: coldCache,
+      clearError: true,
+    );
     try {
       // We only need server-side stories that have moved past draft.
       // Server defaults to all statuses for the reporter; we filter
       // client-side so legacy server-side drafts (pre-refactor) still
       // show up under the submitted list rather than vanishing.
       final stories = await _api.listStories();
+      // Cache the full server response (including any server-side
+      // drafts) so a re-seed on next launch matches what we'd fetch.
+      await _cache.replaceAll(stories);
       state = state.copyWith(
         serverStories: stories.where((s) => s.status != 'draft').toList(),
         isLoading: false,
       );
     } catch (e) {
+      // Keep cache contents in state on failure; surface error to UI.
       state = state.copyWith(isLoading: false, error: 'Failed to load stories');
     }
   }
@@ -150,6 +176,7 @@ class StoriesNotifier extends Notifier<StoriesState> {
       final updated =
           state.serverStories.where((s) => s.id != storyId).toList();
       state = state.copyWith(serverStories: updated);
+      await _cache.remove(storyId);
       return true;
     } catch (_) {
       return false;

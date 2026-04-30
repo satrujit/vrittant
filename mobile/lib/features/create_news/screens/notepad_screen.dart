@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -2570,13 +2571,17 @@ class _MediaBlockState extends ConsumerState<_MediaBlock> {
     }
     // Server URL (relative like /uploads/xxx.jpg or absolute http)
     final url = _resolveUrl(mediaPath);
-    return Image.network(
-      url,
+    return CachedNetworkImage(
+      imageUrl: url,
       fit: BoxFit.cover,
       width: double.infinity,
       height: 200,
-      errorBuilder: (_, __, ___) => Center(
+      errorWidget: (_, __, ___) => Center(
         child: Icon(LucideIcons.image, size: 32, color: AppColors.vrCoral.withValues(alpha: 0.5)),
+      ),
+      placeholder: (_, __) => const SizedBox(
+        width: double.infinity,
+        height: 200,
       ),
     );
   }
@@ -2926,12 +2931,13 @@ class _FullScreenImageViewer extends StatelessWidget {
         imageWidget = const SizedBox.shrink();
       }
     } else {
-      imageWidget = Image.network(
-        _resolveUrl(mediaPath),
+      imageWidget = CachedNetworkImage(
+        imageUrl: _resolveUrl(mediaPath),
         fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => Center(
+        errorWidget: (_, __, ___) => Center(
           child: Icon(LucideIcons.imageOff, size: 48, color: Colors.white.withValues(alpha: 0.5)),
         ),
+        placeholder: (_, __) => const SizedBox.shrink(),
       );
     }
 
