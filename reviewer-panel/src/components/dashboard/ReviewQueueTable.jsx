@@ -6,7 +6,6 @@ import { useI18n } from '../../i18n';
 import { DENSITIES } from '../../hooks/useDensityPreference';
 import InlineStatusPill from './InlineStatusPill';
 import RowHoverPeek from './RowHoverPeek';
-import AssigneePicker from './AssigneePicker';
 
 // Map the backend `source` string (heterogeneous, set by various ingest
 // paths) into a human-readable submission mode shown below the time. The
@@ -47,20 +46,14 @@ function categoryDotColor(category) {
 // Column geometry — kept identical between header and rows so they line up.
 // Story gets the most space; reporter sits AFTER submitted/category so the
 // title is the first thing the eye lands on. Submitted is wide enough for a
-// time stamp on the first line and a submission-mode label below. Last
-// column is the inline assignee picker (replaces the previous chevron;
-// since the row is already clickable the chevron was redundant).
+// time stamp on the first line and a submission-mode label below.
 const GRID_COLS =
-  'minmax(0,2.6fr) 140px 130px minmax(0,1.2fr) 120px minmax(0,1.2fr)';
+  'minmax(0,3fr) 140px 130px minmax(0,1.4fr) 130px';
 
 export default function ReviewQueueTable({
   stories,
   loading,
   density = 'comfortable',
-  focusedIndex = -1,
-  onRowFocus,
-  reviewers = [],
-  onReassign,
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -95,11 +88,9 @@ export default function ReviewQueueTable({
         <div>{t('table.category')}</div>
         <div>{t('table.reporterSubject')}</div>
         <div>{t('table.status')}</div>
-        <div>{t('dashboard.assignedTo') || 'Assigned to'}</div>
       </div>
 
-      {stories.map((story, idx) => {
-        const isFocused = idx === focusedIndex;
+      {stories.map((story) => {
         return (
           <RowHoverPeek key={story.id} story={story}>
             <div
@@ -108,7 +99,6 @@ export default function ReviewQueueTable({
               className={cn(
                 'group grid cursor-pointer items-center gap-4 px-4 transition-colors',
                 'hover:bg-accent/40',
-                isFocused && 'bg-primary/[0.04] shadow-[inset_2px_0_0_0_var(--primary)]',
               )}
               style={{ gridTemplateColumns: GRID_COLS, height: rowHeight }}
               onClick={() => navigate(`/review/${story.id}`)}
@@ -169,18 +159,6 @@ export default function ReviewQueueTable({
                   accidental approvals/rejections too easy. */}
               <div>
                 <InlineStatusPill status={story.status} disabled />
-              </div>
-
-              {/* Assignee picker — click-to-reassign without leaving the
-                  queue. Wrapper stops the row's onClick from firing while
-                  the popover is open / a reviewer is being picked. */}
-              <div onClick={(e) => e.stopPropagation()}>
-                <AssigneePicker
-                  currentId={story.assigned_to}
-                  currentName={story.assignee_name}
-                  reviewers={reviewers}
-                  onChange={(nextId) => onReassign?.(story.id, nextId)}
-                />
               </div>
             </div>
           </RowHoverPeek>

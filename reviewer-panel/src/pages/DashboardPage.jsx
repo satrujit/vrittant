@@ -2,10 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   fetchStats, fetchStories, transformStory,
-  fetchReporters, fetchOrgUsers, reassignStory,
+  fetchReporters,
 } from '../services/api';
 import { useDensityPreference } from '../hooks/useDensityPreference';
-import { useKeyboardRowNav } from '../hooks/useKeyboardRowNav';
 import StatStrip from '../components/dashboard/StatStrip';
 import FilterBar from '../components/dashboard/FilterBar';
 import ReviewQueueTable from '../components/dashboard/ReviewQueueTable';
@@ -38,20 +37,10 @@ export default function DashboardPage() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [reporterFilter, setReporterFilter] = useState('');
 
-  // Pickable lists for the FilterBar's reporter dropdown and the
-  // per-row AssigneePicker. Loaded once on mount.
+  // Reporters list for the FilterBar dropdown. Loaded once on mount.
   const [reporters, setReporters] = useState([]);
-  const [reviewers, setReviewers] = useState([]);
   useEffect(() => {
     fetchReporters().then((data) => setReporters(data?.reporters || [])).catch(() => {});
-    // Anyone who is not a plain reporter can be assigned a story —
-    // reviewers, org_admins, etc. fetchOrgUsers returns the active set.
-    fetchOrgUsers().then((data) => {
-      const list = (data?.users || [])
-        .filter((u) => u.user_type !== 'reporter')
-        .map((u) => ({ id: u.id, name: u.name }));
-      setReviewers(list);
-    }).catch(() => {});
   }, []);
 
   // Pagination — synced to ?page=N
@@ -141,40 +130,11 @@ export default function DashboardPage() {
     return () => clearInterval(intervalRef.current);
   }, [loadStats, loadStories]);
 
-  // Keyboard nav. Status changes are deliberately NOT exposed from the
-  // queue table — too easy to misclick / miskey through 25 rows. The review
-  // page is the only path for changing a story's status.
-  const onOpenRow = useCallback((idx) => {
-    const story = stories[idx];
-    if (story) navigate(`/review/${story.id}`);
-  }, [stories, navigate]);
-
-  const { focusedIndex, setFocusedIndex, handleKeyDown } = useKeyboardRowNav({
-    rowCount: stories.length,
-    onOpen: onOpenRow,
-  });
-
-  // Optimistic reassignment from the queue. Patches the local stories
-  // array immediately, fires the API, reverts via re-fetch on failure.
-  const handleReassign = useCallback(async (storyId, nextAssigneeId) => {
-    const target = reviewers.find((r) => r.id === nextAssigneeId);
-    setStories((prev) => prev.map((s) =>
-      s.id === storyId
-        ? { ...s, assigned_to: nextAssigneeId, assignee_name: target?.name || null }
-        : s
-    ));
-    try {
-      await reassignStory(storyId, nextAssigneeId);
-    } catch (err) {
-      console.error('Reassign failed:', err);
-      loadStories(); // revert by re-fetching truth
-    }
-  }, [reviewers, loadStories]);
-
   // ── ←/→ pagination ────────────────────────────────────────────────────────
   // Global arrow-key paging on the queue. Skipped while typing in any
   // input/textarea/contenteditable; ignored when ⌘/Ctrl/Alt are held so
-  // browser back-forward (Cmd+←/→) still works.
+  // browser back-forward (Cmd+←/→) still works. ↑/↓ are deliberately
+  // NOT intercepted so they scroll the page naturally.
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -269,11 +229,6 @@ export default function DashboardPage() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [tryJumpToSeq]);
 
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
-
   const categories = useMemo(
     () => (config?.categories || []).map((c) => c.label || c),
     [config]
@@ -352,10 +307,6 @@ export default function DashboardPage() {
             stories={stories}
             loading={storiesLoading}
             density={density}
-            focusedIndex={focusedIndex}
-            onRowFocus={setFocusedIndex}
-            reviewers={reviewers}
-            onReassign={handleReassign}
           />
         </div>
         {total > PAGE_SIZE && (
