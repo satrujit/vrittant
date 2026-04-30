@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -178,11 +179,11 @@ class _AllNewsScreenState extends ConsumerState<AllNewsScreen>
     if (logoUrl != null && logoUrl.isNotEmpty) {
       final fullUrl =
           logoUrl.startsWith('http') ? logoUrl : '${ApiConfig.baseUrl}$logoUrl';
-      return Image.network(
-        fullUrl,
+      return CachedNetworkImage(
+        imageUrl: fullUrl,
         height: height,
         fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => Text(
+        errorWidget: (_, __, ___) => Text(
           reporter?.org?.name ?? '',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 14,
@@ -190,6 +191,7 @@ class _AllNewsScreenState extends ConsumerState<AllNewsScreen>
             color: AppColors.vrHeading,
           ),
         ),
+        placeholder: (_, __) => SizedBox(height: height),
       );
     }
     return Text(

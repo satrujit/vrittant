@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
@@ -11,6 +12,7 @@ import '../../../core/services/api_service.dart';
 import '../../../core/services/audio_upload_queue.dart';
 import '../../../core/services/enrollment_storage.dart';
 import '../../../core/services/file_picker_service.dart';
+import '../../../core/services/local_drafts_store.dart';
 import '../../../core/services/sarvam_api.dart';
 import '../../../core/services/stt_service.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -137,6 +139,73 @@ class Paragraph {
 
   /// Whether this paragraph is a table block.
   bool get isTable => tableData != null && tableData!.isNotEmpty;
+
+  /// Serialise to the same shape the backend expects in the
+  /// `paragraphs` field of a story payload. Used both for the local
+  /// Hive draft store and for the eventual server POST on submit.
+  ///
+  /// Mirrors the inline serialisation that used to live in
+  /// `_syncToServer`; centralised here so local + server payloads stay
+  /// identical.
+  Map<String, dynamic> toJson() {
+    // Never persist base64 data URLs (they bloat both Hive and the
+    // server payload and aren't valid file paths anyway).
+    final path =
+        (mediaPath != null && mediaPath!.startsWith('data:')) ? null : mediaPath;
+    return {
+      'id': id,
+      'text': text,
+      'media_path': path,
+      'media_type': path != null ? mediaType?.name : null,
+      'media_name': path != null ? mediaName : null,
+      'table_data': tableData,
+      'created_at': createdAt.toIso8601String(),
+      if (transcriptionAudioPath != null)
+        'transcription_audio_path': transcriptionAudioPath,
+      if (transcriptionStatus != null)
+        'transcription_status': transcriptionStatus,
+    };
+  }
+
+  /// Inverse of [toJson] / the server paragraph shape. Used when
+  /// rehydrating a draft from Hive or loading a story from the API.
+  factory Paragraph.fromMap(Map<String, dynamic> p) {
+    final mediaTypeStr = p['media_type'] as String?;
+    MediaType? mediaType;
+    if (mediaTypeStr != null) {
+      mediaType =
+          MediaType.values.where((e) => e.name == mediaTypeStr).firstOrNull;
+    }
+    // Backward compat: read old photo_path field
+    final mediaPath =
+        p['media_path'] as String? ?? p['photo_path'] as String?;
+    if (mediaPath != null && mediaType == null) {
+      mediaType = MediaType.photo;
+    }
+
+    List<List<String>>? tableData;
+    final rawTable = p['table_data'];
+    if (rawTable is List) {
+      tableData = rawTable
+          .map((row) => (row as List).map((c) => c.toString()).toList())
+          .toList();
+    }
+
+    return Paragraph(
+      id: p['id'] as String? ??
+          DateTime.now().millisecondsSinceEpoch.toString(),
+      text: p['text'] as String? ?? '',
+      mediaPath: mediaPath,
+      mediaType: mediaType,
+      mediaName: p['media_name'] as String?,
+      tableData: tableData,
+      createdAt: p['created_at'] != null
+          ? DateTime.tryParse(p['created_at'] as String) ?? DateTime.now()
+          : DateTime.now(),
+      transcriptionAudioPath: p['transcription_audio_path'] as String?,
+      transcriptionStatus: p['transcription_status'] as String?,
+    );
+  }
 }
 
 // =============================================================================
@@ -318,8 +387,20 @@ class NotepadNotifier extends Notifier<NotepadState> {
   Timer? _recordingTimer;
   final OcrService _ocrService = OcrService();
 
-  /// Server-side story ID (null if not yet created on server).
+  /// Server-side story ID (null until the reporter taps Submit and the
+  /// story is created on the server).
   String? _serverStoryId;
+
+  /// Local-only id for the in-progress draft. Generated client-side when
+  /// the reporter taps + on the home screen, so we can persist to Hive
+  /// without any server round-trip. Cleared after a successful submit
+  /// (the draft is then represented purely by [_serverStoryId]).
+  String? _localId;
+
+  /// Timestamp the local draft was first opened. Persisted in the Hive
+  /// payload so re-hydration preserves the original "createdAt" rather
+  /// than rewriting it on every save.
+  DateTime _localCreatedAt = DateTime.now();
 
   /// The status of the story on the server (draft, submitted, etc.).
   String _storyStatus = 'draft';
@@ -327,8 +408,20 @@ class NotepadNotifier extends Notifier<NotepadState> {
   /// Public accessor for the current server story ID.
   String? get serverStoryId => _serverStoryId;
 
+  /// Public accessor for the local draft id (null when the editor was
+  /// opened on a server-side / already-submitted story).
+  String? get localId => _localId;
+
   /// Public accessor for the story status.
   String get storyStatus => _storyStatus;
+
+  /// Generates a fresh local draft id. Format: `<ms>-<rand-hex>` — unique
+  /// enough for a single device, no extra dependency required.
+  String _newLocalId() {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final rand = Random().nextInt(1 << 32).toRadixString(16);
+    return '$ts-$rand';
+  }
 
   /// Pick the right copy for the current UI language. Used for user-facing
   /// error toasts that originate inside the provider (away from any widget).
@@ -420,12 +513,18 @@ class NotepadNotifier extends Notifier<NotepadState> {
   // Server sync — init, auto-save, submit
   // ---------------------------------------------------------------------------
 
-  /// Initialize with a new story (creates on server).
+  /// Initialize with a new local-only draft. No network call: the draft
+  /// lives entirely in Hive until the reporter taps Submit.
   Future<void> initWithNewStory() async {
     // Reset any leftover state from a previous story
     _reRecordingIndex = null;
     _autoSaveTimer?.cancel();
     _autoSaveTimer = null;
+
+    _localId = _newLocalId();
+    _localCreatedAt = DateTime.now();
+    _serverStoryId = null;
+    _storyStatus = 'draft';
 
     // Set initial location from reporter's tagged area
     final auth = ref.read(authProvider);
@@ -433,68 +532,62 @@ class NotepadNotifier extends Notifier<NotepadState> {
     state = NotepadState(
       location: (reporterArea != null && reporterArea.isNotEmpty) ? reporterArea : null,
     );
-
-    try {
-      final story = await _api.createStory();
-      _serverStoryId = story.id;
-      // Stamp the server-assigned display id on the editor state so the
-      // headline area can render "PNS-26-1234" right from the first save.
-      if (story.displayId != null) {
-        state = state.copyWith(displayId: story.displayId);
-      }
-      debugPrint('[create_news] initWithNewStory OK serverStoryId=$_serverStoryId displayId=${story.displayId}');
-    } catch (e) {
-      debugPrint('[create_news] initWithNewStory FAILED: $e');
-      // If server unreachable, work locally without server ID
-    }
+    debugPrint('[create_news] initWithNewStory OK localId=$_localId');
   }
 
-  /// Initialize from an existing story (loads from server).
+  /// Initialize from an existing local draft (Hive). Used when the
+  /// reporter taps a draft card on the home screen.
+  Future<void> initWithLocalDraft(String localId) async {
+    _reRecordingIndex = null;
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+
+    final payload = ref.read(localDraftsStoreProvider).load(localId);
+    if (payload == null) {
+      // The draft was deleted out from under us — fall back to a fresh draft.
+      debugPrint('[create_news] initWithLocalDraft MISS localId=$localId — starting new');
+      return initWithNewStory();
+    }
+
+    _localId = localId;
+    _serverStoryId = null;
+    _storyStatus = 'draft';
+
+    final createdRaw = payload['created_at'] as String?;
+    _localCreatedAt =
+        (createdRaw != null ? DateTime.tryParse(createdRaw) : null) ??
+            DateTime.now();
+
+    final paragraphsRaw = payload['paragraphs'];
+    final paragraphs = paragraphsRaw is List
+        ? paragraphsRaw
+            .whereType<Map>()
+            .map((p) => Paragraph.fromMap(Map<String, dynamic>.from(p)))
+            .toList()
+        : <Paragraph>[];
+
+    state = NotepadState(
+      headline: payload['headline'] as String? ?? '',
+      category: payload['category'] as String?,
+      location: payload['location'] as String?,
+      paragraphs: paragraphs,
+      userNotes: payload['user_notes'] as String?,
+    );
+    debugPrint('[create_news] initWithLocalDraft OK localId=$_localId paragraphs=${paragraphs.length}');
+  }
+
+  /// Initialize from an existing server-side story (loads from server).
+  /// Used when the reporter taps an already-submitted story on the home
+  /// screen. Local-only drafts go through [initWithLocalDraft] instead.
   Future<void> initWithExistingStory(String storyId) async {
+    _localId = null;
     _serverStoryId = storyId;
     try {
       final story = await _api.getStory(storyId);
       _storyStatus = story.status;
 
-      // Convert server paragraphs to local Paragraph objects
-      final paragraphs = story.paragraphs.map((p) {
-        final mediaTypeStr = p['media_type'] as String?;
-        MediaType? mediaType;
-        if (mediaTypeStr != null) {
-          mediaType = MediaType.values.where((e) => e.name == mediaTypeStr).firstOrNull;
-        }
-        // Backward compat: read old photo_path field
-        final mediaPath = p['media_path'] as String? ?? p['photo_path'] as String?;
-        if (mediaPath != null && mediaType == null) {
-          mediaType = MediaType.photo;
-        }
-
-        // Parse table_data if present
-        List<List<String>>? tableData;
-        final rawTable = p['table_data'];
-        if (rawTable is List) {
-          tableData = rawTable
-              .map((row) => (row as List).map((c) => c.toString()).toList())
-              .toList();
-        }
-
-        return Paragraph(
-          id: p['id'] as String? ??
-              DateTime.now().millisecondsSinceEpoch.toString(),
-          text: p['text'] as String? ?? '',
-          mediaPath: mediaPath,
-          mediaType: mediaType,
-          mediaName: p['media_name'] as String?,
-          tableData: tableData,
-          createdAt: p['created_at'] != null
-              ? DateTime.tryParse(p['created_at'] as String) ?? DateTime.now()
-              : DateTime.now(),
-          // Optional fields from the always-upload pipeline. Old servers
-          // omit them entirely — Paragraph defaults handle that.
-          transcriptionAudioPath: p['transcription_audio_path'] as String?,
-          transcriptionStatus: p['transcription_status'] as String?,
-        );
-      }).toList();
+      final paragraphs =
+          story.paragraphs.map((p) => Paragraph.fromMap(p)).toList();
 
       state = NotepadState(
         headline: story.headline,
@@ -543,70 +636,39 @@ class NotepadNotifier extends Notifier<NotepadState> {
     }();
   }
 
-  /// Debounced auto-save to server.
+  /// Debounced auto-save to local storage.
   void _scheduleAutoSave() {
     _autoSaveTimer?.cancel();
     _autoSaveTimer = Timer(const Duration(milliseconds: 800), () {
-      _syncToServer();
+      _persistDraft();
     });
   }
 
-  Future<void> _syncToServer() async {
-    // Self-heal: if the initial createStory() call failed (transient network
-    // / auth blip), _serverStoryId stays null forever and every save silently
-    // no-ops — work is lost on close. Try once to create the story now so
-    // subsequent saves can succeed.
-    if (_serverStoryId == null) {
-      if (!_hasContent) {
-        // Nothing to save anyway.
-        return;
-      }
-      try {
-        debugPrint('[create_news] _syncToServer lazy createStory — recovering from missing _serverStoryId');
-        final story = await _api.createStory();
-        _serverStoryId = story.id;
-        debugPrint('[create_news] _syncToServer lazy createStory OK id=$_serverStoryId');
-      } catch (e) {
-        debugPrint('[create_news] _syncToServer lazy createStory FAILED: $e — save deferred');
-        return;
-      }
+  /// Local-first persistence: write the current editor state to the Hive
+  /// drafts box. No network call. The server only learns about the story
+  /// when the reporter taps Submit (see [submitStory]).
+  Future<void> _persistDraft() async {
+    if (_localId == null) {
+      // Editor is bound to a server-side / already-submitted story. The
+      // PUT-update path lives in [saveBeforeClose] for that case; auto-save
+      // is intentionally a no-op here.
+      return;
     }
     try {
-      debugPrint('[create_news] _syncToServer START id=$_serverStoryId paragraphs=${state.paragraphs.length} headline="${state.headline}"');
-      await _api.updateStory(
-        _serverStoryId!,
-        headline: state.headline,
-        category: state.category,
-        location: state.location,
-        paragraphs: state.paragraphs
-            .map((p) {
-              // Never send base64 data URLs to the server — strip them
-              final path = (p.mediaPath != null && p.mediaPath!.startsWith('data:'))
-                  ? null
-                  : p.mediaPath;
-              return {
-                'id': p.id,
-                'text': p.text,
-                'media_path': path,
-                'media_type': path != null ? p.mediaType?.name : null,
-                'media_name': path != null ? p.mediaName : null,
-                'table_data': p.tableData,
-                'created_at': p.createdAt.toIso8601String(),
-                // Round-trip transcription metadata so the server doesn't
-                // think we wiped its always-upload pipeline state. Only
-                // included when set, to keep the payload tidy on old paragraphs.
-                if (p.transcriptionAudioPath != null)
-                  'transcription_audio_path': p.transcriptionAudioPath,
-                if (p.transcriptionStatus != null)
-                  'transcription_status': p.transcriptionStatus,
-              };
-            })
-            .toList(),
-      );
-      debugPrint('[create_news] _syncToServer OK id=$_serverStoryId');
+      final payload = <String, dynamic>{
+        'local_id': _localId,
+        'headline': state.headline,
+        'category': state.category,
+        'location': state.location,
+        'paragraphs': state.paragraphs.map((p) => p.toJson()).toList(),
+        'user_notes': state.userNotes,
+        'created_at': _localCreatedAt.toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      await ref.read(localDraftsStoreProvider).save(_localId!, payload);
+      debugPrint('[create_news] _persistDraft OK localId=$_localId paragraphs=${state.paragraphs.length}');
     } catch (e) {
-      debugPrint('[create_news] _syncToServer FAILED id=$_serverStoryId: $e');
-      // Sync failed — will retry on next auto-save
+      debugPrint('[create_news] _persistDraft FAILED localId=$_localId: $e');
     }
   }
 
@@ -615,10 +677,12 @@ class NotepadNotifier extends Notifier<NotepadState> {
       state.headline.isNotEmpty ||
       state.paragraphs.any((p) => p.text.isNotEmpty || p.hasMedia || p.isTable);
 
-  /// Flushes any pending changes to the server, then resets local state.
-  /// If the story is empty (no headline, no content), deletes it instead.
+  /// Flushes any pending changes, then resets local state. For local
+  /// drafts: writes to Hive (or deletes the draft if empty). For
+  /// already-submitted stories opened for edit: PUTs to server (existing
+  /// behaviour, kept intact).
   Future<void> saveBeforeClose() async {
-    debugPrint('[create_news] saveBeforeClose id=$_serverStoryId hasContent=$_hasContent status=$_storyStatus');
+    debugPrint('[create_news] saveBeforeClose localId=$_localId serverId=$_serverStoryId hasContent=$_hasContent status=$_storyStatus');
     _autoSaveTimer?.cancel();
     _autoSaveTimer = null;
     // Wait for any in-flight title/metadata generation so the persisted save
@@ -639,16 +703,35 @@ class NotepadNotifier extends Notifier<NotepadState> {
       _autoSaveTimer?.cancel();
       _autoSaveTimer = null;
     }
-    if (_serverStoryId != null && !_hasContent && _storyStatus == 'draft') {
-      // Empty draft — discard it instead of saving an empty story
+
+    if (_localId != null && !_hasContent && _storyStatus == 'draft') {
+      // Empty local draft — discard it without ever touching the server.
       try {
-        await _api.deleteStory(_serverStoryId!);
-        debugPrint('[create_news] saveBeforeClose deleted empty draft');
+        await ref.read(localDraftsStoreProvider).delete(_localId!);
+        debugPrint('[create_news] saveBeforeClose discarded empty local draft');
       } catch (e) {
-        debugPrint('[create_news] saveBeforeClose delete FAILED: $e');
+        debugPrint('[create_news] saveBeforeClose discard FAILED: $e');
       }
-    } else {
-      await _syncToServer();
+      _localId = null;
+    } else if (_localId != null) {
+      // Local draft with content — flush to Hive.
+      await _persistDraft();
+    } else if (_serverStoryId != null && _hasContent) {
+      // Editing an already-submitted server-side story. Existing PUT
+      // path so reviewers see the latest edits. (Local-first refactor
+      // doesn't touch this flow.)
+      try {
+        await _api.updateStory(
+          _serverStoryId!,
+          headline: state.headline,
+          category: state.category,
+          location: state.location,
+          paragraphs: state.paragraphs.map((p) => p.toJson()).toList(),
+        );
+        debugPrint('[create_news] saveBeforeClose PUT existing story OK id=$_serverStoryId');
+      } catch (e) {
+        debugPrint('[create_news] saveBeforeClose PUT existing story FAILED: $e');
+      }
     }
   }
 
@@ -657,17 +740,46 @@ class NotepadNotifier extends Notifier<NotepadState> {
   /// is in flight.
   bool _isSubmitting = false;
 
-  /// Submit the story to the backend.
+  /// Submit the story to the backend. First server interaction in the
+  /// new local-first flow: POST /stories with the full payload, then
+  /// POST /stories/:id/submit, then drop the local draft.
   Future<bool> submitStory() async {
-    if (_serverStoryId == null) return false;
     if (_isSubmitting) return false;
     _isSubmitting = true;
     try {
-      // Final sync before submit
-      await _syncToServer();
-      await _api.submitStory(_serverStoryId!);
+      // Flush latest content to Hive first so we don't lose anything if
+      // the network call partially succeeds (e.g. createStory OK, submit
+      // fails — the local copy is still on disk for the retry).
+      await _persistDraft();
+
+      // First server interaction: create the story with full payload.
+      final created = await _api.createStory(
+        headline: state.headline,
+        category: state.category,
+        location: state.location,
+        paragraphs: state.paragraphs.map((p) => p.toJson()).toList(),
+      );
+      _serverStoryId = created.id;
+      debugPrint('[create_news] submitStory created serverStoryId=$_serverStoryId displayId=${created.displayId}');
+
+      // Flip to submitted.
+      await _api.submitStory(created.id);
+
+      // Server has it now — drop the local draft.
+      if (_localId != null) {
+        try {
+          await ref.read(localDraftsStoreProvider).delete(_localId!);
+        } catch (e) {
+          debugPrint('[create_news] submitStory local delete FAILED: $e');
+        }
+        _localId = null;
+      }
+      _storyStatus = 'submitted';
       return true;
-    } catch (_) {
+    } catch (e) {
+      // Network blip / auth blip / server 5xx — keep the local draft
+      // intact so the reporter can retry. Surface a UI error.
+      debugPrint('[create_news] submitStory FAILED: $e');
       state = state.copyWith(error: 'Failed to submit story');
       return false;
     } finally {
@@ -2031,6 +2143,7 @@ class NotepadNotifier extends Notifier<NotepadState> {
     _lastTranscriptCheck = '';
     _lastTranscriptChangeTime = DateTime.now();
     _serverStoryId = null;
+    _localId = null;
     _storyStatus = 'draft';
     // Clean up speech-edit resources
     _speechEditSub?.cancel();

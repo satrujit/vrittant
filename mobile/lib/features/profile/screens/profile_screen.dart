@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -50,11 +51,11 @@ class ProfileScreen extends ConsumerWidget {
     if (logoUrl != null && logoUrl.isNotEmpty) {
       final fullUrl =
           logoUrl.startsWith('http') ? logoUrl : '${ApiConfig.baseUrl}$logoUrl';
-      return Image.network(
-        fullUrl,
+      return CachedNetworkImage(
+        imageUrl: fullUrl,
         height: height,
         fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => Text(
+        errorWidget: (_, __, ___) => Text(
           rp?.org?.name ?? '',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 14,
@@ -62,6 +63,7 @@ class ProfileScreen extends ConsumerWidget {
             color: AppColors.vrHeading,
           ),
         ),
+        placeholder: (_, __) => SizedBox(height: height),
       );
     }
     return Text(
@@ -136,10 +138,11 @@ class ProfileScreen extends ConsumerWidget {
 
   Widget _buildStats(BuildContext context, StoriesState storiesState, AppStrings s) {
     final t = context.t;
-    final stories = storiesState.stories;
-    final total = stories.length;
-    final drafts = stories.where((s) => s.status == 'draft').length;
-    final published = stories.where((s) => s.status != 'draft').length;
+    // Drafts now live entirely on the device (Hive); submitted+ stories
+    // come from the server. Total is the union.
+    final drafts = storiesState.localDrafts.length;
+    final published = storiesState.serverStories.length;
+    final total = drafts + published;
 
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.xl),

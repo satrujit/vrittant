@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/api_service.dart';
+import '../../../core/services/local_stories_cache.dart';
 
 class AllNewsFilters {
   final String? status;
@@ -91,14 +92,29 @@ class AllNewsNotifier extends Notifier<AllNewsState> {
   Timer? _searchDebounce;
 
   @override
-  AllNewsState build() => const AllNewsState();
+  AllNewsState build() {
+    // Stale-while-revalidate: seed from the on-disk stories cache.
+    // Filters haven't been applied yet on first build so the unfiltered
+    // cache is the right shape; once the user sets filters we re-fetch
+    // from the network and the cache is replaced via fetchStories().
+    final cached = ref.read(localStoriesCacheProvider).all();
+    return AllNewsState(stories: cached);
+  }
 
   ApiService get _api => ref.read(apiServiceProvider);
+  LocalStoriesCache get _cache => ref.read(localStoriesCacheProvider);
 
   Future<void> fetchStories() async {
-    state = state.copyWith(isLoading: true, clearError: true);
+    final f = state.filters;
+    // No filter active = the cache mirrors what the server returns, so
+    // we can write through and re-seed on next launch. With filters,
+    // results are a subset and must not stomp the cache.
+    final canCache = !f.hasActiveFilters &&
+        (f.search == null || f.search!.isEmpty);
+    // Cold start: cache empty / nothing on screen → show spinner.
+    final coldCache = state.stories.isEmpty;
+    state = state.copyWith(isLoading: coldCache, clearError: true);
     try {
-      final f = state.filters;
       final stories = await _api.listStories(
         status: f.status,
         category: f.category,
@@ -108,12 +124,17 @@ class AllNewsNotifier extends Notifier<AllNewsState> {
         offset: 0,
         limit: _pageSize,
       );
+      if (canCache) {
+        await _cache.replaceAll(stories);
+      }
       state = AllNewsState(
         stories: stories,
         hasMore: stories.length >= _pageSize,
         filters: f,
       );
     } catch (e) {
+      // Keep whatever we already had on screen (cache contents) and
+      // surface an error for the UI.
       state = state.copyWith(isLoading: false, error: 'Failed to load stories');
     }
   }
@@ -132,6 +153,12 @@ class AllNewsNotifier extends Notifier<AllNewsState> {
         offset: state.stories.length,
         limit: _pageSize,
       );
+      // Write each additional row through to the cache so subsequent
+      // cold launches benefit from the deeper pages we've already paid
+      // to fetch.
+      for (final s in moreStories) {
+        await _cache.upsert(s);
+      }
       state = state.copyWith(
         stories: [...state.stories, ...moreStories],
         isLoading: false,

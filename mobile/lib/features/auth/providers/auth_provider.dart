@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/services/api_service.dart';
+import '../../../core/services/local_stories_cache.dart';
 
 class AuthState {
   final ReporterProfile? reporter;
@@ -193,6 +194,9 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> logout() async {
     await _clearToken();
     _api.setToken(null);
+    // Clear cached server stories so a different user signing in on this
+    // device doesn't briefly see the previous user's list.
+    await ref.read(localStoriesCacheProvider).clear();
     _reqId = '';
     state = const AuthState();
   }
