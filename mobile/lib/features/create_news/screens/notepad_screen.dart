@@ -658,14 +658,11 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                   onDismiss: () => notifier.clearError(),
                 ),
 
-              // === Advanced settings row (only for draft stories) ===
-              // AI Refine moved to a floating gradient FAB inside the
-              // outer Stack — see _AiRefineFab below. This row is now
-              // just the Settings link.
-              if (!state.isRecording && state.paragraphs.isNotEmpty && !isReadOnly)
-                _AdvancedSettingsRow(
-                  onTap: () => _showAdvancedSettings(context),
-                ),
+              // Advanced Settings row removed — pending a redesign of
+              // what actually goes there. AI Refine now lives as the
+              // floating gradient FAB in the outer Stack (see
+              // _AiRefineFab below); the Settings entry point will be
+              // re-added once we know where it should live.
 
               // === File attachment progress indicator ===
               if (state.isOcrProcessing)
@@ -789,11 +786,12 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
           ),
         ),
         // ── Floating AI Refine FAB ─────────────────────────────────────
-        // Sits above everything else in the screen Stack. Visible only
-        // when there's text content to refine and the reporter isn't
-        // actively recording / dictating. Positioned bottom-right above
-        // the action row so it doesn't compete with the recording mic
-        // (centre) but stays in thumb-reach.
+        // Visible only when there's text content to refine and the
+        // reporter isn't actively recording / dictating. Bottom-right,
+        // pushed well above the action row (~140px clears Attach +
+        // recording mic + Submit + safe area) so it never overlaps.
+        // Adds the device's safe-area inset on top so it stays in the
+        // same visual position across notch/home-indicator phones.
         if (!state.isRecording &&
             !isReadOnly &&
             state.paragraphs
@@ -802,7 +800,7 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                 .isNotEmpty)
           Positioned(
             right: AppSpacing.base,
-            bottom: AppSpacing.xxl + AppSpacing.xl,
+            bottom: 140 + MediaQuery.of(context).padding.bottom,
             child: _AiRefineFab(
               onTap: () => notifier.generateStory(),
               isGenerating: state.isGeneratingStory,
@@ -3731,49 +3729,6 @@ class _AttachOption extends StatelessWidget {
   }
 }
 
-class _AdvancedSettingsRow extends ConsumerWidget {
-  final VoidCallback onTap;
-
-  const _AdvancedSettingsRow({required this.onTap});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = context.t;
-    final s = AppStrings.of(ref);
-
-    return Container(
-      color: t.cardBg,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.base),
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(LucideIcons.settings, size: 14, color: t.mutedColor),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                s.advancedSettings,
-                style: AppTypography.odiaBodySmall.copyWith(
-                  color: t.mutedColor,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Floating AI Refine action button. Compact pill with the
-/// electricPulse gradient (coral → pink → lavender) so it reads
-/// instantly as an AI feature alongside the recording mic. Lives in
-/// the screen-level Stack so it floats above the body content,
-/// positioned bottom-right within thumb reach.
 class _AiRefineFab extends ConsumerWidget {
   final VoidCallback onTap;
   final bool isGenerating;
