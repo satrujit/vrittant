@@ -5,7 +5,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_config.dart';
-import 'sarvam_config.dart';
 
 // =============================================================================
 // Riverpod provider

@@ -210,17 +210,21 @@ class ApiService {
     return (res.data['req_id'] as String?) ?? '';
   }
 
-  Future<({String token, ReporterProfile reporter})> verifyOtp(
-      String phone, String otp, {String reqId = ''}) async {
+  Future<
+      ({
+        String token,
+        ReporterProfile reporter,
+        Map<String, dynamic> reporterRaw,
+      })> verifyOtp(String phone, String otp, {String reqId = ''}) async {
     final res = await _dio.post('/auth/verify-otp',
         data: {'phone': phone, 'otp': otp, 'req_id': reqId});
     final token = res.data['access_token'] as String;
     _token = token;
 
     final meRes = await _dio.get('/auth/me');
-    final reporter =
-        ReporterProfile.fromJson(meRes.data as Map<String, dynamic>);
-    return (token: token, reporter: reporter);
+    final raw = Map<String, dynamic>.from(meRes.data as Map);
+    final reporter = ReporterProfile.fromJson(raw);
+    return (token: token, reporter: reporter, reporterRaw: raw);
   }
 
   Future<void> resendOtp(String phone, {String reqId = ''}) async {
@@ -228,9 +232,14 @@ class ApiService {
         data: {'phone': phone, 'req_id': reqId});
   }
 
-  Future<ReporterProfile> getMe() async {
+  /// Fetches `/auth/me` and returns both the parsed profile and the raw
+  /// JSON. Callers cache the raw map (so server-side schema additions
+  /// survive a cold start even when the current build doesn't model
+  /// them yet) and use the parsed object for in-memory state.
+  Future<({ReporterProfile reporter, Map<String, dynamic> raw})> getMe() async {
     final res = await _dio.get('/auth/me');
-    return ReporterProfile.fromJson(res.data as Map<String, dynamic>);
+    final raw = Map<String, dynamic>.from(res.data as Map);
+    return (reporter: ReporterProfile.fromJson(raw), raw: raw);
   }
 
   // -- Stories --

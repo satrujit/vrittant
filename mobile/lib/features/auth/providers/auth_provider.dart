@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/services/api_service.dart';
+import '../../../core/services/local_profile_cache.dart';
 import '../../../core/services/local_stories_cache.dart';
 
 class AuthState {
@@ -122,28 +123,48 @@ class AuthNotifier extends Notifier<AuthState> {
     }
 
     _api.setToken(storedToken);
+
+    // Hydrate the reporter from disk first. This means the home screen
+    // sees a fully-populated AuthState the moment splash exits — name
+    // in the header, org categories for the create-news flow, area
+    // name for story attribution. The user can open the notepad and
+    // start typing before /me has even returned. If the device is
+    // offline, this is the entirety of what we'll show until network
+    // comes back; if online, the network response below replaces it.
+    final cached = ref.read(localProfileCacheProvider).read();
+
     try {
-      final reporter = await _api.getMe();
+      final me = await _api.getMe();
+      // Persist the fresh raw JSON so the next cold start hydrates
+      // the latest profile, not a stale snapshot.
+      await ref.read(localProfileCacheProvider).writeRaw(me.raw);
       state = AuthState(
-        reporter: reporter,
+        reporter: me.reporter,
         token: storedToken,
         initialized: true,
       );
       return true;
     } catch (e) {
-      // Only clear token on 401 (expired/invalid). For network errors,
-      // keep the session alive so the user isn't logged out on flaky connections.
+      // Only clear token + cache on 401 (expired/invalid). For network
+      // errors, keep the session alive AND the cached profile so the
+      // user keeps working offline.
       final is401 = e is DioException && e.response?.statusCode == 401;
       if (is401) {
         await _clearToken();
+        await ref.read(localProfileCacheProvider).clear();
         _api.setToken(null);
         state = const AuthState(initialized: true);
         return false;
       }
-      // Network error — keep token, retry /me in background
-      state = state.copyWith(isLoading: false, initialized: true);
+      // Network error — keep token + cached reporter, retry /me in
+      // background so the moment connectivity returns we refresh.
+      state = AuthState(
+        reporter: cached, // null on a truly cold install; otherwise hydrates
+        token: storedToken,
+        initialized: true,
+      );
       _retryGetMe(storedToken);
-      return false;
+      return cached != null;
     }
   }
 
@@ -151,14 +172,17 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> _retryGetMe(String token) async {
     await Future.delayed(const Duration(seconds: 3));
     try {
-      final reporter = await _api.getMe();
+      final me = await _api.getMe();
+      await ref.read(localProfileCacheProvider).writeRaw(me.raw);
       state = AuthState(
-        reporter: reporter,
+        reporter: me.reporter,
         token: token,
         initialized: true,
       );
     } catch (_) {
-      // Still failing — user will see login screen, can manually retry
+      // Still failing — leave cached reporter (if any) in place. The
+      // user is already inside the app; next API call that triggers a
+      // refresh (or the next cold start) will retry.
     }
   }
 
@@ -177,6 +201,9 @@ class AuthNotifier extends Notifier<AuthState> {
     try {
       final result = await _api.verifyOtp(phone, otp, reqId: _reqId);
       await _writeToken(result.token);
+      // Cache the fresh profile so the next cold start (even offline)
+      // boots straight into the home screen without a network round-trip.
+      await ref.read(localProfileCacheProvider).writeRaw(result.reporterRaw);
       _reqId = '';
       state = AuthState(
           reporter: result.reporter, token: result.token, initialized: true);
@@ -205,9 +232,11 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> logout() async {
     await _clearToken();
     _api.setToken(null);
-    // Clear cached server stories so a different user signing in on this
-    // device doesn't briefly see the previous user's list.
+    // Clear cached server stories AND the cached reporter profile so a
+    // different user signing in on this device doesn't see the previous
+    // user's list flashing or their name in the header for a moment.
     await ref.read(localStoriesCacheProvider).clear();
+    await ref.read(localProfileCacheProvider).clear();
     _reqId = '';
     state = const AuthState();
   }
