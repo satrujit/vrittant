@@ -42,12 +42,19 @@ export default function RowHoverPeek({ children, story, enabled = true }) {
           {children}
         </div>
       </PopoverTrigger>
+      {/*
+        side="bottom" + align="end" hangs the peek below the row's right
+        edge, always inside the visible content area. The row is
+        full-viewport-width so side="right" would overflow and Radix would
+        flip it to side="left" — which lands behind the fixed sidebar.
+        Bottom-end is predictable and never collides with the sidebar.
+      */}
       <PopoverContent
-        side="right"
-        align="start"
-        sideOffset={8}
-        collisionPadding={16}
-        className="w-80 p-3"
+        side="bottom"
+        align="end"
+        sideOffset={4}
+        collisionPadding={{ top: 12, right: 16, bottom: 16, left: 80 }}
+        className="w-80 p-3 shadow-lg"
         onPointerEnter={(e) => e.preventDefault()}
       >
         <div className="space-y-2">
