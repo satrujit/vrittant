@@ -659,23 +659,12 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                 ),
 
               // === Advanced settings row (only for draft stories) ===
+              // AI Refine moved to a floating gradient FAB inside the
+              // outer Stack — see _AiRefineFab below. This row is now
+              // just the Settings link.
               if (!state.isRecording && state.paragraphs.isNotEmpty && !isReadOnly)
                 _AdvancedSettingsRow(
                   onTap: () => _showAdvancedSettings(context),
-                  onGenerateStory: isReadOnly
-                      ? null
-                      : () => notifier.generateStory(),
-                  isGenerating: state.isGeneratingStory,
-                  // One real text paragraph is enough — the LLM can still
-                  // polish a single chunk into a publishable lead. Requiring
-                  // two left the button silently disabled and confused users
-                  // who'd dictated a single para and tapped to "generate".
-                  canGenerate: state.paragraphs
-                          .where((p) =>
-                              !p.hasMedia &&
-                              !p.isTable &&
-                              p.text.trim().isNotEmpty)
-                          .isNotEmpty,
                 ),
 
               // === File attachment progress indicator ===
@@ -799,6 +788,26 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
             ],
           ),
         ),
+        // ── Floating AI Refine FAB ─────────────────────────────────────
+        // Sits above everything else in the screen Stack. Visible only
+        // when there's text content to refine and the reporter isn't
+        // actively recording / dictating. Positioned bottom-right above
+        // the action row so it doesn't compete with the recording mic
+        // (centre) but stays in thumb-reach.
+        if (!state.isRecording &&
+            !isReadOnly &&
+            state.paragraphs
+                .where((p) =>
+                    !p.hasMedia && !p.isTable && p.text.trim().isNotEmpty)
+                .isNotEmpty)
+          Positioned(
+            right: AppSpacing.base,
+            bottom: AppSpacing.xxl + AppSpacing.xl,
+            child: _AiRefineFab(
+              onTap: () => notifier.generateStory(),
+              isGenerating: state.isGeneratingStory,
+            ),
+          ),
       ],
     ),
     );
@@ -3724,117 +3733,113 @@ class _AttachOption extends StatelessWidget {
 
 class _AdvancedSettingsRow extends ConsumerWidget {
   final VoidCallback onTap;
-  final VoidCallback? onGenerateStory;
-  final bool isGenerating;
-  final bool canGenerate;
 
-  const _AdvancedSettingsRow({
-    required this.onTap,
-    this.onGenerateStory,
-    this.isGenerating = false,
-    this.canGenerate = false,
-  });
+  const _AdvancedSettingsRow({required this.onTap});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.t;
     final s = AppStrings.of(ref);
-    final canTap = onGenerateStory != null && canGenerate && !isGenerating;
 
     return Container(
       color: t.cardBg,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.base),
-      child: Row(
-        children: [
-          // Quiet "Advanced settings" link on the left.
-          GestureDetector(
-            onTap: onTap,
-            behavior: HitTestBehavior.opaque,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(LucideIcons.settings, size: 14, color: t.mutedColor),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                s.advancedSettings,
+                style: AppTypography.odiaBodySmall.copyWith(
+                  color: t.mutedColor,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Floating AI Refine action button. Compact pill with the
+/// electricPulse gradient (coral → pink → lavender) so it reads
+/// instantly as an AI feature alongside the recording mic. Lives in
+/// the screen-level Stack so it floats above the body content,
+/// positioned bottom-right within thumb reach.
+class _AiRefineFab extends ConsumerWidget {
+  final VoidCallback onTap;
+  final bool isGenerating;
+
+  const _AiRefineFab({required this.onTap, required this.isGenerating});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = AppStrings.of(ref);
+    return Tooltip(
+      message: s.aiRefineHint,
+      child: Material(
+        color: Colors.transparent,
+        elevation: 0,
+        child: InkWell(
+          onTap: isGenerating ? null : onTap,
+          borderRadius: BorderRadius.circular(28),
+          child: Ink(
+            decoration: BoxDecoration(
+              gradient: AppGradients.electricPulse,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.coral500.withValues(alpha: 0.32),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.base,
+                vertical: AppSpacing.sm + 2,
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    LucideIcons.settings,
-                    size: 14,
-                    color: t.mutedColor,
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: isGenerating
+                        ? const CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
+                          )
+                        : const Icon(
+                            LucideIcons.sparkles,
+                            size: 18,
+                            color: Colors.white,
+                          ),
                   ),
-                  const SizedBox(width: AppSpacing.xs),
+                  const SizedBox(width: AppSpacing.xs + 2),
                   Text(
-                    s.advancedSettings,
+                    isGenerating ? s.generatingStory : s.generateStory,
                     style: AppTypography.odiaBodySmall.copyWith(
-                      color: t.mutedColor,
-                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          const Spacer(),
-
-          // AI Refine — compact button, but with the multi-colour
-          // electricPulse gradient (coral → pink → lavender) on both
-          // the sparkle icon and the label so it reads as an AI
-          // affordance the same way the recording mic ripple does.
-          // Subtle (no filled background) yet visually distinct from a
-          // plain text link.
-          if (onGenerateStory != null)
-            Tooltip(
-              message: s.aiRefineHint,
-              child: InkWell(
-                onTap: canTap ? onGenerateStory : null,
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: AppSpacing.xs + 2,
-                  ),
-                  child: Opacity(
-                    opacity: canTap ? 1.0 : 0.45,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: isGenerating
-                              ? const _GradientSpinner()
-                              : ShaderMask(
-                                  blendMode: BlendMode.srcIn,
-                                  shaderCallback: (bounds) =>
-                                      AppGradients.electricPulse
-                                          .createShader(bounds),
-                                  child: const Icon(
-                                    LucideIcons.sparkles,
-                                    size: 16,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                        ),
-                        const SizedBox(width: AppSpacing.xs + 2),
-                        ShaderMask(
-                          blendMode: BlendMode.srcIn,
-                          shaderCallback: (bounds) =>
-                              AppGradients.electricPulse.createShader(bounds),
-                          child: Text(
-                            isGenerating
-                                ? s.generatingStory
-                                : s.generateStory,
-                            style: AppTypography.odiaBodySmall.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
