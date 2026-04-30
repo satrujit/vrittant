@@ -1,404 +1,227 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+// TODO: per-row reassignment was on the legacy DashboardPage; deferred
+// to a follow-up plan. See docs/plans/2026-04-30-dashboard-redesign-design.md
+// "Out of scope" section.
 import {
-  ChevronLeft,
-  ChevronRight,
-  MapPin,
-  Loader2,
-  RefreshCw,
-  Clock,
-} from 'lucide-react';
+  fetchStats, fetchStories, transformStory, updateStoryStatus,
+} from '../services/api';
+import { useDensityPreference } from '../hooks/useDensityPreference';
+import { useKeyboardRowNav } from '../hooks/useKeyboardRowNav';
+import { cycleStatus } from '../components/dashboard/inlineStatus';
+import StatStrip from '../components/dashboard/StatStrip';
+import FilterBar from '../components/dashboard/FilterBar';
+import ReviewQueueTable from '../components/dashboard/ReviewQueueTable';
+import DensityToggle from '../components/dashboard/DensityToggle';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchStats, fetchStories, fetchReporters, transformStory, reassignStory } from '../services/api';
-import { Avatar, StatusBadge, CategoryChip, SearchBar, PageHeader, Pagination } from '../components/common';
-import { LayoutDashboard } from 'lucide-react';
-import { formatDate, formatTimeAgo } from '../utils/helpers';
-import { assignableReviewers } from '../utils/users';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import ReassignPopover from '../components/assignment/ReassignPopover';
 
-const PAGE_SIZE = 10;
-const REFRESH_INTERVAL = 30_000; // 30 seconds
-
-function formatPublishedCount(n) {
-  if (n >= 1000) {
-    return (n / 1000).toFixed(1) + 'k';
-  }
-  return String(n);
-}
+const PAGE_SIZE = 25;
+const REFRESH_INTERVAL = 30_000;
 
 export default function DashboardPage() {
   const { t } = useI18n();
-  const { user } = useAuth();
+  const { config, user } = useAuth();
   const navigate = useNavigate();
-  // Org admins oversee everyone, so the dashboard queue is org-wide for them.
-  // Reviewers see only what's assigned to them (delegated work lives on All Stories).
-  const isOrgAdmin = user?.user_type === 'org_admin';
-  const [searchQuery, setSearchQuery] = useState('');
-  // Page lives in the URL so opening a story and pressing Close on the
-  // review page restores the same page (no snap-back to page 1).
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
-  const setCurrentPage = useCallback((updater) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      const cur = Math.max(1, parseInt(next.get('page') || '1', 10) || 1);
-      const value = typeof updater === 'function' ? updater(cur) : updater;
-      if (!value || value === 1) next.delete('page');
-      else next.set('page', String(value));
-      return next;
-    }, { replace: true });
-  }, [setSearchParams]);
 
-  // API data state
-  const [statsData, setStatsData] = useState(null);
-  const [stories, setStories] = useState([]);
-  const [totalStories, setTotalStories] = useState(0);
-  const [loading, setLoading] = useState(true);
+  // Stats
+  const [stats, setStats] = useState({ pending_review: 0, reviewed_today: 0, total_published: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [reviewers, setReviewers] = useState([]);
+
+  // Stories
+  const [stories, setStories] = useState([]);
+  const [storiesLoading, setStoriesLoading] = useState(true);
+  const [total, setTotal] = useState(0);
+
+  // Filters
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+
+  // Pagination — synced to ?page=N
+  const page = Math.max(0, parseInt(searchParams.get('page') || '0', 10));
+  const setPage = useCallback((next) => {
+    const sp = new URLSearchParams(searchParams);
+    if (next > 0) sp.set('page', String(next));
+    else sp.delete('page');
+    setSearchParams(sp, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  // Preferences
+  const [density, setDensity] = useDensityPreference();
+
   const intervalRef = useRef(null);
 
-  // Fetch active reviewers once for reassign dropdown
-  useEffect(() => {
-    fetchReporters()
-      .then((data) => setReviewers(assignableReviewers(data.reporters || [])))
-      .catch(() => setReviewers([]));
-  }, []);
-
-  const handleReassign = useCallback(async (storyId, userId) => {
-    const reviewer = reviewers.find((r) => String(r.id) === String(userId));
-    setStories((prev) =>
-      prev.map((s) =>
-        s.id === storyId
-          ? {
-              ...s,
-              assigned_to: userId,
-              assignee_id: userId,
-              assignee_name: reviewer?.name || s.assignee_name,
-              assigned_match_reason: 'manual',
-            }
-          : s
-      )
-    );
-    try {
-      await reassignStory(storyId, userId);
-    } catch (err) {
-      console.error('Failed to reassign story:', err);
-    }
-  }, [reviewers]);
-
-  // Fetch stats
-  const loadStats = useCallback(async (silent) => {
-    if (!silent) setStatsLoading(true);
+  const loadStats = useCallback(async () => {
     try {
       const data = await fetchStats();
-      setStatsData(data);
+      setStats(data);
     } catch (err) {
-      console.error('Failed to fetch stats:', err);
+      console.error('Stats failed:', err);
     } finally {
-      if (!silent) setStatsLoading(false);
+      setStatsLoading(false);
     }
   }, []);
 
-  // Fetch stats on mount
-  useEffect(() => {
-    loadStats(false);
-  }, [loadStats]);
-
-  // Fetch all submitted stories (pending review)
-  const loadStories = useCallback(async (silent) => {
-    if (!silent) setLoading(true);
+  const loadStories = useCallback(async () => {
     try {
-      const offset = (currentPage - 1) * PAGE_SIZE;
-      const params = {
-        offset,
-        limit: PAGE_SIZE,
-      };
-      // Reviewers see ALL open stories assigned to them (submitted, approved,
-      // flagged, layout_completed) so manually-reassigned non-submitted work
-      // shows up too. Org admins see only the pending-review queue (status=submitted)
-      // to match the stats card scoping in /admin/stats.
-      if (isOrgAdmin) {
+      const params = { limit: PAGE_SIZE, offset: page * PAGE_SIZE };
+
+      // Role-scoped defaults — same as legacy queue semantics.
+      if (user?.user_type === 'org_admin') {
         params.status = 'submitted';
       } else {
         params.assigned_to = 'me';
         params.exclude_status = 'draft,published,rejected';
       }
-      if (searchQuery.trim()) {
-        params.search = searchQuery.trim();
+
+      // User-driven overrides (filter bar chips + search + category).
+      if (search)         params.search = search;
+      if (statusFilter) {
+        params.status = statusFilter;
+        // If the user picks an explicit status, drop the reviewer-scope
+        // exclude so the chip really does what it says.
+        delete params.exclude_status;
       }
+      if (categoryFilter) params.category = categoryFilter;
+
       const data = await fetchStories(params);
-      const transformed = (data.stories || []).map(transformStory);
-      setStories(transformed);
-      setTotalStories(data.total || 0);
+      setStories((data?.stories || []).map(transformStory));
+      setTotal(data?.total ?? 0);
     } catch (err) {
-      console.error('Failed to fetch stories:', err);
-      if (!silent) {
-        setStories([]);
-        setTotalStories(0);
-      }
+      console.error('Stories failed:', err);
     } finally {
-      if (!silent) setLoading(false);
+      setStoriesLoading(false);
     }
-  }, [currentPage, searchQuery, isOrgAdmin]);
+  }, [search, statusFilter, categoryFilter, page, user]);
 
+  // Initial + filter-change fetches
+  useEffect(() => { loadStats(); }, [loadStats]);
+  useEffect(() => { loadStories(); }, [loadStories]);
+
+  // Whenever the user-driven filters change, reset to page 0. Otherwise
+  // switching from "All" to "Flagged" while on ?page=3 requests offset=75
+  // against a much smaller filtered set.
   useEffect(() => {
-    loadStories(false);
-  }, [loadStories]);
+    setPage(0);
+    // We deliberately don't depend on `setPage` itself — it's a stable
+    // useCallback but that's a fragile assumption to depend on here.
+  }, [search, statusFilter, categoryFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh every 30 seconds
+  // Polling
   useEffect(() => {
     intervalRef.current = setInterval(() => {
-      setRefreshing(true);
-      Promise.all([loadStories(true), loadStats(true)]).finally(() =>
-        setRefreshing(false)
-      );
+      loadStats();
+      loadStories();
     }, REFRESH_INTERVAL);
     return () => clearInterval(intervalRef.current);
-  }, [loadStories, loadStats]);
+  }, [loadStats, loadStories]);
 
-  const totalPages = Math.ceil(totalStories / PAGE_SIZE);
-  const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const endIndex = Math.min(startIndex + PAGE_SIZE, totalStories);
+  // Inline status change (optimistic)
+  const handleStatusChange = useCallback(async (storyId, nextStatus) => {
+    setStories((prev) => prev.map((s) => s.id === storyId ? { ...s, status: nextStatus } : s));
+    try {
+      await updateStoryStatus(storyId, nextStatus);
+      loadStats();
+    } catch (err) {
+      console.error('Status change failed:', err);
+      loadStories(); // revert by re-fetching
+    }
+  }, [loadStats, loadStories]);
 
-  const handleSearch = (e) => {
-    setSearchQuery(e.target.value);
-    setCurrentPage(1);
-  };
+  // Keyboard nav
+  const onOpenRow = useCallback((idx) => {
+    const story = stories[idx];
+    if (story) navigate(`/review/${story.id}`);
+  }, [stories, navigate]);
+  const onCycleRowStatus = useCallback((idx) => {
+    const story = stories[idx];
+    if (story) handleStatusChange(story.id, cycleStatus(story.status));
+  }, [stories, handleStatusChange]);
 
-  const stats = statsData
-    ? [
-        {
-          label: t('dashboard.pendingReview'),
-          value: statsData.pending_review ?? 0,
-        },
-        {
-          label: t('dashboard.reviewedToday'),
-          value: statsData.reviewed_today ?? 0,
-        },
-        {
-          label: t('dashboard.totalPublished'),
-          value: formatPublishedCount(statsData.total_published ?? 0),
-        },
-        {
-          label: 'Avg / Reporter',
-          value: statsData.total_reporters
-            ? (statsData.total_stories / statsData.total_reporters).toFixed(1)
-            : '0',
-        },
-      ]
-    : [];
+  const { focusedIndex, setFocusedIndex, handleKeyDown } = useKeyboardRowNav({
+    rowCount: stories.length,
+    onOpen: onOpenRow,
+    onCycleStatus: onCycleRowStatus,
+  });
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  const categories = useMemo(
+    () => (config?.categories || []).map((c) => c.label || c),
+    [config]
+  );
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Fixed top: page header + stats strip + toolbar (search lives
-          inside the table card's toolbar). Only the data rows scroll. */}
-      <div className="shrink-0 max-w-[1400px] mx-auto w-full px-6 lg:px-8 pt-6 lg:pt-8 pb-3 flex flex-col gap-5">
-      <PageHeader
-        icon={LayoutDashboard}
-        title={t('dashboard.title')}
-        subtitle={t('dashboard.subtitle')}
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setRefreshing(true);
-              Promise.all([loadStories(true), loadStats(true)]).finally(() =>
-                setRefreshing(false)
-              );
-            }}
-            disabled={refreshing}
-          >
-            <RefreshCw size={14} className={cn('mr-1.5', refreshing && 'animate-spin')} />
-            {t('dashboard.refresh') || 'Refresh'}
-          </Button>
-        }
-        className="mb-0"
-      />
+    <div className="flex h-full flex-col">
+      {/* Header strip */}
+      <header className="flex flex-wrap items-center justify-between gap-4 px-6 pt-6">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            {t('dashboard.title')}
+          </h1>
+          <StatStrip
+            pending={stats.pending_review}
+            reviewedToday={stats.reviewed_today}
+            totalPublished={stats.total_published}
+            loading={statsLoading}
+          />
+        </div>
+        <DensityToggle value={density} onChange={setDensity} />
+      </header>
 
-      {/* Stats strip — single row, dividers, no card chrome */}
-      {statsLoading ? (
-        <div className="py-8 text-center text-muted-foreground text-sm border border-border rounded-lg">
-          <Loader2 size={20} className="animate-spin inline-block" />
-        </div>
-      ) : (
-        <div className="vr-metric-strip">
-          {stats.map((stat) => (
-            <div key={stat.label} className="vr-metric-strip__item">
-              <span className="vr-metric-strip__label">{stat.label}</span>
-              <span className="vr-metric-strip__value">{stat.value}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Toolbar — search right-aligned (ml-auto). Lives in the fixed
-          top region so it stays visible while rows scroll. */}
-      <div className="bg-card border border-border rounded-lg">
-        <div className="flex items-center gap-3 px-3 py-2 max-sm:px-2">
-          <div className="ml-auto w-full max-w-[280px]">
-            <SearchBar
-              value={searchQuery}
-              onChange={handleSearch}
-              placeholder={t('dashboard.searchPlaceholder')}
-            />
-          </div>
-        </div>
-      </div>
+      {/* Filter bar */}
+      <div className="px-6">
+        <FilterBar
+          search={search}             onSearchChange={setSearch}
+          status={statusFilter}       onStatusChange={setStatusFilter}
+          categories={categories}     category={categoryFilter}      onCategoryChange={setCategoryFilter}
+        />
       </div>
 
-      {/* Scrollable region: only the data rows scroll; thead is sticky
-          and pagination sits at the bottom of the card. */}
-      <div className="flex-1 min-h-0 max-w-[1400px] mx-auto w-full px-6 lg:px-8 pb-6 lg:pb-8 pt-1">
-      <div className="bg-card border border-border rounded-lg overflow-hidden h-full flex flex-col">
-        {/* Table */}
-        {loading ? (
-          <div className="py-16 text-center text-muted-foreground text-sm">
-            <Loader2 size={24} className="animate-spin inline-block" />
-          </div>
-        ) : stories.length === 0 ? (
-          <div className="py-16 text-center text-muted-foreground text-sm">
-            {t('dashboard.noReports')}
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 overflow-auto">
-            {/* #54 — collapse Reporter, Location, Submission Time back
-                into the title cell as a stacked metadata strip beneath
-                the headline (matching the AllStoriesPage layout). The
-                editorial-signal columns (Category, Status, Assigned to)
-                stay separate so reviewers can scan them across rows. */}
-            <table className="w-full border-collapse">
-              <thead className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_var(--border)]">
-                <tr>
-                  <th className="px-6 py-3.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2.5">
-                    {t('table.storyTitle')}
-                  </th>
-                  <th className="px-6 py-3.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2.5">
-                    {t('table.category')}
-                  </th>
-                  <th className="px-6 py-3.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2.5">
-                    {t('table.status')}
-                  </th>
-                  <th className="px-6 py-3.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left border-b border-border whitespace-nowrap max-sm:px-3 max-sm:py-2.5">
-                    {t('assignment.assignedTo')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {stories.map((story) => {
-                  const timePrimary = formatDate(story.submittedAt);
-                  const timeSecondary = formatTimeAgo(story.submittedAt);
-
-                  return (
-                    <tr
-                      key={story.id}
-                      className="transition-colors hover:bg-accent cursor-pointer [&:last-child_td]:border-b-0"
-                      onClick={() => navigate(`/review/${story.id}`)}
-                    >
-                      {/* #54 — Story title with stacked metadata strip
-                          underneath: reporter • location • time-ago.
-                          Whole <tr> is clickable; headline stays a real
-                          <Link> so middle/cmd-click still opens in a new
-                          tab and screen readers see a link. */}
-                      <td className="px-6 py-3.5 border-b border-border align-middle max-sm:px-3 max-sm:py-2.5 max-w-[480px]">
-                        <div className="flex flex-col gap-1.5">
-                          <Link
-                            to={`/review/${story.id}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-[0.9375rem] font-semibold text-foreground leading-tight line-clamp-2 hover:text-primary transition-colors no-underline"
-                          >
-                            {story.headline}
-                          </Link>
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                            {story.displayId && (
-                              <span className="inline-flex items-center font-mono font-semibold tracking-wider text-blue-600 whitespace-nowrap">
-                                {story.displayId}
-                              </span>
-                            )}
-                            <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                              <Avatar
-                                initials={story.reporter.initials}
-                                color={story.reporter.color}
-                                size="xs"
-                              />
-                              <span className="font-medium text-foreground">
-                                {story.reporter.name}
-                              </span>
-                            </span>
-                            {story.location && (
-                              <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                                <MapPin size={11} className="shrink-0" />
-                                {story.location}
-                              </span>
-                            )}
-                            <span
-                              className="inline-flex items-center gap-1 whitespace-nowrap"
-                              title={timePrimary}
-                            >
-                              <Clock size={11} className="shrink-0" />
-                              {timeSecondary || timePrimary}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Category — dot + label */}
-                      <td className="px-6 py-3.5 border-b border-border align-middle max-sm:px-3 max-sm:py-2.5">
-                        <CategoryChip category={story.category} minimal />
-                      </td>
-
-                      {/* Status — dot + label */}
-                      <td className="px-6 py-3.5 border-b border-border align-middle max-sm:px-3 max-sm:py-2.5">
-                        <StatusBadge status={story.status} minimal />
-                      </td>
-
-                      {/* Assigned to — inline reassign.
-                          stopPropagation so opening the popover or picking a
-                          reviewer doesn't also navigate the row. */}
-                      <td
-                        className="px-6 py-3.5 border-b border-border align-middle max-sm:px-3 max-sm:py-2.5"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <ReassignPopover
-                          assigneeId={story.assignee_id ?? story.assigned_to}
-                          assigneeName={story.assignee_name}
-                          matchReason={story.assigned_match_reason}
-                          reviewers={reviewers}
-                          onReassign={(userId) => handleReassign(story.id, userId)}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Pagination */}
-        {totalStories > 0 && !loading && (
-          <div className="shrink-0 flex items-center justify-between px-6 py-3 border-t border-border max-sm:flex-col max-sm:gap-2 max-sm:items-center">
-            <span className="text-xs text-muted-foreground">
-              {t('dashboard.showingResults', {
-                start: startIndex + 1,
-                end: endIndex,
-                total: totalStories,
-              })}
+      {/* Table */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
+          <ReviewQueueTable
+            stories={stories}
+            loading={storiesLoading}
+            density={density}
+            focusedIndex={focusedIndex}
+            onRowFocus={setFocusedIndex}
+            onStatusChange={handleStatusChange}
+          />
+        </div>
+        {total > PAGE_SIZE && (
+          <div className="flex items-center justify-between border-t border-border/40 px-6 py-2 text-xs text-muted-foreground">
+            <span>
+              {(page * PAGE_SIZE) + 1}–{Math.min(total, (page + 1) * PAGE_SIZE)} of {total}
             </span>
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={setCurrentPage}
-            />
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPage(page - 1)}
+                disabled={page === 0}
+                aria-label="Previous page"
+                className="rounded-md border border-border/60 bg-card px-2 py-1 transition-colors hover:bg-accent disabled:opacity-40 disabled:hover:bg-card"
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage(page + 1)}
+                disabled={(page + 1) * PAGE_SIZE >= total}
+                aria-label="Next page"
+                className="rounded-md border border-border/60 bg-card px-2 py-1 transition-colors hover:bg-accent disabled:opacity-40 disabled:hover:bg-card"
+              >
+                →
+              </button>
+            </div>
           </div>
         )}
-      </div>
       </div>
     </div>
   );
