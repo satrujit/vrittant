@@ -113,6 +113,9 @@ class AppStrings {
   String get moveCloserHint => isOdia
       ? '\u0B2B\u0B4B\u0B28 \u0B2A\u0B3E\u0B16\u0B15\u0B41 \u0B06\u0B23\u0B28\u0B4D\u0B24\u0B41'
       : 'Move closer';
+  String get recordingStoppedCall => isOdia
+      ? 'ଫୋନ କଲ ପାଇଁ ରେକର୍ଡିଂ ବନ୍ଦ ହେଲା'
+      : 'Recording stopped — phone call detected';
 
   // ===========================================================================
   // Edit actions

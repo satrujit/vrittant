@@ -310,6 +310,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (story.displayId != null && story.displayId!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        story.displayId!,
+                        style: GoogleFonts.robotoMono(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 0.5,
+                          color: AppColors.vrMuted,
+                        ),
+                      ),
+                    ),
                   Text(
                     headline,
                     style: GoogleFonts.plusJakartaSans(

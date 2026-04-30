@@ -92,6 +92,11 @@ class StoryDto {
   final DateTime? submittedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
+  /// Human-readable id like "PNS-26-1234". Server-computed from the org
+  /// display_code + year + per-org sequence. Null for legacy stories
+  /// from before the migration; clients fall back to [id] (the UUID).
+  final String? displayId;
+  final int? seqNo;
 
   const StoryDto({
     required this.id,
@@ -104,6 +109,8 @@ class StoryDto {
     this.submittedAt,
     required this.createdAt,
     required this.updatedAt,
+    this.displayId,
+    this.seqNo,
   });
 
   factory StoryDto.fromJson(Map<String, dynamic> json) {
@@ -123,6 +130,8 @@ class StoryDto {
           : null,
       createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
       updatedAt: DateTime.parse(json['updated_at'] as String).toLocal(),
+      displayId: json['display_id'] as String?,
+      seqNo: json['seq_no'] as int?,
     );
   }
 }

@@ -10,6 +10,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../core/services/api_config.dart';
 import '../../../core/services/mic_permission_ui.dart';
@@ -52,10 +53,18 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
     return ensureMicPermission(context, ref);
   }
 
-  // Controllers for inline text editing
+  // Controllers for inline text editing (legacy — only used while old
+  // _NotepadBody is still alive behind the new editor). Will be removed
+  // when _NotepadBody / _ParagraphBlock are deleted in the cleanup pass.
   TextEditingController? _inlineEditController;
   int? _inlineEditingIndex;
   bool _hasTextSelection = false;
+
+  // New simple-body editor state. The focused paragraph + cursor is what
+  // the bottom bar's Record button targets when inserting transcripts at
+  // the user's caret. Updated by _SimpleNotepadBody via onFocusedCursorChanged.
+  int? _focusedParagraphIndex;
+  int? _focusedCursorOffset;
 
   // Selection from SelectableText (single-tap selected mode)
   int? _selectableSelectionParaIndex;
@@ -370,6 +379,52 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
       },
     );
 
+    // Hold the screen awake while recording. Reporters often dictate long
+    // stories without touching the screen; without this the OS sleeps mid-
+    // recording, killing the mic stream and the WS connection.
+    ref.listen<bool>(
+      notepadProvider.select((s) => s.isRecording),
+      (prev, next) {
+        if (next == true) {
+          WakelockPlus.enable();
+        } else {
+          WakelockPlus.disable();
+        }
+      },
+    );
+
+    // Auto-stop recording when the OS reports an active phone call. The
+    // mic stream is owned by the call once it connects, so anything we
+    // record after that point is silent garbage. Stop, commit whatever
+    // partial transcript we have, and tell the user.
+    //
+    // Note: phoneCallProvider only polls Android telephony state. On iOS
+    // we'd need to wire AVAudioSession interruption notifications via a
+    // method channel — tracked as a follow-up.
+    ref.listen<bool>(
+      phoneCallProvider,
+      (prev, next) {
+        if (next == true && ref.read(notepadProvider).isRecording) {
+          ref.read(notepadProvider.notifier).toggleRecording();
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                SnackBar(
+                  content: Text(s.recordingStoppedCall),
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: AppColors.vrCoral,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+          }
+        }
+      },
+    );
+
     // Manage animation state based on recording
     if (state.isRecording) {
       if (!_waveformController.isAnimating) {
@@ -481,11 +536,21 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                         onTapRecord: () async {
                           if (!await _gateMic(isStart: true)) return;
                           _maybeShowCloseTalkHint();
+                          // Pre-create an empty paragraph and target its
+                          // start so the body widget mounts immediately and
+                          // streaming has a TextField to splice into from
+                          // the very first transcript chunk. Without this,
+                          // the very first recording finishes before the
+                          // body is even rendered.
+                          final idx = notifier.addEmptyParagraph();
+                          notifier.setCursorInsert(idx, 0);
                           notifier.toggleRecording();
                         },
                         onLongPressRecord: () async {
                           if (!await _gateMic(isStart: true)) return;
                           _maybeShowCloseTalkHint();
+                          final idx = notifier.addEmptyParagraph();
+                          notifier.setCursorInsert(idx, 0);
                           notifier.toggleRecording(saveAudio: true);
                         },
                         onTapType: isReadOnly
@@ -497,158 +562,103 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                         tapMicLabel: s.startSpeaking,
                         subtitle: s.speakYourNews,
                       )
-                    : _NotepadBody(
+                    : _SimpleNotepadBody(
                         state: state,
-                        inlineEditingIndex: isReadOnly ? null : _inlineEditingIndex,
-                        inlineEditController: isReadOnly ? null : _inlineEditController,
-                        typingDotsController: _typingDotsController,
-                        polishGlowController: _polishGlowController,
-                        onTapParagraph: isReadOnly ? null : (index) {
-                          if (_inlineEditingIndex != null &&
-                              _inlineEditingIndex != index) {
-                            _commitInlineEdit(_inlineEditingIndex!);
+                        isReadOnly: isReadOnly,
+                        onTextRunCommitted: (firstIdx, lastIdx, pieces) {
+                          notifier.replaceTextRun(firstIdx, lastIdx, pieces);
+                        },
+                        onFocusedCursorChanged: (paraIdx, cursorOffset) {
+                          if (!mounted) return;
+                          if (_focusedParagraphIndex == paraIdx &&
+                              _focusedCursorOffset == cursorOffset) {
+                            return;
                           }
-                          // Clear any previous selectable text selection
                           setState(() {
-                            _selectableSelection = null;
-                            _selectableSelectionParaIndex = null;
-                            _hasTextSelection = false;
+                            _focusedParagraphIndex = paraIdx;
+                            _focusedCursorOffset = cursorOffset;
                           });
-                          // Single tap: select only (show action chips)
-                          notifier.selectParagraph(index);
                         },
-                        onDoubleTapParagraph: isReadOnly ? null : (index) {
-                          if (_inlineEditingIndex != null &&
-                              _inlineEditingIndex != index) {
-                            _commitInlineEdit(_inlineEditingIndex!);
+                        onTextSelectionChanged: (hasSelection) {
+                          if (_hasTextSelection != hasSelection) {
+                            setState(() => _hasTextSelection = hasSelection);
                           }
-                          // Double tap: enter inline edit mode
-                          final paragraph = state.paragraphs[index];
-                          if (!paragraph.isPhoto && !paragraph.isTable) {
-                            _startInlineEdit(index, paragraph.text);
-                          }
-                          notifier.selectParagraph(index);
                         },
-                        onDeleteParagraph: isReadOnly ? null : (index) {
-                          _cancelInlineEdit();
-                          notifier.deleteParagraph(index);
-                        },
-                        onInlineEditSubmit: (index) {
-                          _commitInlineEdit(index);
-                        },
-                        onRetranscribeParagraph: isReadOnly ? null : (index) {
-                          notifier.retranscribeParagraph(index);
-                        },
-                        onEditParagraph: isReadOnly ? null : (index) {
-                          if (_inlineEditingIndex != null &&
-                              _inlineEditingIndex != index) {
-                            _commitInlineEdit(_inlineEditingIndex!);
-                          }
-                          final paragraph = state.paragraphs[index];
-                          if (!paragraph.isPhoto && !paragraph.isTable) {
-                            _startInlineEdit(index, paragraph.text);
-                          }
-                          notifier.selectParagraph(index);
-                        },
-                        onInsertAt: isReadOnly ? null : (index) {
-                          notifier.setInsertPosition(index);
-                          _showInsertMenu(context, index);
-                        },
-                        onRemovePhoto: isReadOnly ? null : (index) {
+                        onRemoveMedia: (index) {
                           final para = state.paragraphs[index];
-                          // All media blocks get a delete confirmation
-                          if (para.hasMedia) {
-                            String titleText;
-                            String contentText;
-                            switch (para.mediaType) {
-                              case MediaType.audio:
-                                titleText = s.deleteAudioTitle;
-                                contentText = s.deleteAudioMsg;
-                                break;
-                              case MediaType.photo:
-                                titleText = s.deletePhotoTitle;
-                                contentText = s.deletePhotoMsg;
-                                break;
-                              case MediaType.video:
-                                titleText = s.deleteVideoTitle;
-                                contentText = s.deleteVideoMsg;
-                                break;
-                              case MediaType.document:
-                                titleText = s.deleteDocTitle;
-                                contentText = s.deleteDocMsg;
-                                break;
-                              default:
-                                titleText = s.deleteFileTitle;
-                                contentText = s.deleteFileMsg;
-                            }
-                            showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: Text(
-                                  titleText,
-                                  style: AppTypography.odiaTitleLarge.copyWith(
-                                    fontSize: 18,
-                                  ),
-                                ),
-                                content: Text(
-                                  contentText,
-                                  style: AppTypography.odiaBodyMedium,
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx, false),
-                                    child: Text(
-                                      s.cancel,
-                                      style: TextStyle(
-                                        color: context.t.bodyColor,
-                                      ),
-                                    ),
-                                  ),
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx, true),
-                                    child: Text(
-                                      s.deleteBtn,
-                                      style: const TextStyle(
-                                        color: AppColors.vrCoral,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ).then((confirmed) {
-                              if (confirmed == true) {
-                                notifier.removeMedia(index);
-                              }
-                            });
-                          } else {
-                            notifier.removePhoto(index);
+                          if (!para.hasMedia) return;
+                          String titleText;
+                          String contentText;
+                          switch (para.mediaType) {
+                            case MediaType.audio:
+                              titleText = s.deleteAudioTitle;
+                              contentText = s.deleteAudioMsg;
+                              break;
+                            case MediaType.photo:
+                              titleText = s.deletePhotoTitle;
+                              contentText = s.deletePhotoMsg;
+                              break;
+                            case MediaType.video:
+                              titleText = s.deleteVideoTitle;
+                              contentText = s.deleteVideoMsg;
+                              break;
+                            case MediaType.document:
+                              titleText = s.deleteDocTitle;
+                              contentText = s.deleteDocMsg;
+                              break;
+                            default:
+                              titleText = s.deleteFileTitle;
+                              contentText = s.deleteFileMsg;
                           }
-                        },
-                        onOcrPhoto: isReadOnly ? null : (index) {
-                          notifier.runOcrOnParagraph(index);
-                        },
-                        onMoveParagraph: isReadOnly ? null : (oldIdx, newIdx) {
-                          _cancelInlineEdit();
-                          notifier.moveParagraph(oldIdx, newIdx);
-                        },
-                        onUpdateTable: isReadOnly ? null : (index, data) {
-                          notifier.updateParagraphTable(index, data);
-                        },
-                        onParagraphSelectionChanged: isReadOnly ? null : (index, selection) {
-                          final hasSelectable = selection.isValid && !selection.isCollapsed && selection.start >= 0;
-                          setState(() {
-                            _selectableSelectionParaIndex = index;
-                            _selectableSelection = hasSelectable ? selection : null;
-                            _hasTextSelection = hasSelectable || (_inlineEditController != null && _hasTextSelection);
+                          showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: Text(
+                                titleText,
+                                style: AppTypography.odiaTitleLarge.copyWith(
+                                  fontSize: 18,
+                                ),
+                              ),
+                              content: Text(
+                                contentText,
+                                style: AppTypography.odiaBodyMedium,
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: Text(
+                                    s.cancel,
+                                    style: TextStyle(
+                                      color: context.t.bodyColor,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: Text(
+                                    s.deleteBtn,
+                                    style: const TextStyle(
+                                      color: AppColors.vrCoral,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ).then((confirmed) {
+                            if (confirmed == true) {
+                              notifier.removeMedia(index);
+                            }
                           });
                         },
+                        onOcrPhoto: (index) =>
+                            notifier.runOcrOnParagraph(index),
+                        onUpdateTable: (index, data) =>
+                            notifier.updateParagraphTable(index, data),
                         onTapEmptySpace: () {
-                          notifier.deselectParagraph();
-                          _cancelInlineEdit();
-                          setState(() {
-                            _selectableSelection = null;
-                            _selectableSelectionParaIndex = null;
-                          });
+                          // Drop focus from any TextField, dismissing the
+                          // keyboard. Provider-level "selection" state isn't
+                          // used in the new editor.
+                          FocusManager.instance.primaryFocus?.unfocus();
                         },
                       ),
               ),
@@ -749,18 +759,30 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                                 onRecord: () async {
                                   if (!await _gateMic(isStart: true)) return;
                                   _maybeShowCloseTalkHint();
-                                  // If cursor is placed in a paragraph, capture position
-                                  if (_inlineEditController != null &&
-                                      _inlineEditingIndex != null) {
-                                    final sel = _inlineEditController!.selection;
-                                    if (sel.isValid && sel.isCollapsed) {
-                                      final paraIdx = _inlineEditingIndex!;
-                                      final cursorPos = sel.baseOffset;
-                                      // Commit the inline edit to save current text
-                                      _commitInlineEdit(paraIdx, keepSelected: true);
-                                      // Set cursor insert in provider AFTER commit
-                                      notifier.setCursorInsert(paraIdx, cursorPos);
+                                  // Decide where the live transcript should
+                                  // splice in. Priority:
+                                  //   1. The currently focused TextField's
+                                  //      caret (user explicitly placed it).
+                                  //   2. End of the last text paragraph
+                                  //      (default append-style flow).
+                                  // Streaming requires cursor-insert mode,
+                                  // so we always pick a target if any text
+                                  // paragraph exists.
+                                  int? paraIdx = _focusedParagraphIndex;
+                                  int? cursorPos = _focusedCursorOffset;
+                                  if (paraIdx == null || cursorPos == null) {
+                                    final paras = state.paragraphs;
+                                    for (int i = paras.length - 1; i >= 0; i--) {
+                                      final p = paras[i];
+                                      if (!p.hasMedia && !p.isTable) {
+                                        paraIdx = i;
+                                        cursorPos = p.text.length;
+                                        break;
+                                      }
                                     }
+                                  }
+                                  if (paraIdx != null && cursorPos != null) {
+                                    notifier.setCursorInsert(paraIdx, cursorPos);
                                   }
                                   notifier.toggleRecording();
                                 },
@@ -770,7 +792,11 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                                   notifier.toggleRecording(saveAudio: true);
                                 },
                                 onRewrite: () {
-                                  final idx = state.editingParagraphIndex;
+                                  // AI rewrite operates on the focused
+                                  // paragraph (whole-paragraph rewrite). The
+                                  // legacy selection-aware path is dropped
+                                  // for simplicity in the new editor.
+                                  final idx = _focusedParagraphIndex;
                                   if (idx != null) {
                                     _startAIInstruction(idx);
                                   }
@@ -1332,6 +1358,30 @@ class _NotepadHeader extends ConsumerWidget {
               ),
             ),
 
+            // Server-assigned display id (e.g. "PNS-26-1234"). Sits as a
+            // small mono label above the headline so reviewers and
+            // reporters can refer to a specific story by a short
+            // human-readable id without copying a UUID.
+            if (state.displayId != null && state.displayId!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.base,
+                  0,
+                  AppSpacing.base,
+                  AppSpacing.xs,
+                ),
+                child: Text(
+                  state.displayId!,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.6,
+                    color: t.mutedColor,
+                  ),
+                ),
+              ),
+
             // Headline
             Padding(
               padding: const EdgeInsets.symmetric(
@@ -1716,7 +1766,510 @@ class _EmptyState extends ConsumerWidget {
 }
 
 // =============================================================================
-// Zone 2: Notepad body (paragraphs + dividers + ghost paragraph)
+// Zone 2 (NEW): Simple notepad body
+//
+// Single editable surface per text-run, with media/tables interleaved.
+// Replaces the per-paragraph block editor (_NotepadBody / _ParagraphBlock /
+// _GhostParagraph / _InsertDivider / _EditActionChips). Reporters get one
+// continuous TextField for typing — no per-paragraph chips, no scroll-to-
+// focus jumping, no accidental delete. Media and table blocks render between
+// text runs as standalone widgets with their own remove confirms.
+// =============================================================================
+
+/// A "run" of consecutive paragraphs in the notepad: either one or more
+/// text paragraphs grouped into one editable surface, or a single media /
+/// table paragraph rendered as a standalone widget.
+class _Run {
+  final bool isText;
+  final int firstIdx; // inclusive
+  final int lastIdx;  // inclusive (== firstIdx for media/table)
+  const _Run.text(this.firstIdx, this.lastIdx) : isText = true;
+  const _Run.atomic(int idx)
+      : isText = false,
+        firstIdx = idx,
+        lastIdx = idx;
+  String runId(List<Paragraph> paras) => paras[firstIdx].id;
+}
+
+List<_Run> _groupRuns(List<Paragraph> paras) {
+  final runs = <_Run>[];
+  int i = 0;
+  while (i < paras.length) {
+    final p = paras[i];
+    if (p.hasMedia || p.isTable) {
+      runs.add(_Run.atomic(i));
+      i++;
+      continue;
+    }
+    int j = i;
+    while (j + 1 < paras.length &&
+        !paras[j + 1].hasMedia &&
+        !paras[j + 1].isTable) {
+      j++;
+    }
+    runs.add(_Run.text(i, j));
+    i = j + 1;
+  }
+  return runs;
+}
+
+class _SimpleNotepadBody extends StatefulWidget {
+  final NotepadState state;
+  final bool isReadOnly;
+  final ValueChanged<int>? onRemoveMedia;
+  final ValueChanged<int>? onOcrPhoto;
+  final void Function(int index, List<List<String>> data)? onUpdateTable;
+  final void Function(int firstIdx, int lastIdx, List<String> newTexts) onTextRunCommitted;
+  /// Reports which paragraph index + cursor offset is currently focused.
+  /// Used by the bottom bar's Record button to insert transcripts at the
+  /// right spot. Null offset means no run is focused.
+  final void Function(int? paragraphIndex, int? cursorOffset)? onFocusedCursorChanged;
+  final ValueChanged<bool>? onTextSelectionChanged;
+  final VoidCallback onTapEmptySpace;
+
+  const _SimpleNotepadBody({
+    required this.state,
+    required this.isReadOnly,
+    required this.onTextRunCommitted,
+    required this.onTapEmptySpace,
+    this.onRemoveMedia,
+    this.onOcrPhoto,
+    this.onUpdateTable,
+    this.onFocusedCursorChanged,
+    this.onTextSelectionChanged,
+  });
+
+  @override
+  State<_SimpleNotepadBody> createState() => _SimpleNotepadBodyState();
+}
+
+class _SimpleNotepadBodyState extends State<_SimpleNotepadBody> {
+  /// Per text-run controllers, keyed by the run's first paragraph id.
+  final Map<String, TextEditingController> _controllers = {};
+  final Map<String, FocusNode> _focusNodes = {};
+  /// What text we last saw from the provider for each run. Used to detect
+  /// external updates (voice/AI/undo) so we know when to refresh the
+  /// controller — vs. echoing back our own typing.
+  final Map<String, String> _lastSyncedText = {};
+  /// Currently focused text-run id, or null.
+  String? _focusedRunId;
+  /// Per-run debounce timers for committing typing back to the provider.
+  final Map<String, Future<void>> _commitDebounces = {};
+  static const _commitDelay = Duration(milliseconds: 500);
+
+  // While a cursor-insert recording is active, [_streamingRunId] points
+  // at the text-run whose TextField should display the live transcript
+  // preview underneath it. The preview is a separate coral-colored Text
+  // widget rendered inline (see build()), not a splice into the
+  // controller — that path was unreliable across cold WS connections.
+  String? _streamingRunId;
+
+  @override
+  void didUpdateWidget(covariant _SimpleNotepadBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncControllersFromState();
+    _syncLiveStreaming(widget.state);
+  }
+
+  /// Track which text-run is the streaming target. We don't splice the
+  /// live transcript into the TextField controller anymore — that path
+  /// proved flaky on cold WS connections. Instead the build method
+  /// renders an inline coral Text widget right after the target run's
+  /// TextField while recording, showing `state.liveTranscript`. On
+  /// commit, the provider stamps the final text into the paragraph and
+  /// we explicitly refresh the controller from it; the coral preview
+  /// disappears because cursorInsertParagraphIndex is cleared.
+  void _syncLiveStreaming(NotepadState newState) {
+    final isStreamingNow = newState.cursorInsertParagraphIndex != null;
+
+    if (isStreamingNow && _streamingRunId == null) {
+      _enterStreamingFromState(newState);
+    }
+    if (!isStreamingNow && _streamingRunId != null) {
+      // Recording committed. Force-refresh the controller from the
+      // committed paragraph text — this sync skipped the streaming run
+      // earlier, so the run-level controller is still showing pre-record
+      // text. We bypass the "ctrl.text == lastSynced" guard because the
+      // controller may differ from lastSynced if anything (e.g. ghost
+      // setState chains) wrote to it during recording.
+      final runId = _streamingRunId!;
+      final ctrl = _controllers[runId];
+      final paras = newState.paragraphs;
+      _Run? run;
+      for (final r in _groupRuns(paras)) {
+        if (r.isText && paras[r.firstIdx].id == runId) {
+          run = r;
+          break;
+        }
+      }
+      if (run != null && ctrl != null) {
+        final joined = paras
+            .sublist(run.firstIdx, run.lastIdx + 1)
+            .map((p) => p.text)
+            .join('\n\n');
+        if (ctrl.text != joined) {
+          ctrl.value = TextEditingValue(
+            text: joined,
+            selection: TextSelection.collapsed(offset: joined.length),
+          );
+        }
+        _lastSyncedText[runId] = joined;
+      }
+      _streamingRunId = null;
+    }
+  }
+
+  void _enterStreamingFromState(NotepadState st) {
+    final pi = st.cursorInsertParagraphIndex;
+    if (pi == null) {
+      debugPrint('[BODY] _enterStreaming: cursorInsert=null, skip');
+      return;
+    }
+    final paras = st.paragraphs;
+    if (pi < 0 || pi >= paras.length) {
+      debugPrint('[BODY] _enterStreaming: pi=$pi out of range (paras=${paras.length})');
+      return;
+    }
+
+    for (final run in _groupRuns(paras)) {
+      if (run.isText && pi >= run.firstIdx && pi <= run.lastIdx) {
+        _streamingRunId = paras[run.firstIdx].id;
+        debugPrint('[BODY] _enterStreaming: _streamingRunId=$_streamingRunId pi=$pi');
+        return;
+      }
+    }
+    debugPrint('[BODY] _enterStreaming: no text run contains pi=$pi');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncControllersFromState();
+      // Pick up an already-active recording (e.g. user tapped Record from
+      // _EmptyState, which created the first paragraph and mounted us
+      // mid-recording).
+      _syncLiveStreaming(widget.state);
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
+    for (final f in _focusNodes.values) {
+      f.dispose();
+    }
+    _controllers.clear();
+    _focusNodes.clear();
+    super.dispose();
+  }
+
+  void _syncControllersFromState() {
+    final paras = widget.state.paragraphs;
+    final runs = _groupRuns(paras).where((r) => r.isText).toList();
+    final liveIds = <String>{};
+
+    for (final run in runs) {
+      final id = run.runId(paras);
+      liveIds.add(id);
+      final joined = paras
+          .sublist(run.firstIdx, run.lastIdx + 1)
+          .map((p) => p.text)
+          .join('\n\n');
+
+      var ctrl = _controllers[id];
+      if (ctrl == null) {
+        ctrl = TextEditingController(text: joined);
+        _controllers[id] = ctrl;
+        _lastSyncedText[id] = joined;
+        final focus = FocusNode();
+        focus.addListener(() => _onFocusChanged(id, focus));
+        _focusNodes[id] = focus;
+        ctrl.addListener(() => _onTextChanged(id));
+      } else {
+        // Skip controller updates while we're actively driving it from a
+        // live STT stream — _syncLiveStreaming owns the controller text
+        // until recording stops.
+        if (_streamingRunId == id) continue;
+        // Sync controller from provider when the joined text differs and
+        // the controller text matches what we last pushed (i.e. the user
+        // hasn't typed anything new since last commit). This catches
+        // voice-committed text, AI rewrites, and undo/redo even while the
+        // TextField is focused.
+        final lastSynced = _lastSyncedText[id] ?? '';
+        if (joined != ctrl.text && ctrl.text == lastSynced) {
+          final newCursor = joined.length;
+          ctrl.value = TextEditingValue(
+            text: joined,
+            selection: TextSelection.collapsed(offset: newCursor),
+          );
+          _lastSyncedText[id] = joined;
+        }
+      }
+    }
+
+    // Dispose controllers for runs that are no longer present (e.g. user
+    // deleted all text in a run, or media/table was inserted that split a
+    // run — first paragraph id changed).
+    final toRemove = _controllers.keys.where((k) => !liveIds.contains(k)).toList();
+    for (final k in toRemove) {
+      _controllers.remove(k)?.dispose();
+      _focusNodes.remove(k)?.dispose();
+      _lastSyncedText.remove(k);
+      _commitDebounces.remove(k);
+      if (_focusedRunId == k) _focusedRunId = null;
+    }
+  }
+
+  void _onFocusChanged(String runId, FocusNode focus) {
+    if (focus.hasFocus) {
+      _focusedRunId = runId;
+      _reportFocusedCursor();
+    } else if (_focusedRunId == runId) {
+      // Only clear if no other run picks up focus immediately
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!_focusNodes.values.any((f) => f.hasFocus)) {
+          _focusedRunId = null;
+          widget.onFocusedCursorChanged?.call(null, null);
+        }
+      });
+    }
+    // Commit typing immediately when focus leaves so a subsequent record/
+    // attach action sees the latest paragraph text.
+    if (!focus.hasFocus) {
+      _commitNow(runId);
+    }
+  }
+
+  void _onTextChanged(String runId) {
+    final ctrl = _controllers[runId];
+    if (ctrl == null) return;
+    _reportFocusedCursor();
+    final sel = ctrl.selection;
+    final hasSelection = sel.isValid && !sel.isCollapsed && sel.start >= 0;
+    widget.onTextSelectionChanged?.call(hasSelection);
+    // Debounced commit. The latest call wins because _commitNow is a no-op
+    // when the controller text matches what we last pushed; intervening
+    // typing keeps changing the text so the eventual commit reflects the
+    // most recent state.
+    _commitDebounces[runId] = Future.delayed(_commitDelay, () {
+      if (!mounted) return;
+      _commitNow(runId);
+    });
+  }
+
+  void _commitNow(String runId) {
+    // While streaming live STT into this run, the controller text is a
+    // transient preview; the provider commits the final text on stop.
+    if (_streamingRunId == runId) return;
+    final ctrl = _controllers[runId];
+    if (ctrl == null) return;
+    final text = ctrl.text;
+    if (_lastSyncedText[runId] == text) return;
+    _lastSyncedText[runId] = text;
+
+    final paras = widget.state.paragraphs;
+    final run = _groupRuns(paras).firstWhere(
+      (r) => r.isText && paras[r.firstIdx].id == runId,
+      orElse: () => const _Run.text(-1, -1),
+    );
+    if (run.firstIdx < 0) return;
+
+    final pieces = text.split(RegExp(r'\n\s*\n'));
+    widget.onTextRunCommitted(run.firstIdx, run.lastIdx, pieces);
+  }
+
+  void _reportFocusedCursor() {
+    final id = _focusedRunId;
+    if (id == null) {
+      widget.onFocusedCursorChanged?.call(null, null);
+      return;
+    }
+    final ctrl = _controllers[id];
+    if (ctrl == null) return;
+    final paras = widget.state.paragraphs;
+    final run = _groupRuns(paras).firstWhere(
+      (r) => r.isText && paras[r.firstIdx].id == id,
+      orElse: () => const _Run.text(-1, -1),
+    );
+    if (run.firstIdx < 0) return;
+    final offset = ctrl.selection.baseOffset.clamp(0, ctrl.text.length);
+    // Map the (run, offset) to (paragraph index, in-paragraph offset) so the
+    // provider's cursor-insert can target the right paragraph.
+    var remaining = offset;
+    for (int i = run.firstIdx; i <= run.lastIdx; i++) {
+      final pText = paras[i].text;
+      if (remaining <= pText.length) {
+        widget.onFocusedCursorChanged?.call(i, remaining);
+        return;
+      }
+      remaining -= pText.length;
+      // The '\n\n' separator between paragraphs in the merged text.
+      remaining -= 2;
+      if (remaining < 0) {
+        widget.onFocusedCursorChanged?.call(i, pText.length);
+        return;
+      }
+    }
+    // Fallback: cursor past end → last paragraph end
+    widget.onFocusedCursorChanged?.call(run.lastIdx, paras[run.lastIdx].text.length);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final paras = widget.state.paragraphs;
+    final runs = _groupRuns(paras);
+
+    // Live transcript preview is shown right after the streaming-target
+    // run (the run containing cursorInsertParagraphIndex). When recording
+    // starts on an empty story, the target is the freshly-created empty
+    // paragraph, so the preview appears immediately at the top.
+    final liveTranscript = widget.state.liveTranscript;
+    final showLivePreview = widget.state.cursorInsertParagraphIndex != null &&
+        liveTranscript.isNotEmpty;
+
+    final children = <Widget>[];
+    for (final run in runs) {
+      if (run.isText) {
+        final id = run.runId(paras);
+        final ctrl = _controllers[id];
+        final focus = _focusNodes[id];
+        if (ctrl == null || focus == null) continue;
+        children.add(_TextRunField(
+          controller: ctrl,
+          focusNode: focus,
+          readOnly: widget.isReadOnly,
+        ));
+        if (showLivePreview && id == _streamingRunId) {
+          children.add(_LiveTranscriptPreview(text: liveTranscript));
+        }
+      } else {
+        final p = paras[run.firstIdx];
+        if (p.hasMedia) {
+          children.add(_MediaBlock(
+            paragraph: p,
+            onRemove: widget.isReadOnly
+                ? null
+                : () => widget.onRemoveMedia?.call(run.firstIdx),
+            onOcr: widget.isReadOnly
+                ? null
+                : () => widget.onOcrPhoto?.call(run.firstIdx),
+          ));
+        } else if (p.isTable) {
+          children.add(_EditableTableBlock(
+            paragraph: p,
+            isSelected: false,
+            onTableChanged: widget.isReadOnly
+                ? null
+                : (data) => widget.onUpdateTable?.call(run.firstIdx, data),
+          ));
+        }
+      }
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTapEmptySpace,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.md,
+          AppSpacing.lg,
+          AppSpacing.huge,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ...children,
+            // Tail tap zone so users can dismiss focus by tapping below text.
+            const SizedBox(height: 200),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Coral-colored live transcript preview shown inline next to the
+/// streaming-target text run while recording. The text content updates
+/// as the WS streams partial transcripts. On stop, the provider commits
+/// the final transcript into the underlying paragraph and this widget
+/// disappears (its parent removes it from the tree because
+/// cursorInsertParagraphIndex is cleared).
+class _LiveTranscriptPreview extends StatelessWidget {
+  final String text;
+
+  const _LiveTranscriptPreview({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = AppTypography.odiaBodyLarge.copyWith(
+      color: AppColors.vrCoral,
+      height: 1.7,
+      fontWeight: FontWeight.w500,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      child: Text(text, style: style),
+    );
+  }
+}
+
+/// Borderless multi-line TextField for one text run. No chrome, no
+/// per-paragraph chips, no auto-scroll. Uses Odia body typography to match
+/// the previous block editor.
+class _TextRunField extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool readOnly;
+
+  const _TextRunField({
+    required this.controller,
+    required this.focusNode,
+    required this.readOnly,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.t;
+    final style = AppTypography.odiaBodyLarge.copyWith(
+      color: t.bodyColor,
+      height: 1.7,
+    );
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      readOnly: readOnly,
+      maxLines: null,
+      keyboardType: TextInputType.multiline,
+      textCapitalization: TextCapitalization.sentences,
+      style: style,
+      cursorColor: AppColors.vrCoral,
+      decoration: const InputDecoration(
+        filled: false,
+        fillColor: Colors.transparent,
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        disabledBorder: InputBorder.none,
+        errorBorder: InputBorder.none,
+        focusedErrorBorder: InputBorder.none,
+        isCollapsed: true,
+        contentPadding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Zone 2 (LEGACY): Notepad body (paragraphs + dividers + ghost paragraph)
+//
+// Kept temporarily; replaced by _SimpleNotepadBody. Will be deleted once the
+// new editor is verified on UAT.
 // =============================================================================
 
 class _NotepadBody extends StatelessWidget {
