@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-// TODO: per-row reassignment was on the legacy DashboardPage; deferred
-// to a follow-up plan. See docs/plans/2026-04-30-dashboard-redesign-design.md
-// "Out of scope" section.
 import {
   fetchStats, fetchStories, transformStory,
+  fetchReporters, fetchOrgUsers, reassignStory,
 } from '../services/api';
 import { useDensityPreference } from '../hooks/useDensityPreference';
 import { useKeyboardRowNav } from '../hooks/useKeyboardRowNav';
@@ -38,6 +36,23 @@ export default function DashboardPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [reporterFilter, setReporterFilter] = useState('');
+
+  // Pickable lists for the FilterBar's reporter dropdown and the
+  // per-row AssigneePicker. Loaded once on mount.
+  const [reporters, setReporters] = useState([]);
+  const [reviewers, setReviewers] = useState([]);
+  useEffect(() => {
+    fetchReporters().then((data) => setReporters(data?.reporters || [])).catch(() => {});
+    // Anyone who is not a plain reporter can be assigned a story —
+    // reviewers, org_admins, etc. fetchOrgUsers returns the active set.
+    fetchOrgUsers().then((data) => {
+      const list = (data?.users || [])
+        .filter((u) => u.user_type !== 'reporter')
+        .map((u) => ({ id: u.id, name: u.name }));
+      setReviewers(list);
+    }).catch(() => {});
+  }, []);
 
   // Pagination — synced to ?page=N
   const page = Math.max(0, parseInt(searchParams.get('page') || '0', 10));
@@ -76,7 +91,7 @@ export default function DashboardPage() {
         params.exclude_status = 'draft,published,rejected';
       }
 
-      // User-driven overrides (filter bar chips + search + category).
+      // User-driven overrides (filter bar chips + search + category + reporter).
       if (search)         params.search = search;
       if (statusFilter) {
         params.status = statusFilter;
@@ -85,6 +100,14 @@ export default function DashboardPage() {
         delete params.exclude_status;
       }
       if (categoryFilter) params.category = categoryFilter;
+      if (reporterFilter) {
+        params.reporter_id = reporterFilter;
+        // Reporter filter is org-wide intent — drop the reviewer-scope
+        // assigned_to so a reviewer can find a specific reporter's
+        // stories regardless of who they're assigned to.
+        delete params.assigned_to;
+        delete params.exclude_status;
+      }
 
       const data = await fetchStories(params);
       setStories((data?.stories || []).map(transformStory));
@@ -94,7 +117,7 @@ export default function DashboardPage() {
     } finally {
       setStoriesLoading(false);
     }
-  }, [search, statusFilter, categoryFilter, page, user]);
+  }, [search, statusFilter, categoryFilter, reporterFilter, page, user]);
 
   // Initial + filter-change fetches
   useEffect(() => { loadStats(); }, [loadStats]);
@@ -107,7 +130,7 @@ export default function DashboardPage() {
     setPage(0);
     // We deliberately don't depend on `setPage` itself — it's a stable
     // useCallback but that's a fragile assumption to depend on here.
-  }, [search, statusFilter, categoryFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, statusFilter, categoryFilter, reporterFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Polling
   useEffect(() => {
@@ -130,6 +153,47 @@ export default function DashboardPage() {
     rowCount: stories.length,
     onOpen: onOpenRow,
   });
+
+  // Optimistic reassignment from the queue. Patches the local stories
+  // array immediately, fires the API, reverts via re-fetch on failure.
+  const handleReassign = useCallback(async (storyId, nextAssigneeId) => {
+    const target = reviewers.find((r) => r.id === nextAssigneeId);
+    setStories((prev) => prev.map((s) =>
+      s.id === storyId
+        ? { ...s, assigned_to: nextAssigneeId, assignee_name: target?.name || null }
+        : s
+    ));
+    try {
+      await reassignStory(storyId, nextAssigneeId);
+    } catch (err) {
+      console.error('Reassign failed:', err);
+      loadStories(); // revert by re-fetching truth
+    }
+  }, [reviewers, loadStories]);
+
+  // ── ←/→ pagination ────────────────────────────────────────────────────────
+  // Global arrow-key paging on the queue. Skipped while typing in any
+  // input/textarea/contenteditable; ignored when ⌘/Ctrl/Alt are held so
+  // browser back-forward (Cmd+←/→) still works.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const tag = e.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.target?.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const pageCount = Math.ceil(total / PAGE_SIZE);
+      if (e.key === 'ArrowLeft' && page > 0) {
+        e.preventDefault();
+        setPage(page - 1);
+      } else if (e.key === 'ArrowRight' && page + 1 < pageCount) {
+        e.preventDefault();
+        setPage(page + 1);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [page, total, setPage]);
 
   // ── Quick-jump by display-id digits ───────────────────────────────────────
   // Type the trailing digits of a story's display id (e.g. "499" for
@@ -277,6 +341,7 @@ export default function DashboardPage() {
           search={search}             onSearchChange={setSearch}
           status={statusFilter}       onStatusChange={setStatusFilter}
           categories={categories}     category={categoryFilter}      onCategoryChange={setCategoryFilter}
+          reporters={reporters}       reporter={reporterFilter}      onReporterChange={setReporterFilter}
         />
       </div>
 
@@ -289,6 +354,8 @@ export default function DashboardPage() {
             density={density}
             focusedIndex={focusedIndex}
             onRowFocus={setFocusedIndex}
+            reviewers={reviewers}
+            onReassign={handleReassign}
           />
         </div>
         {total > PAGE_SIZE && (

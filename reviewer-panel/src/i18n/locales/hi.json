@@ -30,6 +30,9 @@
     "refresh": "रिफ्रेश",
     "filterAll": "सभी",
     "filterAllCategories": "सभी श्रेणियाँ",
+    "filterAllReporters": "सभी संवाददाता",
+    "assignedTo": "नियुक्त",
+    "unassigned": "अनिर्दिष्ट",
     "density": { "compact": "सघन", "comfortable": "सहज", "cozy": "विशाल" }
   },
   "table": {

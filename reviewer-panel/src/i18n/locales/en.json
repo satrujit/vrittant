@@ -30,6 +30,9 @@
     "refresh": "Refresh",
     "filterAll": "All",
     "filterAllCategories": "All categories",
+    "filterAllReporters": "All reporters",
+    "assignedTo": "Assigned to",
+    "unassigned": "Unassigned",
     "density": { "compact": "Compact", "comfortable": "Comfortable", "cozy": "Cozy" }
   },
   "table": {

@@ -16,6 +16,7 @@ export default function FilterBar({
   search, onSearchChange,
   status, onStatusChange,
   categories = [], category, onCategoryChange,
+  reporters = [], reporter, onReporterChange,
 }) {
   const { t } = useI18n();
 
@@ -73,6 +74,20 @@ export default function FilterBar({
           <option value="">{t('dashboard.filterAllCategories') || 'All categories'}</option>
           {categories.map((c) => (
             <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      )}
+
+      {/* Reporter dropdown — same pattern as category */}
+      {reporters.length > 0 && (
+        <select
+          value={reporter || ''}
+          onChange={(e) => onReporterChange(e.target.value)}
+          className="h-8 max-w-44 truncate rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+        >
+          <option value="">{t('dashboard.filterAllReporters') || 'All reporters'}</option>
+          {reporters.map((r) => (
+            <option key={r.id} value={r.id}>{r.name}</option>
           ))}
         </select>
       )}
