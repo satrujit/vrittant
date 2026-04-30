@@ -248,6 +248,12 @@ class NotepadState {
   /// so reviewers can see exactly what the reporter said before AI rewrote it.
   final String? userNotes;
   final bool isGeneratingStory;
+  /// Set when the parent screen wants the body editor to grab keyboard
+  /// focus on a specific paragraph (e.g. after the user taps "Type" in
+  /// the empty state, which adds an empty paragraph and then needs the
+  /// keyboard to come up). The body clears this after requesting focus
+  /// so it only fires once per signal.
+  final int? pendingFocusParagraphIndex;
 
   const NotepadState({
     this.headline = '',
@@ -279,6 +285,7 @@ class NotepadState {
     this.isSpeakerVerified = true,
     this.userNotes,
     this.isGeneratingStory = false,
+    this.pendingFocusParagraphIndex,
   });
 
   NotepadState copyWith({
@@ -319,6 +326,8 @@ class NotepadState {
     String? userNotes,
     bool clearUserNotes = false,
     bool? isGeneratingStory,
+    int? pendingFocusParagraphIndex,
+    bool clearPendingFocus = false,
   }) {
     return NotepadState(
       headline: headline ?? this.headline,
@@ -364,6 +373,9 @@ class NotepadState {
       isSpeakerVerified: isSpeakerVerified ?? this.isSpeakerVerified,
       userNotes: clearUserNotes ? null : (userNotes ?? this.userNotes),
       isGeneratingStory: isGeneratingStory ?? this.isGeneratingStory,
+      pendingFocusParagraphIndex: clearPendingFocus
+          ? null
+          : (pendingFocusParagraphIndex ?? this.pendingFocusParagraphIndex),
     );
   }
 
@@ -1329,6 +1341,21 @@ class NotepadNotifier extends Notifier<NotepadState> {
     }
     _scheduleAutoSave();
     return insertedAt;
+  }
+
+  /// Tell the body editor to grab keyboard focus on a specific paragraph.
+  /// Used by the empty-state "Type" CTA: it adds an empty paragraph and
+  /// then needs the keyboard to come up on it. The body clears the flag
+  /// after requesting focus (via [clearPendingFocus]).
+  void requestFocusOnParagraph(int index) {
+    state = state.copyWith(pendingFocusParagraphIndex: index);
+  }
+
+  /// Called by the body editor after it actually requests focus, so the
+  /// signal doesn't keep firing on every subsequent state change.
+  void clearPendingFocus() {
+    if (state.pendingFocusParagraphIndex == null) return;
+    state = state.copyWith(clearPendingFocus: true);
   }
 
   // ---------------------------------------------------------------------------

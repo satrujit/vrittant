@@ -552,7 +552,13 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                             ? null
                             : () {
                                 final idx = notifier.addEmptyParagraph();
-                                _startInlineEdit(idx, '');
+                                // The new Evernote-style _SimpleNotepadBody
+                                // owns its own per-run TextEditingControllers
+                                // and FocusNodes — the legacy _startInlineEdit
+                                // path was a no-op there. Signal the body to
+                                // request focus on the freshly-added paragraph
+                                // so the keyboard pops up immediately.
+                                notifier.requestFocusOnParagraph(idx);
                               },
                         tapMicLabel: s.startSpeaking,
                         subtitle: s.speakYourNews,
@@ -599,6 +605,8 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                             setState(() => _hasTextSelection = hasSelection);
                           });
                         },
+                        onPendingFocusHandled: () =>
+                            notifier.clearPendingFocus(),
                         onRemoveMedia: (index) {
                           final para = state.paragraphs[index];
                           if (!para.hasMedia) return;
@@ -1771,6 +1779,11 @@ class _SimpleNotepadBody extends StatefulWidget {
   /// right spot. Null offset means no run is focused.
   final void Function(int? paragraphIndex, int? cursorOffset)? onFocusedCursorChanged;
   final ValueChanged<bool>? onTextSelectionChanged;
+  /// Called after the body has actually requested focus on the paragraph
+  /// referenced by `state.pendingFocusParagraphIndex`. The parent should
+  /// clear the flag so the same signal doesn't re-fire on subsequent
+  /// state changes.
+  final VoidCallback? onPendingFocusHandled;
   final VoidCallback onTapEmptySpace;
 
   const _SimpleNotepadBody({
@@ -1783,6 +1796,7 @@ class _SimpleNotepadBody extends StatefulWidget {
     this.onUpdateTable,
     this.onFocusedCursorChanged,
     this.onTextSelectionChanged,
+    this.onPendingFocusHandled,
   });
 
   @override
@@ -1815,6 +1829,38 @@ class _SimpleNotepadBodyState extends State<_SimpleNotepadBody> {
     super.didUpdateWidget(oldWidget);
     _syncControllersFromState();
     _syncLiveStreaming(widget.state);
+    _maybeHandlePendingFocus();
+  }
+
+  /// Honour `state.pendingFocusParagraphIndex` — find the FocusNode for
+  /// the run containing that paragraph and request focus. Schedules the
+  /// actual focus + flag-clear in a post-frame callback so we don't
+  /// touch FocusNodes mid-build.
+  void _maybeHandlePendingFocus() {
+    final pending = widget.state.pendingFocusParagraphIndex;
+    if (pending == null) return;
+    final paras = widget.state.paragraphs;
+    if (pending < 0 || pending >= paras.length) {
+      widget.onPendingFocusHandled?.call();
+      return;
+    }
+    String? targetRunId;
+    for (final run in _groupRuns(paras)) {
+      if (run.isText && pending >= run.firstIdx && pending <= run.lastIdx) {
+        targetRunId = paras[run.firstIdx].id;
+        break;
+      }
+    }
+    if (targetRunId == null) {
+      widget.onPendingFocusHandled?.call();
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final node = _focusNodes[targetRunId];
+      node?.requestFocus();
+      widget.onPendingFocusHandled?.call();
+    });
   }
 
   /// Track which text-run is the streaming target. We don't splice the
@@ -1897,6 +1943,10 @@ class _SimpleNotepadBodyState extends State<_SimpleNotepadBody> {
       // _EmptyState, which created the first paragraph and mounted us
       // mid-recording).
       _syncLiveStreaming(widget.state);
+      // Same pickup for the "Type" CTA path: the parent set
+      // pendingFocusParagraphIndex BEFORE we mounted, so didUpdateWidget
+      // will never fire for it. Honour the signal here on first mount.
+      _maybeHandlePendingFocus();
     });
   }
 
