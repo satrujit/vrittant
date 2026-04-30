@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, X } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -8,9 +8,24 @@ import {
   confirmResearchedStory,
 } from '../services/api';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { SearchableSelect } from '../components/common';
 import NewsFeedTable from '../components/news_feed/NewsFeedTable';
 import StoryPreviewDialog from '../components/StoryPreviewDialog';
+
+// Featured news sources reviewers reach for most often. Each entry has a
+// short user-facing label and an array of substring matchers used to find
+// the actual source string in the loaded `sources` list (case-insensitive)
+// — the canonical strings in the DB sometimes vary (e.g. "Odisha TV" vs
+// "OTV", "The Hindu" vs "Hindu"), so we resolve at runtime instead of
+// hard-coding which exact string to filter by.
+const QUICK_SOURCES = [
+  { label: 'Times of India',  matchers: ['times of india', 'toi'] },
+  { label: 'The Hindu',       matchers: ['the hindu'] },
+  { label: 'Indian Express',  matchers: ['indian express'] },
+  { label: 'Hindustan Times', matchers: ['hindustan times'] },
+  { label: 'OTV',             matchers: ['odisha tv', 'otv'] },
+];
 
 const PAGE_SIZE = 25;
 
@@ -152,6 +167,19 @@ export default function NewsFeedPage() {
     { value: 'education', label: 'Education' },
   ];
 
+  // Resolve each QUICK_SOURCES entry to its actual source string in the
+  // loaded list so the chips set the precise value the backend filter
+  // expects. Chips with no match get null and are still rendered (so the
+  // strip shape stays stable) but disabled with a hint that the source
+  // hasn't ingested any articles yet.
+  const resolvedQuickSources = useMemo(() => {
+    return QUICK_SOURCES.map((qs) => {
+      const lower = sources.map((s) => ({ orig: s, low: s.toLowerCase() }));
+      const hit = lower.find((s) => qs.matchers.some((m) => s.low.includes(m)));
+      return { label: qs.label, value: hit?.orig || null };
+    });
+  }, [sources]);
+
   return (
     <div className="flex h-full flex-col">
       {/* Header strip — same shape as the dashboard: title + inline stat
@@ -169,6 +197,39 @@ export default function NewsFeedPage() {
           </div>
         </div>
       </header>
+
+      {/* Quick-source chips — one-click jump to a featured source.
+          Clicking the active chip clears the filter; chips for sources
+          that haven't ingested an article yet are disabled. */}
+      <div className="flex flex-wrap items-center gap-1.5 px-6 pt-3">
+        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          {t('newsFeed.quickSources') || 'Quick sources'}
+        </span>
+        <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-card p-0.5">
+          {resolvedQuickSources.map((qs) => {
+            const active = qs.value && qs.value === source;
+            return (
+              <button
+                key={qs.label}
+                type="button"
+                disabled={!qs.value}
+                onClick={() => setSource(active ? '' : qs.value)}
+                aria-pressed={active}
+                className={cn(
+                  'rounded-[5px] px-2 py-1 text-[11.5px] font-medium transition-colors',
+                  active
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                  !qs.value && 'cursor-default opacity-40 hover:bg-transparent hover:text-muted-foreground',
+                )}
+                title={qs.value ? qs.label : `${qs.label} — no articles ingested yet`}
+              >
+                {qs.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Filter bar — single row, segmented look. Search left, category +
           source dropdowns next to it, clear-button when any filter set. */}
