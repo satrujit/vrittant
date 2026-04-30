@@ -100,6 +100,15 @@ export default function DashboardPage() {
   useEffect(() => { loadStats(); }, [loadStats]);
   useEffect(() => { loadStories(); }, [loadStories]);
 
+  // Whenever the user-driven filters change, reset to page 0. Otherwise
+  // switching from "All" to "Flagged" while on ?page=3 requests offset=75
+  // against a much smaller filtered set.
+  useEffect(() => {
+    setPage(0);
+    // We deliberately don't depend on `setPage` itself — it's a stable
+    // useCallback but that's a fragile assumption to depend on here.
+  }, [search, statusFilter, categoryFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Polling
   useEffect(() => {
     intervalRef.current = setInterval(() => {
