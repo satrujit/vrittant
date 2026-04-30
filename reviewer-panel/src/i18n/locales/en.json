@@ -29,7 +29,8 @@
     "showingResults": "Showing {start} to {end} of {total} reports",
     "refresh": "Refresh",
     "filterAll": "All",
-    "filterAllCategories": "All categories"
+    "filterAllCategories": "All categories",
+    "density": { "compact": "Compact", "comfortable": "Comfortable", "cozy": "Cozy" }
   },
   "table": {
     "storyTitle": "Story",

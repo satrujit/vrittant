@@ -29,7 +29,8 @@
     "showingResults": "{total} रिपोर्ट में से {start} से {end} दिखा रहे हैं",
     "refresh": "रिफ्रेश",
     "filterAll": "सभी",
-    "filterAllCategories": "सभी श्रेणियाँ"
+    "filterAllCategories": "सभी श्रेणियाँ",
+    "density": { "compact": "सघन", "comfortable": "सहज", "cozy": "विशाल" }
   },
   "table": {
     "storyTitle": "खबर",

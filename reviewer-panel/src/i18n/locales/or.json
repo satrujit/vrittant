@@ -29,7 +29,8 @@
     "showingResults": "{total} ରିପୋର୍ଟ ମଧ୍ୟରୁ {start} ରୁ {end} ଦେଖାଉଛି",
     "refresh": "ରିଫ୍ରେସ",
     "filterAll": "ସମସ୍ତ",
-    "filterAllCategories": "ସମସ୍ତ ବିଭାଗ"
+    "filterAllCategories": "ସମସ୍ତ ବିଭାଗ",
+    "density": { "compact": "ସଂକୁଚିତ", "comfortable": "ସୁଖଦ", "cozy": "ଆରାମଦାୟକ" }
   },
   "table": {
     "storyTitle": "ଖବର",
