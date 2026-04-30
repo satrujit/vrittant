@@ -2083,8 +2083,28 @@ class _SimpleNotepadBodyState extends State<_SimpleNotepadBody> {
   @override
   void initState() {
     super.initState();
+    // ── Synchronous controller seed (FIRST FRAME MUST RENDER) ─────
+    //
+    // We MUST create the per-run TextEditingControllers + FocusNodes
+    // before initState returns, otherwise build() runs against an
+    // empty `_controllers` map and silently skips every text run
+    // (the `if (ctrl == null) continue;` in build). The body would
+    // then render blank, and there's no setState anywhere in the
+    // sync path to trigger a re-render — content stays invisible
+    // until the next external state change happens to fire a
+    // rebuild. (Reporters were seeing blank-on-first-open, then
+    // correct content on the second open because by then the
+    // notifier state had churned enough to force a fresh build.)
+    //
+    // Pure-local mutation: this just creates Dart objects in the
+    // widget's State, doesn't call setState, doesn't touch the
+    // parent. Safe to do synchronously.
+    _syncControllersFromState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // Re-sync defensively in case state changed between initState
+      // and the post-frame callback (e.g. an in-flight network fetch
+      // landed mid-mount).
       _syncControllersFromState();
       // Pick up an already-active recording (e.g. user tapped Record from
       // _EmptyState, which created the first paragraph and mounted us
