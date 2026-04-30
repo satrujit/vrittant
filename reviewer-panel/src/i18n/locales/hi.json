@@ -27,7 +27,9 @@
     "searchPlaceholder": "रिपोर्ट खोजें...",
     "noReports": "कोई लंबित रिपोर्ट नहीं।",
     "showingResults": "{total} रिपोर्ट में से {start} से {end} दिखा रहे हैं",
-    "refresh": "रिफ्रेश"
+    "refresh": "रिफ्रेश",
+    "filterAll": "सभी",
+    "filterAllCategories": "सभी श्रेणियाँ"
   },
   "table": {
     "storyTitle": "खबर",

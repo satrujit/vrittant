@@ -27,7 +27,9 @@
     "searchPlaceholder": "ରିପୋର୍ଟ ଖୋଜନ୍ତୁ...",
     "noReports": "କୌଣସି ବାକି ରିପୋର୍ଟ ନାହିଁ।",
     "showingResults": "{total} ରିପୋର୍ଟ ମଧ୍ୟରୁ {start} ରୁ {end} ଦେଖାଉଛି",
-    "refresh": "ରିଫ୍ରେସ"
+    "refresh": "ରିଫ୍ରେସ",
+    "filterAll": "ସମସ୍ତ",
+    "filterAllCategories": "ସମସ୍ତ ବିଭାଗ"
   },
   "table": {
     "storyTitle": "ଖବର",

@@ -27,7 +27,9 @@
     "searchPlaceholder": "Search reports...",
     "noReports": "No pending reports.",
     "showingResults": "Showing {start} to {end} of {total} reports",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "filterAll": "All",
+    "filterAllCategories": "All categories"
   },
   "table": {
     "storyTitle": "Story",
