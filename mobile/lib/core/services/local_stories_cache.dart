@@ -66,6 +66,21 @@ class LocalStoriesCache {
     );
   }
 
+  /// Look up a single story by id. Returns null if not in cache or
+  /// the entry is corrupt (in which case it's also dropped). Used by
+  /// the notepad to hydrate from cache instantly when the reporter
+  /// taps a story card, before the network refresh lands.
+  StoryDto? find(String id) {
+    final raw = _box.get(id);
+    if (raw == null) return null;
+    try {
+      return StoryDto.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      _box.delete(id);
+      return null;
+    }
+  }
+
   /// Update a single story (e.g. after a per-story fetch / mutation).
   Future<void> upsert(StoryDto story) async {
     await _box.put(story.id, jsonEncode(_toJson(story)));

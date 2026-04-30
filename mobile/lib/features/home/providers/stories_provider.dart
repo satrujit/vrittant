@@ -54,12 +54,27 @@ class StoriesState {
   final List<DraftSummary> localDrafts;
 
   final bool isLoading;
+
+  /// True while a "next page" fetch is in flight. The home / all-news
+  /// list shows a footer spinner during this state. Distinct from
+  /// [isLoading], which is the cold-start full-list spinner.
+  final bool isLoadingMore;
+
+  /// True when the server reported a full page on the most recent
+  /// fetch — there are likely more rows. Goes false the moment a
+  /// fetch returns fewer than [pageSize] stories. The list footer
+  /// hides itself when this is false so reporters know they've
+  /// reached the end.
+  final bool hasMoreStories;
+
   final String? error;
 
   const StoriesState({
     this.serverStories = const [],
     this.localDrafts = const [],
     this.isLoading = false,
+    this.isLoadingMore = false,
+    this.hasMoreStories = false,
     this.error,
   });
 
@@ -79,6 +94,8 @@ class StoriesState {
     List<StoryDto>? serverStories,
     List<DraftSummary>? localDrafts,
     bool? isLoading,
+    bool? isLoadingMore,
+    bool? hasMoreStories,
     String? error,
     bool clearError = false,
   }) {
@@ -86,6 +103,8 @@ class StoriesState {
       serverStories: serverStories ?? this.serverStories,
       localDrafts: localDrafts ?? this.localDrafts,
       isLoading: isLoading ?? this.isLoading,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      hasMoreStories: hasMoreStories ?? this.hasMoreStories,
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -93,6 +112,19 @@ class StoriesState {
 
 class StoriesNotifier extends Notifier<StoriesState> {
   StreamSubscription? _draftsSub;
+
+  /// Server pagination — page size matches the backend's default
+  /// (50, max 100). Smaller pages = snappier first paint; bigger
+  /// pages = fewer round-trips for power users scrolling deep.
+  /// 50 is a good balance for our typical reporter (a few dozen
+  /// stories per month).
+  static const int _pageSize = 50;
+
+  /// Total raw rows fetched from /stories so far (including any
+  /// legacy drafts we filter out client-side). Used as the offset
+  /// for the next page so pagination math stays correct even when
+  /// the visible list is shorter due to filtering.
+  int _serverFetchedCount = 0;
 
   @override
   StoriesState build() {
@@ -144,21 +176,75 @@ class StoriesNotifier extends Notifier<StoriesState> {
       clearError: true,
     );
     try {
-      // We only need server-side stories that have moved past draft.
-      // Server defaults to all statuses for the reporter; we filter
-      // client-side so legacy server-side drafts (pre-refactor) still
-      // show up under the submitted list rather than vanishing.
-      final stories = await _api.listStories();
+      // First page only. Pull-to-refresh and cold-start both reset
+      // pagination here; loadMoreStories appends subsequent pages.
+      // We filter drafts client-side so legacy server-side drafts
+      // (pre-local-first refactor) don't double-show under both
+      // localDrafts and serverStories.
+      final stories = await _api.listStories(offset: 0, limit: _pageSize);
       // Cache the full server response (including any server-side
       // drafts) so a re-seed on next launch matches what we'd fetch.
       await _cache.replaceAll(stories);
+      _serverFetchedCount = stories.length;
       state = state.copyWith(
         serverStories: stories.where((s) => s.status != 'draft').toList(),
+        // Got a full page → there's likely more to fetch. If the
+        // first page was short the list ends here.
+        hasMoreStories: stories.length == _pageSize,
         isLoading: false,
+        isLoadingMore: false,
       );
     } catch (e) {
       // Keep cache contents in state on failure; surface error to UI.
       state = state.copyWith(isLoading: false, error: 'Failed to load stories');
+    }
+  }
+
+  /// Fetch the next page of server stories and append to the list.
+  /// Called by the home / all-news scroll listener when the reporter
+  /// scrolls within ~400px of the bottom of an unbounded list.
+  ///
+  /// No-ops when:
+  ///   - we already know there are no more pages ([hasMoreStories] false)
+  ///   - a previous loadMore is still in flight
+  ///   - the cold-start fetch hasn't completed yet
+  ///
+  /// On failure we just stop offering more pages this session — the
+  /// reporter can pull-to-refresh to reset pagination from the top.
+  Future<void> loadMoreStories() async {
+    if (!state.hasMoreStories) return;
+    if (state.isLoadingMore) return;
+    if (state.isLoading) return;
+
+    state = state.copyWith(isLoadingMore: true, clearError: true);
+    try {
+      final more = await _api.listStories(
+        offset: _serverFetchedCount,
+        limit: _pageSize,
+      );
+      _serverFetchedCount += more.length;
+      // Upsert the new rows into cache so the next cold-start has a
+      // longer pre-fetched list to render instantly. We don't replace
+      // — that would clobber page 1.
+      for (final s in more) {
+        await _cache.upsert(s);
+      }
+      final newVisible =
+          more.where((s) => s.status != 'draft').toList(growable: false);
+      state = state.copyWith(
+        serverStories: [...state.serverStories, ...newVisible],
+        hasMoreStories: more.length == _pageSize,
+        isLoadingMore: false,
+      );
+    } catch (_) {
+      // Don't surface as an error toast — failing a "load more" is a
+      // soft failure compared to a cold-start fetch. Just stop offering
+      // more pages so the user knows the bottom-of-list spinner shouldn't
+      // keep spinning.
+      state = state.copyWith(
+        isLoadingMore: false,
+        hasMoreStories: false,
+      );
     }
   }
 

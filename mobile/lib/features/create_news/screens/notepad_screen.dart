@@ -30,6 +30,24 @@ import '../../home/providers/stories_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 
 // =============================================================================
+// Feature flags
+// =============================================================================
+
+/// Hide the on-photo "OCR" sparkle button + the OCR processing banner.
+///
+/// Why a flag instead of ripping out the wiring: OCR has a live backend
+/// (Sarvam Document Intelligence), a working notifier method
+/// (`runOcrOnParagraph`), and a polished UI — but the output quality on
+/// Odia newspaper cuttings hasn't been good enough to ship to reporters
+/// yet, and reviewers were getting confused by the button promising
+/// something it couldn't deliver. Setting this to false everywhere it's
+/// checked makes the feature invisible to the user while keeping every
+/// call path intact, so re-enabling is a one-line flip when we're
+/// happy with the OCR quality. Don't delete the OCR code paths until
+/// we've decided to remove the feature permanently.
+const bool _kEnableOcr = false;
+
+// =============================================================================
 // NotepadScreen — single-screen voice notepad that replaces the old wizard
 // =============================================================================
 
@@ -389,6 +407,44 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
       },
     );
 
+    // Auto-stop notification. The recording timer in
+    // create_news_provider sets recordingAutoStopReason to either
+    // "max_duration" (10-minute hard cap) or "silence" (10-minute
+    // no-transcript safety net) right before it dispatches the stop.
+    // Reporters frequently dictate eyes-closed and used to keep
+    // talking long after the mic shut off — losing minutes of work
+    // they thought were captured. We hit them with a haptic AND a
+    // 6-second snackbar so the cue is felt, not just visible.
+    ref.listen<String?>(
+      notepadProvider.select((s) => s.recordingAutoStopReason),
+      (prev, next) {
+        if (next == null || next == prev || !mounted) return;
+        // Heavy impact > medium: this is a "you need to look at your
+        // phone" cue, not a tap-confirmation tick. Distinct from the
+        // medium-impact taps used for paragraph add etc.
+        HapticFeedback.heavyImpact();
+        final s = AppStrings.of(ref);
+        final message = next == 'max_duration'
+            ? s.recordingAutoStoppedMaxDuration
+            : s.recordingAutoStoppedSilence;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(message),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: const Color(0xFFB91C1C), // red-700
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              duration: const Duration(seconds: 6),
+            ),
+          );
+        // Acknowledge so the next session starts clean.
+        ref.read(notepadProvider.notifier).clearRecordingAutoStopReason();
+      },
+    );
+
     // Auto-stop recording when the OS reports an active phone call. The
     // mic stream is owned by the call once it connects, so anything we
     // record after that point is silent garbage. Stop, commit whatever
@@ -674,8 +730,12 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                             }
                           });
                         },
-                        onOcrPhoto: (index) =>
-                            notifier.runOcrOnParagraph(index),
+                        // Pass null when the feature flag is off so the
+                        // body-level `widget.onOcr != null` checks all
+                        // resolve to false too — belt + suspenders.
+                        onOcrPhoto: _kEnableOcr
+                            ? (index) => notifier.runOcrOnParagraph(index)
+                            : null,
                         onUpdateTable: (index, data) =>
                             notifier.updateParagraphTable(index, data),
                         onTapEmptySpace: () {
@@ -701,7 +761,11 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
               // re-added once we know where it should live.
 
               // === File attachment progress indicator ===
-              if (state.isOcrProcessing)
+              // Same flag-gating as the OCR button: the notifier path
+              // can still set isOcrProcessing (defensive, in case
+              // anything else triggers it), but with the feature
+              // hidden the banner stays invisible.
+              if (_kEnableOcr && state.isOcrProcessing)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.lg,
@@ -753,6 +817,20 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                         : state.isRecording
                             ? _RecordingBottomBar(
                                 formattedDuration: state.formattedDuration,
+                                // Compute the "0:30 left" label here
+                                // where AppStrings is in scope. The bar
+                                // shows the chip whenever this is
+                                // non-null. Threshold = within last 60
+                                // seconds of the 600-second cap.
+                                timeLeftLabel: state.recordingDuration.inSeconds
+                                                >= 540
+                                            && state.recordingDuration.inSeconds
+                                                < 600
+                                    ? s.recordingTimeLeft(
+                                        600 -
+                                            state.recordingDuration.inSeconds,
+                                      )
+                                    : null,
                                 waveformController: _waveformController,
                                 isAudioSaveMode: state.isAudioSaveMode,
                                 isNoisy: state.isNoisyEnvironment,
@@ -840,6 +918,14 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
             child: _AiRefineFab(
               onTap: () => notifier.generateStory(),
               isGenerating: state.isGeneratingStory,
+              // The FAB is disabled in two distinct cases:
+              //   - body has fewer than 20 words (LLM has no
+              //     structure to work with; would just waste cents)
+              //   - reporter just refined and hasn't changed
+              //     anything since (no-op refine)
+              // The reason string drives both the disabled state AND
+              // the tooltip copy so the reporter knows why.
+              disableReason: state.aiRefineDisableReason,
             ),
           ),
       ],
@@ -899,37 +985,123 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
   }
 
   Future<void> _confirmDeleteStory(BuildContext context, NotepadNotifier notifier) async {
+    final headline = ref.read(notepadProvider).headline;
+    final paraCount = ref.read(notepadProvider).paragraphs
+        .where((p) => p.text.trim().isNotEmpty || p.hasMedia)
+        .length;
     final confirmed = await showDialog<bool>(
       context: context,
+      // Tap-outside dismisses to "no" — same as the No button. Reporters
+      // sometimes pull the dialog up by accident and we want a low-cost
+      // exit. The destructive action requires the explicit Delete tap.
+      barrierDismissible: true,
       builder: (ctx) => AlertDialog(
-        title: Text(s.deleteThisDraft),
-        content: Text(
-          ref.read(notepadProvider).headline.isNotEmpty
-            ? ref.read(notepadProvider).headline
-            : s.untitledDraft,
+        title: Row(
+          children: [
+            const Icon(LucideIcons.trash2,
+                size: 20, color: AppColors.coral500),
+            const SizedBox(width: 10),
+            Expanded(child: Text(s.deleteThisDraft)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Show the headline (or "Untitled draft") and a paragraph
+            // count so the reporter can clearly see WHAT they're about
+            // to lose, not just that they're deleting "something".
+            Text(
+              headline.isNotEmpty ? headline : s.untitledDraft,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (paraCount > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                s.draftParagraphCount(paraCount),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: context.t.mutedColor,
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            // Loud, unambiguous warning. The previous dialog only said
+            // "Delete this draft?" with the headline — many reporters
+            // tapped Remove on muscle memory because the destructive
+            // outcome wasn't spelled out. Now there's no doubt.
+            Text(
+              s.deleteDraftWarning,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFB91C1C), // red-700
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(s.no),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
             child: Text(
-              s.remove,
-              style: const TextStyle(color: AppColors.coral500),
+              s.cancel,
+              style: TextStyle(color: context.t.bodyColor),
+            ),
+          ),
+          // Filled red destructive button — visually committed, not
+          // a soft text link. Delete is irreversible (drafts don't go
+          // to trash) so the affordance should match the consequence.
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(LucideIcons.trash2, size: 16),
+            label: Text(s.deleteDraft),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFB91C1C), // red-700
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
           ),
         ],
       ),
     );
     if (confirmed == true && context.mounted) {
-      // Delete the story on the server
-      final storyId = notifier.serverStoryId;
-      if (storyId != null) {
-        await ref.read(storiesProvider.notifier).deleteStory(storyId);
+      // Local-first drafts live in Hive only until Submit, so the
+      // delete path forks on whether we have a server id yet.
+      //
+      // Without this fork, tapping Delete on a never-submitted draft
+      // would: skip the API call (serverStoryId is null), skip the
+      // Hive delete (no caller dispatched there), pop the screen,
+      // and then fetchStories() + the Hive watcher would put the
+      // draft right back into the list — making the button feel
+      // completely broken to the reporter ("I deleted it, why is
+      // it still here?").
+      final serverId = notifier.serverStoryId;
+      final localId = notifier.localId;
+      final storiesNotifier = ref.read(storiesProvider.notifier);
+      if (serverId != null) {
+        // Already-submitted-or-beyond story: server is the source of
+        // truth. Delete remotely; the provider also drops it from
+        // serverStories + cache on success.
+        await storiesNotifier.deleteStory(serverId);
+      } else if (localId != null) {
+        // Local-only draft: never touched the server. Just drop the
+        // Hive entry — the box watcher in stories_provider rebuilds
+        // localDrafts so the home list updates immediately.
+        await storiesNotifier.deleteLocalDraft(localId);
       }
-      ref.read(storiesProvider.notifier).fetchStories();
+      // Refresh the list from server too, so a server-side delete
+      // is reconciled even if the client-side optimistic update
+      // missed something. Local-only drafts don't need this but it's
+      // a no-op cost.
+      storiesNotifier.fetchStories();
       if (context.mounted) {
         context.pop();
       }
@@ -1937,8 +2109,28 @@ class _SimpleNotepadBodyState extends State<_SimpleNotepadBody> {
   @override
   void initState() {
     super.initState();
+    // ── Synchronous controller seed (FIRST FRAME MUST RENDER) ─────
+    //
+    // We MUST create the per-run TextEditingControllers + FocusNodes
+    // before initState returns, otherwise build() runs against an
+    // empty `_controllers` map and silently skips every text run
+    // (the `if (ctrl == null) continue;` in build). The body would
+    // then render blank, and there's no setState anywhere in the
+    // sync path to trigger a re-render — content stays invisible
+    // until the next external state change happens to fire a
+    // rebuild. (Reporters were seeing blank-on-first-open, then
+    // correct content on the second open because by then the
+    // notifier state had churned enough to force a fresh build.)
+    //
+    // Pure-local mutation: this just creates Dart objects in the
+    // widget's State, doesn't call setState, doesn't touch the
+    // parent. Safe to do synchronously.
+    _syncControllersFromState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // Re-sync defensively in case state changed between initState
+      // and the post-frame callback (e.g. an in-flight network fetch
+      // landed mid-mount).
       _syncControllersFromState();
       // Pick up an already-active recording (e.g. user tapped Record from
       // _EmptyState, which created the first paragraph and mounted us
@@ -2831,8 +3023,13 @@ class _MediaBlockState extends ConsumerState<_MediaBlock> {
                           ),
                         ),
                       ),
-                      // OCR sparkle button
-                      if (widget.onOcr != null)
+                      // OCR sparkle button — hidden behind the
+                      // _kEnableOcr feature flag while the OCR quality
+                      // story is sorted out. The widget.onOcr callback
+                      // still gets passed in by the parent so flipping
+                      // the flag lights the button up immediately, no
+                      // other plumbing changes.
+                      if (_kEnableOcr && widget.onOcr != null)
                         Positioned(
                           bottom: AppSpacing.sm,
                           right: AppSpacing.sm,
@@ -3414,6 +3611,14 @@ class _AIInstructionBottomBar extends ConsumerWidget {
 
 class _RecordingBottomBar extends StatefulWidget {
   final String formattedDuration;
+
+  /// Localized "0:30 left" countdown label, set by the parent only
+  /// during the last 60 seconds before the 10-minute auto-stop. Null
+  /// outside the warning window — the chip is hidden then. Computed
+  /// in the parent because that's where AppStrings.of(ref) is in
+  /// scope; passing the formatted string keeps this widget free of
+  /// the ConsumerWidget plumbing.
+  final String? timeLeftLabel;
   final AnimationController waveformController;
   final bool isAudioSaveMode;
   final bool isNoisy;
@@ -3424,6 +3629,7 @@ class _RecordingBottomBar extends StatefulWidget {
 
   const _RecordingBottomBar({
     required this.formattedDuration,
+    this.timeLeftLabel,
     required this.waveformController,
     this.isAudioSaveMode = false,
     this.isNoisy = false,
@@ -3504,6 +3710,43 @@ class _RecordingBottomBarState extends State<_RecordingBottomBar>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // ── Approaching-cap warning chip ─────────────────────
+              // The recording timer auto-stops at 10:00 (600s). When
+              // the reporter is within the last 60 seconds, the
+              // parent passes a non-null timeLeftLabel and we surface
+              // a red countdown chip so eyes-off dictators have a
+              // chance to wrap their thought before the mic dies.
+              if (widget.timeLeftLabel != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFB91C1C), // red-700
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(LucideIcons.timer,
+                            size: 14, color: Colors.white),
+                        const SizedBox(width: 6),
+                        Text(
+                          widget.timeLeftLabel!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               // Noise hint chip
               AnimatedSize(
                 duration: const Duration(milliseconds: 300),
@@ -3818,66 +4061,108 @@ class _AiRefineFab extends ConsumerWidget {
   final VoidCallback onTap;
   final bool isGenerating;
 
-  const _AiRefineFab({required this.onTap, required this.isGenerating});
+  /// Reason string explaining why the FAB shouldn't fire right now,
+  /// or null when it should. Comes from
+  /// `NotepadState.aiRefineDisableReason`. Today's recognised values:
+  ///
+  ///   - `'too_short'` — body has fewer than 20 words. Tooltip
+  ///     prompts the reporter to keep typing.
+  ///   - `'no_changes'` — reporter just refined and hasn't edited
+  ///     anything since. Tooltip says so.
+  ///
+  /// Anything else falls through to the generic refine hint as a
+  /// safety net — better to show a slightly off tooltip than to
+  /// crash on an unknown reason.
+  final String? disableReason;
+
+  const _AiRefineFab({
+    required this.onTap,
+    required this.isGenerating,
+    this.disableReason,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = AppStrings.of(ref);
-    return Tooltip(
-      message: s.aiRefineHint,
-      child: Material(
-        color: Colors.transparent,
-        elevation: 0,
-        child: InkWell(
-          onTap: isGenerating ? null : onTap,
-          borderRadius: BorderRadius.circular(28),
-          child: Ink(
-            decoration: BoxDecoration(
-              gradient: AppGradients.electricPulse,
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [
+    final disabled = disableReason != null;
+    final inactive = isGenerating || disabled;
+    // Keep the button visible (never hide it) but desaturate it when
+    // disabled — the reporter can see the tool is there but understand
+    // it's not currently actionable. Tooltip explains why on long press.
+    final ink = Ink(
+      decoration: BoxDecoration(
+        gradient: AppGradients.electricPulse,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: disabled
+            ? null
+            : [
                 BoxShadow(
                   color: AppColors.coral500.withValues(alpha: 0.32),
                   blurRadius: 20,
                   offset: const Offset(0, 6),
                 ),
               ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.base,
-                vertical: AppSpacing.sm + 2,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: isGenerating
-                        ? const CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                          )
-                        : const Icon(
-                            LucideIcons.sparkles,
-                            size: 18,
-                            color: Colors.white,
-                          ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs + 2),
-                  Text(
-                    isGenerating ? s.generatingStory : s.generateStory,
-                    style: AppTypography.odiaBodySmall.copyWith(
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.base,
+          vertical: AppSpacing.sm + 2,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: isGenerating
+                  ? const CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(Colors.white),
+                    )
+                  : const Icon(
+                      LucideIcons.sparkles,
+                      size: 18,
                       color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2,
                     ),
-                  ),
-                ],
+            ),
+            const SizedBox(width: AppSpacing.xs + 2),
+            Text(
+              isGenerating ? s.generatingStory : s.generateStory,
+              style: AppTypography.odiaBodySmall.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+    // Tooltip resolves the disable reason to a localized hint. Each
+    // reason gets its own copy because reporters benefit from a
+    // specific explanation ("type a few more words" vs. "no changes
+    // since last refine") rather than a generic "disabled" placeholder.
+    final tooltipMessage = switch (disableReason) {
+      'too_short' => s.aiRefineTooShortHint,
+      'no_changes' => s.aiRefineNoChangesHint,
+      _ => s.aiRefineHint,
+    };
+    return Tooltip(
+      message: tooltipMessage,
+      child: Material(
+        color: Colors.transparent,
+        elevation: 0,
+        child: Opacity(
+          // Soft fade at ~45% — enough to read as inactive at a
+          // glance without making the button invisible. The gradient
+          // colour identity is preserved so the reporter still
+          // recognises this as the same AI Refine affordance.
+          opacity: disabled ? 0.45 : 1.0,
+          child: InkWell(
+            onTap: inactive ? null : onTap,
+            borderRadius: BorderRadius.circular(28),
+            child: ink,
           ),
         ),
       ),

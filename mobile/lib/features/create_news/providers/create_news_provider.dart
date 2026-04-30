@@ -13,6 +13,7 @@ import '../../../core/services/audio_upload_queue.dart';
 import '../../../core/services/enrollment_storage.dart';
 import '../../../core/services/file_picker_service.dart';
 import '../../../core/services/local_drafts_store.dart';
+import '../../../core/services/local_stories_cache.dart';
 import '../../../core/services/sarvam_api.dart';
 import '../../../core/services/stt_service.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -255,6 +256,27 @@ class NotepadState {
   /// so it only fires once per signal.
   final int? pendingFocusParagraphIndex;
 
+  /// Canonical text of the article body immediately after the last
+  /// successful AI Refine. Used by the FAB to disable itself when the
+  /// reporter hasn't changed anything since the last refine — re-running
+  /// the LLM on identical input wastes a server round-trip and cents,
+  /// and produces an output that's almost always indistinguishable
+  /// from the previous one. The moment the reporter edits anything,
+  /// the canonical text drifts from this snapshot and the button
+  /// re-enables. Cleared on draft load (paragraphs reset → mismatch).
+  final String? lastRefineSnapshot;
+
+  /// Set to a non-null reason string when the recording timer auto-
+  /// stopped without the reporter tapping mic (10-minute hard cap or
+  /// 10-minute silence safety net). The notepad screen listens for
+  /// this transitioning to non-null, fires a haptic + shows a snack
+  /// bar so the reporter knows their words went uncaptured, and then
+  /// clears the field via [clearRecordingAutoStopReason]. Without
+  /// this, reporters who dictate eyes-closed kept talking long after
+  /// the mic shut off and lost work — see field-report from
+  /// 2026-04-30.
+  final String? recordingAutoStopReason;
+
   const NotepadState({
     this.headline = '',
     this.displayId,
@@ -286,7 +308,66 @@ class NotepadState {
     this.userNotes,
     this.isGeneratingStory = false,
     this.pendingFocusParagraphIndex,
+    this.lastRefineSnapshot,
+    this.recordingAutoStopReason,
   });
+
+  /// The reporter's current article body as a single canonical string
+  /// (paragraphs joined by blank lines, media/table rows excluded).
+  /// Used both as the input to AI Refine AND as the snapshot we compare
+  /// against [lastRefineSnapshot] to decide whether the FAB is stale.
+  String get canonicalBodyText => paragraphs
+      .where((p) => !p.hasMedia && !p.isTable && p.text.trim().isNotEmpty)
+      .map((p) => p.text.trim())
+      .join('\n\n');
+
+  /// True when the reporter has edited the body since the last AI
+  /// Refine ran (or has never refined yet). When false, the FAB is
+  /// disabled — running again on identical input would just waste an
+  /// LLM call. The comparison is on the canonical text so paragraph
+  /// reorders / whitespace tweaks that change rendering but not
+  /// content don't accidentally re-enable the button (and conversely,
+  /// genuine edits always do).
+  bool get isRefineStale {
+    final snapshot = lastRefineSnapshot;
+    if (snapshot == null) return true; // never refined → always enabled
+    return canonicalBodyText != snapshot;
+  }
+
+  /// Word count of the current article body. Counts whitespace-
+  /// separated tokens after trimming — works for Odia, Hindi, English
+  /// alike (Unicode whitespace splits are consistent across these
+  /// scripts for our purposes; we don't need a real CLDR
+  /// segmenter here). Used by [aiRefineDisableReason] to gate the
+  /// AI Refine button on stub-length input.
+  int get bodyWordCount {
+    final text = canonicalBodyText.trim();
+    if (text.isEmpty) return 0;
+    return text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+  }
+
+  /// Minimum body length (in words) before AI Refine becomes
+  /// actionable. The model needs SOME structure to work with — under
+  /// ~20 words it has nothing to dedupe, no paragraphs to reorder,
+  /// no script-slips to fix. Letting the FAB fire on stub input
+  /// would just spend cents per round-trip producing output the
+  /// reporter has to throw away. 20 words is one short paragraph,
+  /// which is the smallest unit Refine can meaningfully improve.
+  static const int aiRefineMinWords = 20;
+
+  /// String reason the AI Refine FAB should be inactive, or null when
+  /// the FAB is good to fire. Codifies all the gating conditions in
+  /// one place so the FAB widget doesn't have to know any of them
+  /// individually — it just looks at this and the matching tooltip
+  /// string in AppStrings. Order matters: "too_short" is checked
+  /// first so the reporter who has typed a couple of words sees the
+  /// minimum-length hint rather than a "no changes since last
+  /// refine" hint that would be confusing on an empty draft.
+  String? get aiRefineDisableReason {
+    if (bodyWordCount < aiRefineMinWords) return 'too_short';
+    if (!isRefineStale) return 'no_changes';
+    return null;
+  }
 
   NotepadState copyWith({
     String? headline,
@@ -328,6 +409,10 @@ class NotepadState {
     bool? isGeneratingStory,
     int? pendingFocusParagraphIndex,
     bool clearPendingFocus = false,
+    String? lastRefineSnapshot,
+    bool clearLastRefineSnapshot = false,
+    String? recordingAutoStopReason,
+    bool clearRecordingAutoStopReason = false,
   }) {
     return NotepadState(
       headline: headline ?? this.headline,
@@ -376,6 +461,12 @@ class NotepadState {
       pendingFocusParagraphIndex: clearPendingFocus
           ? null
           : (pendingFocusParagraphIndex ?? this.pendingFocusParagraphIndex),
+      lastRefineSnapshot: clearLastRefineSnapshot
+          ? null
+          : (lastRefineSnapshot ?? this.lastRefineSnapshot),
+      recordingAutoStopReason: clearRecordingAutoStopReason
+          ? null
+          : (recordingAutoStopReason ?? this.recordingAutoStopReason),
     );
   }
 
@@ -588,12 +679,41 @@ class NotepadNotifier extends Notifier<NotepadState> {
     debugPrint('[create_news] initWithLocalDraft OK localId=$_localId paragraphs=${paragraphs.length}');
   }
 
-  /// Initialize from an existing server-side story (loads from server).
-  /// Used when the reporter taps an already-submitted story on the home
-  /// screen. Local-only drafts go through [initWithLocalDraft] instead.
+  /// Initialize from an existing server-side story. Used when the
+  /// reporter taps an already-submitted story on the home screen.
+  /// Local-only drafts go through [initWithLocalDraft] instead.
+  ///
+  /// Stale-while-revalidate: the home / all-news lists already cached
+  /// every story they fetched (paragraphs included) into Hive via
+  /// [LocalStoriesCache]. We seed the editor from that cache
+  /// synchronously so content appears instantly on tap, then refresh
+  /// from the server in the background to pick up any reviewer edits
+  /// that happened since the last list fetch.
+  ///
+  /// The server response wins on success — we only fall back to the
+  /// "cache only" experience when the network call fails. That covers
+  /// offline reporters cleanly: they still see their story (read-only,
+  /// effectively) and can re-open it later when online to refresh.
   Future<void> initWithExistingStory(String storyId) async {
     _localId = null;
     _serverStoryId = storyId;
+
+    // ── Cache hydrate (synchronous, instant UI) ─────────────────────
+    final cached = ref.read(localStoriesCacheProvider).find(storyId);
+    if (cached != null) {
+      _storyStatus = cached.status;
+      final paragraphs =
+          cached.paragraphs.map((p) => Paragraph.fromMap(p)).toList();
+      state = NotepadState(
+        headline: cached.headline,
+        displayId: cached.displayId,
+        category: cached.category,
+        location: cached.location,
+        paragraphs: paragraphs,
+      );
+    }
+
+    // ── Server refresh (async, replaces cached body on success) ────
     try {
       final story = await _api.getStory(storyId);
       _storyStatus = story.status;
@@ -608,8 +728,17 @@ class NotepadNotifier extends Notifier<NotepadState> {
         location: story.location,
         paragraphs: paragraphs,
       );
+      // Refresh the cache row so the next cold-open of this story
+      // shows the post-edit content even if the home list hasn't
+      // been refreshed since.
+      await ref.read(localStoriesCacheProvider).upsert(story);
     } catch (_) {
-      state = state.copyWith(error: 'Failed to load story');
+      // If we already hydrated from cache, leave the user inside the
+      // story rather than blanking the screen with an error. Only
+      // surface the error when we genuinely have nothing to show.
+      if (cached == null) {
+        state = state.copyWith(error: 'Failed to load story');
+      }
     }
   }
 
@@ -1166,6 +1295,11 @@ class NotepadNotifier extends Notifier<NotepadState> {
           final silenceDuration =
               DateTime.now().difference(_lastTranscriptChangeTime);
           if (silenceDuration.inSeconds >= 600) {
+            // Flag BEFORE toggling. toggleRecording sets isRecording=false
+            // which the screen listens to; we want the reason field set
+            // by the time that listener fires so a single rebuild can
+            // surface the snackbar + haptic.
+            state = state.copyWith(recordingAutoStopReason: 'silence');
             toggleRecording();
             return;
           }
@@ -1176,6 +1310,7 @@ class NotepadNotifier extends Notifier<NotepadState> {
       // which commits the live transcript as a paragraph and queues the
       // captured WAV for upload — nothing is lost on a timeout.
       if (newDuration.inMinutes >= 10) {
+        state = state.copyWith(recordingAutoStopReason: 'max_duration');
         toggleRecording();
         return;
       }
@@ -1189,6 +1324,15 @@ class NotepadNotifier extends Notifier<NotepadState> {
     _lastTranscriptChangeTime = DateTime.now();
     _autoParagraphTimer?.cancel();
     _autoParagraphTimer = null;
+  }
+
+  /// Acknowledge the auto-stop notification. Called by the notepad
+  /// screen after it shows the snackbar / fires haptic, so the next
+  /// recording session starts clean and the listener doesn't re-fire
+  /// on the same reason.
+  void clearRecordingAutoStopReason() {
+    if (state.recordingAutoStopReason == null) return;
+    state = state.copyWith(clearRecordingAutoStopReason: true);
   }
 
   /// Commits the current live transcript as a paragraph mid-recording,
@@ -1245,6 +1389,15 @@ class NotepadNotifier extends Notifier<NotepadState> {
     if (textParas.isEmpty) return;
 
     final raw = textParas.map((p) => p.text.trim()).join('\n\n');
+
+    // Cheap guard: the FAB is disabled in either of these cases, but
+    // the public API of this method gets called from menus and
+    // shortcut intents too. Re-checking at the source avoids a
+    // wasted server round-trip + LLM call on identical input AND on
+    // stub-length input. We use the consolidated reason getter so
+    // the gating logic stays in lockstep with what the FAB shows.
+    if (state.aiRefineDisableReason != null) return;
+
     _pushUndo();
     state = state.copyWith(
       isGeneratingStory: true,
@@ -1253,41 +1406,26 @@ class NotepadNotifier extends Notifier<NotepadState> {
     );
 
     try {
-      final messages = [
-        const ChatMessage(
-          role: 'system',
-          content:
-              'You are a senior Odia news editor. The reporter has dictated '
-              'or typed raw notes for a news story. Your job is to weave '
-              'these notes into a publishable Odia article body:\n'
-              '1. Lead paragraph: who/what/when/where, in 1-2 sentences.\n'
-              '2. Follow with supporting paragraphs in logical order.\n'
-              '3. Use clean Odia, proper purna virama (।), and Odia numerals (୦-୯).\n'
-              '4. Preserve every fact and proper noun the reporter mentioned. '
-              'Do NOT invent names, places, dates, or quotes.\n'
-              '5. Keep it tight — newspapers, not blog posts.\n'
-              'Separate paragraphs with a blank line. Return ONLY the article '
-              'body. No headline, no byline, no commentary.',
-        ),
-        ChatMessage(role: 'user', content: raw),
-      ];
-
-      final response = await _sarvam.chat(
-        messages: messages,
-        temperature: 0.3,
-        maxTokens: 4096,
+      // Server-owned endpoint. The system prompt (Pragativadi
+      // editorial standards + legal safeguards), the model choice
+      // (Gemini 2.5 Flash → Sarvam fallback), and post-processing
+      // (Odia digit normalization, purna-virama spacing) all live on
+      // the backend so prompt edits ship as a Cloud Run deploy, not
+      // an APK release. Mobile passes only the raw notes plus the
+      // story id (when we have one) for cost attribution.
+      final body = await _api.generateStory(
+        notes: raw,
+        storyId: _serverStoryId,
       );
-
-      var body = toOdiaDigits(response.firstMessageContent.trim());
-      body = body.replaceAll(RegExp(r'(?<!\s)।'), ' ।');
       if (body.isEmpty) {
         state = state.copyWith(isGeneratingStory: false);
         return;
       }
 
-      // Split on blank lines into paragraphs. Preserve any existing media/
-      // table paragraphs in their original order, appended after the new
-      // text body so reporters don't lose attached photos.
+      // Split on blank lines into paragraphs. Preserve any existing
+      // media / table paragraphs in their original order, appended
+      // after the new text body so reporters don't lose attached
+      // photos when AI Refine runs.
       final newTextParas = body
           .split(RegExp(r'\n\s*\n'))
           .map((s) => s.trim())
@@ -1303,9 +1441,21 @@ class NotepadNotifier extends Notifier<NotepadState> {
           .where((p) => p.hasMedia || p.isTable)
           .toList();
 
+      // Snapshot the canonical text of the polished body. The FAB
+      // compares state.canonicalBodyText against this snapshot via
+      // isRefineStale; while they match, the button is disabled to
+      // stop the reporter from hammering the LLM with no-op refines.
+      // The snapshot must be derived from the SAME paragraphs we put
+      // into state below, otherwise the comparison races against
+      // ordering / id differences. We compute it from the new text +
+      // existing media in identical order to canonicalBodyText.
+      final refinedSnapshot =
+          newTextParas.map((p) => p.text.trim()).join('\n\n');
+
       state = state.copyWith(
         paragraphs: [...newTextParas, ...mediaParas],
         isGeneratingStory: false,
+        lastRefineSnapshot: refinedSnapshot,
       );
       _scheduleAutoSave();
     } catch (_) {

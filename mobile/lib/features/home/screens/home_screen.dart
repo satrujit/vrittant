@@ -202,19 +202,76 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return _buildFullEmptyState();
     }
 
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        _buildSectionLabel(
-          s.latestStories,
-          trailing: s.totalCount(total),
-        ),
-        const SizedBox(height: 10),
-        ...drafts.map(_buildDraftCard),
-        ...serverStories.map(_buildStoryCard),
-        const SizedBox(height: 100), // space for FAB
-      ],
+    // Scroll-to-load-more: when the reporter scrolls within 400px of
+    // the bottom of an unbounded list AND the server has more rows,
+    // dispatch loadMoreStories. Using NotificationListener instead of
+    // a ScrollController so we don't need to manage a controller's
+    // lifecycle across rebuilds — this widget rebuilds whenever
+    // storiesProvider state changes, which would otherwise leak old
+    // controllers.
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notif) {
+        if (notif is ScrollUpdateNotification) {
+          final pixels = notif.metrics.pixels;
+          final maxExtent = notif.metrics.maxScrollExtent;
+          // 400px lead time so the next page is ready by the time
+          // the reporter scrolls to where it would render — keeps
+          // scrolling smooth instead of pausing for the network.
+          if (maxExtent - pixels < 400 &&
+              storiesState.hasMoreStories &&
+              !storiesState.isLoadingMore) {
+            ref.read(storiesProvider.notifier).loadMoreStories();
+          }
+        }
+        return false;
+      },
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          _buildSectionLabel(
+            s.latestStories,
+            trailing: s.totalCount(total),
+          ),
+          const SizedBox(height: 10),
+          ...drafts.map(_buildDraftCard),
+          ...serverStories.map(_buildStoryCard),
+          // Footer: spinner while loading more, "end of list" hint
+          // when we know there's nothing more, blank otherwise. A
+          // visible terminal state matters at scale — a reporter with
+          // 200 stories should know they've actually reached the
+          // bottom rather than wonder if it's still loading.
+          if (storiesState.isLoadingMore)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: context.t.primary,
+                  ),
+                ),
+              ),
+            )
+          else if (!storiesState.hasMoreStories && total > 5)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: Text(
+                  s.endOfStories,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.t.mutedColor,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          const SizedBox(height: 100), // space for FAB
+        ],
+      ),
     );
   }
 

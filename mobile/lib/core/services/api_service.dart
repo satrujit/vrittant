@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_config.dart';
+import 'image_compression_service.dart';
 
 // -- Response models --
 
@@ -210,17 +211,21 @@ class ApiService {
     return (res.data['req_id'] as String?) ?? '';
   }
 
-  Future<({String token, ReporterProfile reporter})> verifyOtp(
-      String phone, String otp, {String reqId = ''}) async {
+  Future<
+      ({
+        String token,
+        ReporterProfile reporter,
+        Map<String, dynamic> reporterRaw,
+      })> verifyOtp(String phone, String otp, {String reqId = ''}) async {
     final res = await _dio.post('/auth/verify-otp',
         data: {'phone': phone, 'otp': otp, 'req_id': reqId});
     final token = res.data['access_token'] as String;
     _token = token;
 
     final meRes = await _dio.get('/auth/me');
-    final reporter =
-        ReporterProfile.fromJson(meRes.data as Map<String, dynamic>);
-    return (token: token, reporter: reporter);
+    final raw = Map<String, dynamic>.from(meRes.data as Map);
+    final reporter = ReporterProfile.fromJson(raw);
+    return (token: token, reporter: reporter, reporterRaw: raw);
   }
 
   Future<void> resendOtp(String phone, {String reqId = ''}) async {
@@ -228,9 +233,43 @@ class ApiService {
         data: {'phone': phone, 'req_id': reqId});
   }
 
-  Future<ReporterProfile> getMe() async {
+  /// Fetches `/auth/me` and returns both the parsed profile and the raw
+  /// JSON. Callers cache the raw map (so server-side schema additions
+  /// survive a cold start even when the current build doesn't model
+  /// them yet) and use the parsed object for in-memory state.
+  Future<({ReporterProfile reporter, Map<String, dynamic> raw})> getMe() async {
     final res = await _dio.get('/auth/me');
-    return ReporterProfile.fromJson(res.data as Map<String, dynamic>);
+    final raw = Map<String, dynamic>.from(res.data as Map);
+    return (reporter: ReporterProfile.fromJson(raw), raw: raw);
+  }
+
+  // -- LLM (server-owned prompts) --
+
+  /// Polish raw reporter notes into a publishable Odia article body.
+  ///
+  /// Calls `POST /api/llm/generate-story`, the server-owned endpoint
+  /// where the system prompt, model choice (Gemini 2.5 Flash → Sarvam
+  /// fallback), and post-processing live. The mobile app sends only
+  /// the reporter's raw notes plus an optional [storyId] for cost
+  /// attribution; everything else is decided by the backend so prompt
+  /// edits ship as a Cloud Run deploy, not an APK release.
+  ///
+  /// Returns the polished body string. Throws on backend failure
+  /// (both Gemini AND Sarvam fallback failed) — the caller surfaces a
+  /// toast and leaves the existing notepad content untouched.
+  Future<String> generateStory({
+    required String notes,
+    String? storyId,
+  }) async {
+    final res = await _dio.post(
+      '/api/llm/generate-story',
+      data: {
+        'notes': notes,
+        if (storyId != null) 'story_id': storyId,
+      },
+    );
+    final body = (res.data as Map<String, dynamic>?)?['body'] as String?;
+    return body?.trim() ?? '';
   }
 
   // -- Stories --
@@ -313,15 +352,42 @@ class ApiService {
   // -- Files --
 
   /// Upload a file to the server. Returns the file metadata including URL.
+  ///
+  /// Photos that exceed [ImageCompressionService]'s 2 MB threshold
+  /// are recompressed to JPEG before transmission so newsroom
+  /// reporters on flaky 3G/4G aren't waiting 30+ seconds for a 6 MB
+  /// camera shot to upload. Files under the threshold AND non-image
+  /// types (audio / video / PDF) pass through unchanged.
   Future<Map<String, dynamic>> uploadFile(
     List<int> bytes,
     String filename,
   ) async {
+    var outBytes = bytes;
+    var outName = filename;
+    if (ImageCompressionService.shouldCompress(bytes, filename)) {
+      final compressed =
+          await ImageCompressionService.compress(bytes, filename);
+      // The compressor always emits JPEG. Swap the extension so the
+      // content-type sniffer on the server sees a consistent
+      // image/jpeg attachment regardless of the source format
+      // (PNG/HEIC/WebP all collapse to .jpg here).
+      outBytes = compressed;
+      outName = _withJpegExtension(filename);
+    }
     final formData = FormData.fromMap({
-      'file': MultipartFile.fromBytes(bytes, filename: filename),
+      'file': MultipartFile.fromBytes(outBytes, filename: outName),
     });
     final res = await _dio.post('/files/upload', data: formData);
     return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  /// Replace the file extension on [name] with `.jpg`, preserving
+  /// the rest of the filename so the server-side blob path keeps a
+  /// recognisable identifier. "IMG_4520.heic" → "IMG_4520.jpg".
+  String _withJpegExtension(String name) {
+    final dot = name.lastIndexOf('.');
+    if (dot < 0) return '$name.jpg';
+    return '${name.substring(0, dot)}.jpg';
   }
 
   /// Upload an audio recording for the always-upload pipeline.

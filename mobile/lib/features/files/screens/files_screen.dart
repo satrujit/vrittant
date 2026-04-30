@@ -463,7 +463,6 @@ class _VoiceNoteCardState extends State<_VoiceNoteCard> {
   Widget build(BuildContext context) {
     final t = context.t;
     final filename = file['filename'] as String? ?? 'Untitled';
-    final size = _formatSize(file['size'] as int? ?? 0);
     final storyHeadline = file['story_headline'] as String? ?? '';
 
     return GestureDetector(
@@ -542,7 +541,7 @@ class _VoiceNoteCardState extends State<_VoiceNoteCard> {
           ),
           const SizedBox(height: 2),
           Text(
-            storyHeadline.isNotEmpty ? '$size · $storyHeadline' : size,
+            storyHeadline,
             style: GoogleFonts.plusJakartaSans(
               fontSize: 11,
               fontWeight: FontWeight.w400,
@@ -619,7 +618,6 @@ class _ScenePhotoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.t;
     final filename = file['filename'] as String? ?? 'Untitled';
-    final size = _formatSize(file['size'] as int? ?? 0);
     final url = file['url'] as String? ?? '';
     final createdAt = file['created_at'] as String?;
     final dateStr = createdAt != null ? _shortDate(createdAt) : '';
@@ -678,7 +676,7 @@ class _ScenePhotoCard extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            dateStr.isNotEmpty ? '$dateStr · $size' : size,
+            dateStr,
             style: GoogleFonts.plusJakartaSans(
               fontSize: 11,
               fontWeight: FontWeight.w400,
@@ -743,7 +741,6 @@ class _DocumentCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.t;
     final filename = file['filename'] as String? ?? 'Untitled';
-    final size = _formatSize(file['size'] as int? ?? 0);
     final storyHeadline = file['story_headline'] as String? ?? '';
 
     return GestureDetector(
@@ -790,7 +787,7 @@ class _DocumentCard extends ConsumerWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            storyHeadline.isNotEmpty ? '$size · $storyHeadline' : size,
+            storyHeadline,
             style: GoogleFonts.plusJakartaSans(
               fontSize: 11,
               fontWeight: FontWeight.w400,
@@ -1037,14 +1034,6 @@ class _DownloadProgressOverlay extends StatelessWidget {
 String _fullUrl(String path) {
   if (path.startsWith('http')) return path;
   return '${ApiConfig.baseUrl}$path';
-}
-
-/// Format byte size to human-readable string.
-String _formatSize(int bytes) {
-  if (bytes <= 0) return '0 B';
-  if (bytes < 1024) return '$bytes B';
-  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
 }
 
 /// Parse ISO date string to short display format.

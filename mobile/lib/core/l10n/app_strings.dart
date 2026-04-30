@@ -362,6 +362,30 @@ class AppStrings {
   String get takeOrPickPhoto => isOdia ? 'ଫଟୋ ତୁଳନ୍ତୁ ବା ବାଛନ୍ତୁ' : 'Take or pick photo';
   String get attachDocument => isOdia ? 'ନଥିପତ୍ର ଯୋଡ଼ନ୍ତୁ' : 'Attach document';
   String get deleteDraft => isOdia ? 'ଡ୍ରାଫ୍ଟ ହଟାନ୍ତୁ' : 'Delete draft';
+
+  /// Warning line in the delete confirmation dialog. Drafts don't go
+  /// to a trash — once deleted they are gone, including any locally-
+  /// queued audio backups. Make that explicit so reporters don't tap
+  /// through on muscle memory.
+  String get deleteDraftWarning => isOdia
+      ? 'ଏହା ସ୍ଥାୟୀ ଭାବେ ହଟିଯିବ। ଫେରସ୍ତ ଆଣିହେବ ନାହିଁ।'
+      : 'This will be permanently removed. Cannot be undone.';
+
+  /// Pluralized "N paragraphs" subtitle in the delete dialog so the
+  /// reporter knows the size of what they're about to lose. The
+  /// pluralization uses Odia's invariant noun form (same word for
+  /// singular and plural) so we avoid the singular/plural fork.
+  String draftParagraphCount(int n) => isOdia
+      ? '$n ଅନୁଚ୍ଛେଦ'
+      : (n == 1 ? '1 paragraph' : '$n paragraphs');
+
+  /// Footer line shown at the end of a paginated story list when the
+  /// server has confirmed no more pages. Communicates "you've reached
+  /// the bottom" so the reporter doesn't keep scrolling expecting
+  /// more.
+  String get endOfStories => isOdia
+      ? '— ସମସ୍ତ ଖବର ଦେଖାଯାଇଛି —'
+      : '— end of stories —';
   String get titleHintWrite => isOdia ? 'ଟାଇଟଲ୍ ଲେଖନ୍ତୁ...' : 'Write the title...';
   String get titleHintSpeak => isOdia ? 'ଟାଇଟଲ୍ କୁହନ୍ତୁ...' : 'Speak the title...';
   String get statusReview => isOdia ? 'ସମୀକ୍ଷା' : 'Review';
@@ -398,6 +422,55 @@ class AppStrings {
   String get aiRefineHint => isOdia
       ? 'ଓଡ଼ିଆ ଲିପିରେ ସଠିକ୍, ଡୁପ୍ଲିକେଟ୍ ସଫା'
       : 'Clean Odia, dedupe & polish';
+  /// Tooltip on the disabled AI Refine button — shown when the
+  /// reporter just refined and hasn't changed anything since.
+  /// Re-enables the moment they edit any paragraph.
+  String get aiRefineNoChangesHint => isOdia
+      ? 'ସଂଶୋଧନ ପରେ କିଛି ବଦଳ କରିନାହାଁନ୍ତି'
+      : 'No changes since last refine';
+
+  /// Tooltip when the reporter has typed too little for AI Refine
+  /// to do anything useful (under 20 words). The hint nudges them
+  /// to keep going rather than asking the LLM to polish a stub.
+  String get aiRefineTooShortHint => isOdia
+      ? 'ଅଧିକ ଲେଖନ୍ତୁ — କମ୍ ଶବ୍ଦରେ ସଂଶୋଧନ ଦରକାର ନୁହେଁ'
+      : 'Add more text — refine needs a paragraph or so';
+
+  /// Snackbar shown when recording auto-stopped at the 10-minute
+  /// hard cap. The "tap mic to continue" hint is critical: reporters
+  /// keep dictating with eyes closed; without telling them how to
+  /// resume, they think the app died and stop trusting it.
+  String get recordingAutoStoppedMaxDuration => isOdia
+      ? '୧୦ ମିନିଟ୍ ସମୟ ସମାପ୍ତ। ଚାଲୁ ରଖିବାକୁ ମାଇକ୍ ଚାପନ୍ତୁ।'
+      : 'Recording stopped — 10 minute limit reached. Tap mic to continue.';
+
+  /// Snackbar shown when recording auto-stopped because no transcript
+  /// arrived for 10 minutes (silence safety net — usually a wedged
+  /// websocket).
+  String get recordingAutoStoppedSilence => isOdia
+      ? 'ଶବ୍ଦ ସୁନାଗଲାନାହିଁ। ମାଇକ୍ ବନ୍ଦ ହୋଇଛି।'
+      : 'Recording stopped — no speech detected for 10 minutes.';
+
+  /// Countdown chip shown in the last 60 seconds before the auto-stop
+  /// fires. e.g. "0:42 left" / "୦:୪୨ ବାକି". [secondsLeft] is the
+  /// integer count of seconds remaining (1..60).
+  String recordingTimeLeft(int secondsLeft) {
+    final m = secondsLeft ~/ 60;
+    final s = secondsLeft.remainder(60).toString().padLeft(2, '0');
+    final base = '$m:$s';
+    return isOdia ? '${_toOdiaDigits(base)} ବାକି' : '$base left';
+  }
+
+  /// Tiny helper for the countdown chip — converts ASCII digits to
+  /// Odia digits inline. We don't want to pull in the toOdiaDigits
+  /// import here, the logic is one line.
+  String _toOdiaDigits(String s) {
+    const map = {
+      '0': '୦', '1': '୧', '2': '୨', '3': '୩', '4': '୪',
+      '5': '୫', '6': '୬', '7': '୭', '8': '୮', '9': '୯',
+    };
+    return s.split('').map((c) => map[c] ?? c).join();
+  }
   String get userNotes => isOdia ? 'ଉପଯୋଗକର୍ତ୍ତା ଟିପ୍ପଣୀ' : 'User Notes';
   String get processingDontLeave => isOdia
       ? 'ପ୍ରକ୍ରିୟାକରଣ ଚାଲିଛି। ବାହାରକୁ ଗଲେ ବି ସୁରକ୍ଷିତ ରହିବ।'
