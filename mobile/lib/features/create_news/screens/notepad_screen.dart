@@ -929,12 +929,35 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
       ),
     );
     if (confirmed == true && context.mounted) {
-      // Delete the story on the server
-      final storyId = notifier.serverStoryId;
-      if (storyId != null) {
-        await ref.read(storiesProvider.notifier).deleteStory(storyId);
+      // Local-first drafts live in Hive only until Submit, so the
+      // delete path forks on whether we have a server id yet.
+      //
+      // Without this fork, tapping Delete on a never-submitted draft
+      // would: skip the API call (serverStoryId is null), skip the
+      // Hive delete (no caller dispatched there), pop the screen,
+      // and then fetchStories() + the Hive watcher would put the
+      // draft right back into the list — making the button feel
+      // completely broken to the reporter ("I deleted it, why is
+      // it still here?").
+      final serverId = notifier.serverStoryId;
+      final localId = notifier.localId;
+      final storiesNotifier = ref.read(storiesProvider.notifier);
+      if (serverId != null) {
+        // Already-submitted-or-beyond story: server is the source of
+        // truth. Delete remotely; the provider also drops it from
+        // serverStories + cache on success.
+        await storiesNotifier.deleteStory(serverId);
+      } else if (localId != null) {
+        // Local-only draft: never touched the server. Just drop the
+        // Hive entry — the box watcher in stories_provider rebuilds
+        // localDrafts so the home list updates immediately.
+        await storiesNotifier.deleteLocalDraft(localId);
       }
-      ref.read(storiesProvider.notifier).fetchStories();
+      // Refresh the list from server too, so a server-side delete
+      // is reconciled even if the client-side optimistic update
+      // missed something. Local-only drafts don't need this but it's
+      // a no-op cost.
+      storiesNotifier.fetchStories();
       if (context.mounted) {
         context.pop();
       }

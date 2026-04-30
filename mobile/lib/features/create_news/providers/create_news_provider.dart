@@ -13,6 +13,7 @@ import '../../../core/services/audio_upload_queue.dart';
 import '../../../core/services/enrollment_storage.dart';
 import '../../../core/services/file_picker_service.dart';
 import '../../../core/services/local_drafts_store.dart';
+import '../../../core/services/local_stories_cache.dart';
 import '../../../core/services/sarvam_api.dart';
 import '../../../core/services/stt_service.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -626,12 +627,41 @@ class NotepadNotifier extends Notifier<NotepadState> {
     debugPrint('[create_news] initWithLocalDraft OK localId=$_localId paragraphs=${paragraphs.length}');
   }
 
-  /// Initialize from an existing server-side story (loads from server).
-  /// Used when the reporter taps an already-submitted story on the home
-  /// screen. Local-only drafts go through [initWithLocalDraft] instead.
+  /// Initialize from an existing server-side story. Used when the
+  /// reporter taps an already-submitted story on the home screen.
+  /// Local-only drafts go through [initWithLocalDraft] instead.
+  ///
+  /// Stale-while-revalidate: the home / all-news lists already cached
+  /// every story they fetched (paragraphs included) into Hive via
+  /// [LocalStoriesCache]. We seed the editor from that cache
+  /// synchronously so content appears instantly on tap, then refresh
+  /// from the server in the background to pick up any reviewer edits
+  /// that happened since the last list fetch.
+  ///
+  /// The server response wins on success — we only fall back to the
+  /// "cache only" experience when the network call fails. That covers
+  /// offline reporters cleanly: they still see their story (read-only,
+  /// effectively) and can re-open it later when online to refresh.
   Future<void> initWithExistingStory(String storyId) async {
     _localId = null;
     _serverStoryId = storyId;
+
+    // ── Cache hydrate (synchronous, instant UI) ─────────────────────
+    final cached = ref.read(localStoriesCacheProvider).find(storyId);
+    if (cached != null) {
+      _storyStatus = cached.status;
+      final paragraphs =
+          cached.paragraphs.map((p) => Paragraph.fromMap(p)).toList();
+      state = NotepadState(
+        headline: cached.headline,
+        displayId: cached.displayId,
+        category: cached.category,
+        location: cached.location,
+        paragraphs: paragraphs,
+      );
+    }
+
+    // ── Server refresh (async, replaces cached body on success) ────
     try {
       final story = await _api.getStory(storyId);
       _storyStatus = story.status;
@@ -646,8 +676,17 @@ class NotepadNotifier extends Notifier<NotepadState> {
         location: story.location,
         paragraphs: paragraphs,
       );
+      // Refresh the cache row so the next cold-open of this story
+      // shows the post-edit content even if the home list hasn't
+      // been refreshed since.
+      await ref.read(localStoriesCacheProvider).upsert(story);
     } catch (_) {
-      state = state.copyWith(error: 'Failed to load story');
+      // If we already hydrated from cache, leave the user inside the
+      // story rather than blanking the screen with an error. Only
+      // surface the error when we genuinely have nothing to show.
+      if (cached == null) {
+        state = state.copyWith(error: 'Failed to load story');
+      }
     }
   }
 
