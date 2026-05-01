@@ -1,3 +1,4 @@
+import logging
 import os
 
 from fastapi import FastAPI
@@ -6,6 +7,22 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from .config import settings
+
+
+# ---------------------------------------------------------------------------
+# Logging level
+# ---------------------------------------------------------------------------
+# Default Python logging level is WARNING, which silently drops every
+# `logger.info(...)` line our app code emits. That's a problem on prod
+# because the STT-proxy handler in routers/sarvam.py logs session
+# start, Sarvam reconnect, and end at INFO — without these we can't
+# see why a reporter's dictation produced no transcript.
+#
+# We deliberately raise to INFO for our app modules only, leaving
+# uvicorn / sqlalchemy at their library defaults so we don't drown in
+# per-request access lines (uvicorn already emits its own INFO access
+# log via the gunicorn process).
+logging.getLogger("app").setLevel(logging.INFO)
 from .database import Base, engine
 from .models.story_revision import StoryRevision  # noqa: F401 — ensure table is created
 from .models.page_template import PageTemplate  # noqa: F401

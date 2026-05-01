@@ -176,13 +176,24 @@ async def websocket_stt_proxy(
             chunk = await audio_queue.get()
             if chunk is None:
                 break
-            if sarvam_ws is not None:
-                try:
-                    await sarvam_ws.send(chunk)
-                except websockets.exceptions.ConnectionClosed:
-                    # Re-queue so reconnect loop can replay it
-                    await audio_queue.put(chunk)
-                    await asyncio.sleep(0.1)
+            # If Sarvam isn't connected yet (initial connect still in
+            # flight, or reconnect after a drop), DO NOT drop the chunk
+            # — re-queue it so it's there when sarvam_ws comes back.
+            # The previous `if sarvam_ws is not None: send` swallowed
+            # those chunks silently; reporters who started speaking
+            # before the upstream WS finished opening lost the first
+            # 100–500ms of dictation. Worse, if Sarvam is mid-reconnect
+            # for 1–2s, several seconds of audio went into the void.
+            if sarvam_ws is None:
+                await audio_queue.put(chunk)
+                await asyncio.sleep(0.05)
+                continue
+            try:
+                await sarvam_ws.send(chunk)
+            except websockets.exceptions.ConnectionClosed:
+                # Same re-queue path — reconnect loop will replay it.
+                await audio_queue.put(chunk)
+                await asyncio.sleep(0.1)
 
     # --- Task 3: Forward Sarvam transcripts → Flutter client --------------
     async def relay_from_sarvam(s_ws):
