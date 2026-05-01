@@ -12,17 +12,31 @@ from .config import settings
 # ---------------------------------------------------------------------------
 # Logging level
 # ---------------------------------------------------------------------------
-# Default Python logging level is WARNING, which silently drops every
-# `logger.info(...)` line our app code emits. That's a problem on prod
-# because the STT-proxy handler in routers/sarvam.py logs session
-# start, Sarvam reconnect, and end at INFO — without these we can't
-# see why a reporter's dictation produced no transcript.
+# Setting `logging.getLogger("app").setLevel(INFO)` alone wasn't enough
+# in prod — gunicorn owns the root logger config and its handler
+# filters above WARNING by default, so even with our logger at INFO
+# the records were dropped at the root handler. We attach our own
+# StreamHandler directly to the "app" logger and disable propagation
+# so app log lines bypass gunicorn's filter and write to stdout
+# (which Cloud Run scoops up and ships to Cloud Logging).
 #
-# We deliberately raise to INFO for our app modules only, leaving
-# uvicorn / sqlalchemy at their library defaults so we don't drown in
-# per-request access lines (uvicorn already emits its own INFO access
-# log via the gunicorn process).
-logging.getLogger("app").setLevel(logging.INFO)
+# This means the STT proxy's INFO lines (session start, Sarvam
+# reconnect, session end) actually reach Cloud Logging, which is
+# what made the difference between "we have observability" and "we
+# fly blind whenever a reporter complains about no-transcript".
+import sys
+_app_logger = logging.getLogger("app")
+_app_logger.setLevel(logging.INFO)
+if not any(isinstance(h, logging.StreamHandler) for h in _app_logger.handlers):
+    _h = logging.StreamHandler(sys.stdout)
+    _h.setLevel(logging.INFO)
+    _h.setFormatter(
+        logging.Formatter("[%(levelname)s] %(name)s: %(message)s")
+    )
+    _app_logger.addHandler(_h)
+# Don't double-emit via root (avoids gunicorn's handler dropping it AND
+# preventing duplicate lines if root somehow does pass it through).
+_app_logger.propagate = False
 from .database import Base, engine
 from .models.story_revision import StoryRevision  # noqa: F401 — ensure table is created
 from .models.page_template import PageTemplate  # noqa: F401
