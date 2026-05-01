@@ -26,6 +26,7 @@ import '../../../core/providers/phone_call_provider.dart';
 import '../../../core/widgets/status_banner.dart';
 import '../providers/create_news_provider.dart';
 import '../../../core/services/file_picker_service.dart';
+import '../../../core/widgets/copy_guard.dart';
 import '../../home/providers/stories_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 
@@ -623,6 +624,16 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                     : _SimpleNotepadBody(
                         state: state,
                         isReadOnly: isReadOnly,
+                        // Threaded down so each text-run's copy/cut
+                        // menu can substitute "<Org> Confidential"
+                        // when reporters try to bulk-copy story
+                        // content. Empty when org info hasn't loaded
+                        // (offline cold-start) — better to allow
+                        // the copy than fail closed on an empty
+                        // org name.
+                        orgName: ref.watch(authProvider)
+                                .reporter?.org?.name ??
+                            '',
                         onTextRunCommitted: (firstIdx, lastIdx, pieces) {
                           notifier.replaceTextRun(firstIdx, lastIdx, pieces);
                         },
@@ -1958,12 +1969,19 @@ class _SimpleNotepadBody extends StatefulWidget {
   /// state changes.
   final VoidCallback? onPendingFocusHandled;
   final VoidCallback onTapEmptySpace;
+  /// The reporter's organisation name, threaded through so each text-run's
+  /// copy/cut menu can replace the clipboard with "<Org> Confidential"
+  /// when the selection exceeds 30 words. Empty string disables the
+  /// guard (used when org info hasn't loaded yet — better to allow
+  /// copy than fail closed).
+  final String orgName;
 
   const _SimpleNotepadBody({
     required this.state,
     required this.isReadOnly,
     required this.onTextRunCommitted,
     required this.onTapEmptySpace,
+    required this.orgName,
     this.onRemoveMedia,
     this.onOcrPhoto,
     this.onUpdateTable,
@@ -2332,6 +2350,7 @@ class _SimpleNotepadBodyState extends State<_SimpleNotepadBody> {
           controller: ctrl,
           focusNode: focus,
           readOnly: widget.isReadOnly,
+          orgName: widget.orgName,
         ));
         if (showLivePreview && id == _streamingRunId) {
           children.add(_LiveTranscriptPreview(text: liveTranscript));
@@ -2416,10 +2435,16 @@ class _TextRunField extends StatelessWidget {
   final FocusNode focusNode;
   final bool readOnly;
 
+  /// Organisation name used to build the "<Org> Confidential" replacement
+  /// string for the copy/cut guard. Empty disables the guard (org info
+  /// hasn't loaded yet — fall through to default Flutter copy behaviour).
+  final String orgName;
+
   const _TextRunField({
     required this.controller,
     required this.focusNode,
     required this.readOnly,
+    this.orgName = '',
   });
 
   @override
@@ -2438,6 +2463,15 @@ class _TextRunField extends StatelessWidget {
       textCapitalization: TextCapitalization.sentences,
       style: style,
       cursorColor: AppColors.vrCoral,
+      // Copy / cut guard. When the reporter selects more than 30 words
+      // and tries to copy (or cut), the clipboard payload is replaced
+      // with "<Org> Confidential" instead of the actual story body —
+      // a soft deterrent against bulk-paste exfiltration into chat
+      // apps. Below the threshold (typical paragraph or quote length),
+      // copy works normally.
+      contextMenuBuilder: orgName.isEmpty
+          ? null
+          : buildCopyGuardContextMenu(orgName: orgName),
       decoration: const InputDecoration(
         filled: false,
         fillColor: Colors.transparent,
