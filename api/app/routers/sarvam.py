@@ -31,7 +31,7 @@ from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 
 from ..config import settings
-from ..deps import get_current_user
+from ..deps import get_current_user, get_current_user_lite
 from ..models.user import User
 from ..services import name_registry, sarvam_client
 
@@ -679,7 +679,9 @@ class ChatRequest(BaseModel):
 @router.post("/api/llm/chat")
 async def llm_chat(
     body: ChatRequest,
-    user: User = Depends(get_current_user),
+    # _lite variant releases the DB connection before the LLM await — see
+    # deps.get_current_user_lite for why this matters on long-running endpoints.
+    user: User = Depends(get_current_user_lite),
 ):
     """Proxy chat completion requests to Sarvam AI so the Flutter client
     never needs the API key."""

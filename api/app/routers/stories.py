@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -38,6 +39,7 @@ def create_story(
 
 @router.get("", response_model=list[StoryResponse])
 def list_stories(
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     org_id: str = Depends(get_current_org_id),
@@ -46,8 +48,17 @@ def list_stories(
     search: str | None = Query(None, description="Search in headline text"),
     date_from: str | None = Query(None, description="Filter from date (YYYY-MM-DD)"),
     date_to: str | None = Query(None, description="Filter to date (YYYY-MM-DD)"),
-    offset: int = Query(0, ge=0, description="Pagination offset"),
+    offset: int = Query(0, ge=0, description="Pagination offset (legacy — prefer cursor)"),
     limit: int = Query(50, ge=1, le=100, description="Pagination limit"),
+    cursor: str | None = Query(
+        None,
+        description=(
+            "Keyset cursor from the previous page's X-Next-Cursor header. "
+            "Format: '<updated_at_iso>|<story_id>'. When provided, offset is "
+            "ignored. Cursor pagination scales O(1) per page where OFFSET "
+            "scales O(N) — required for tens-of-thousands-of-stories users."
+        ),
+    ),
 ):
     query = db.query(Story).filter(Story.reporter_id == user.id, Story.organization_id == org_id, Story.deleted_at.is_(None))
 
@@ -70,13 +81,47 @@ def list_stories(
         except ValueError:
             pass
 
+    # ── Pagination ─────────────────────────────────────────────────────────
+    # Cursor (keyset) is preferred; falls back to OFFSET when absent so old
+    # mobile builds keep working. Cursor encodes the boundary row's
+    # (updated_at, id) — id is the tiebreaker when many stories share the
+    # exact same updated_at (common when bulk-imported from a legacy system).
+    if cursor:
+        try:
+            cur_updated_iso, cur_id = cursor.split("|", 1)
+            cur_updated = datetime.fromisoformat(cur_updated_iso)
+            # Strict less-than on updated_at, OR equal updated_at with
+            # lexicographically smaller id. Standard keyset condition.
+            query = query.filter(
+                or_(
+                    Story.updated_at < cur_updated,
+                    and_(Story.updated_at == cur_updated, Story.id < cur_id),
+                )
+            )
+        except (ValueError, TypeError):
+            # Malformed cursor — quietly fall back to first-page behaviour
+            # rather than erroring. Reporter sees latest page; pagination
+            # state desyncs but no broken UX.
+            pass
+
     stories = (
         query
-        .order_by(Story.updated_at.desc())
-        .offset(offset)
+        .order_by(Story.updated_at.desc(), Story.id.desc())
+        .offset(offset if not cursor else 0)
         .limit(limit)
         .all()
     )
+
+    # Emit a next-page cursor when this page filled to the limit. When the
+    # page is short, we know there's nothing further and omit the header so
+    # the client stops asking. Header form keeps the response body shape
+    # backward-compatible (a plain JSON array of stories).
+    if len(stories) == limit:
+        last = stories[-1]
+        response.headers["X-Next-Cursor"] = (
+            f"{last.updated_at.isoformat()}|{last.id}"
+        )
+
     return stories
 
 @router.get("/{story_id}", response_model=StoryResponse)

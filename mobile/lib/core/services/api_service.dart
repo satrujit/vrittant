@@ -312,7 +312,16 @@ class ApiService {
   }
 
   /// Lists stories with optional filters and pagination.
-  Future<List<StoryDto>> listStories({
+  ///
+  /// Returns the stories AND the next-page cursor (from `X-Next-Cursor`
+  /// header) when more pages are available. Cursor pagination is preferred
+  /// over offset because it scales O(1) per page where OFFSET is O(N) — a
+  /// reporter with thousands of stories scrolling deep would feel offset
+  /// pagination get progressively slower.
+  ///
+  /// Backward compatibility: if [cursor] is null, the server falls back to
+  /// offset/limit. So old code paths that only pass [offset] keep working.
+  Future<({List<StoryDto> stories, String? nextCursor})> listStories({
     String? status,
     String? category,
     String? search,
@@ -320,6 +329,7 @@ class ApiService {
     String? dateTo,
     int offset = 0,
     int limit = 50,
+    String? cursor,
   }) async {
     final queryParams = <String, dynamic>{
       'offset': offset,
@@ -330,14 +340,22 @@ class ApiService {
     if (search != null && search.isNotEmpty) queryParams['search'] = search;
     if (dateFrom != null) queryParams['date_from'] = dateFrom;
     if (dateTo != null) queryParams['date_to'] = dateTo;
+    if (cursor != null) queryParams['cursor'] = cursor;
 
     final response = await _dio.get(
       '/stories',
       queryParameters: queryParams,
     );
-    return (response.data as List)
+    final stories = (response.data as List)
         .map((json) => StoryDto.fromJson(json as Map<String, dynamic>))
         .toList();
+    // Header is `X-Next-Cursor` when more pages are available, absent when
+    // we've reached the end. Dio header values are List<String>.
+    final headerValues = response.headers['x-next-cursor'];
+    final nextCursor = (headerValues != null && headerValues.isNotEmpty)
+        ? headerValues.first
+        : null;
+    return (stories: stories, nextCursor: nextCursor);
   }
 
   Future<StoryDto> submitStory(String storyId) async {

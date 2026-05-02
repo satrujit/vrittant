@@ -37,7 +37,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status as http_status
 from pydantic import BaseModel, Field
 
-from ..deps import get_current_user
+from ..deps import get_current_user_lite
 from ..models.user import User
 from ..services import gemini_client, sarvam_client
 from ..services.gemini_client import GeminiError, is_transient_error
@@ -301,7 +301,9 @@ def _post_process(body: str) -> str:
 @router.post("/api/llm/generate-story", response_model=GenerateStoryResponse)
 async def generate_story(
     body: GenerateStoryRequest,
-    user: User = Depends(get_current_user),
+    # _lite variant releases the DB connection before the Gemini await so a
+    # burst of concurrent /generate-story calls doesn't starve the pool.
+    user: User = Depends(get_current_user_lite),
 ) -> GenerateStoryResponse:
     """Polish raw reporter notes into a publishable Odia article body.
 

@@ -120,11 +120,13 @@ class StoriesNotifier extends Notifier<StoriesState> {
   /// stories per month).
   static const int _pageSize = 50;
 
-  /// Total raw rows fetched from /stories so far (including any
-  /// legacy drafts we filter out client-side). Used as the offset
-  /// for the next page so pagination math stays correct even when
-  /// the visible list is shorter due to filtering.
-  int _serverFetchedCount = 0;
+  /// Cursor for the next page from the most recent fetch's
+  /// `X-Next-Cursor` header. Null when on the first page or when the
+  /// server signalled "end of list". Cursor pagination scales O(1)
+  /// per page where OFFSET scales O(N), and survives concurrent
+  /// inserts (a new submitted story between page fetches doesn't
+  /// shift the offset and cause a row to be skipped or duplicated).
+  String? _nextCursor;
 
   @override
   StoriesState build() {
@@ -177,20 +179,17 @@ class StoriesNotifier extends Notifier<StoriesState> {
     );
     try {
       // First page only. Pull-to-refresh and cold-start both reset
-      // pagination here; loadMoreStories appends subsequent pages.
-      // We filter drafts client-side so legacy server-side drafts
-      // (pre-local-first refactor) don't double-show under both
-      // localDrafts and serverStories.
-      final stories = await _api.listStories(offset: 0, limit: _pageSize);
-      // Cache the full server response (including any server-side
-      // drafts) so a re-seed on next launch matches what we'd fetch.
-      await _cache.replaceAll(stories);
-      _serverFetchedCount = stories.length;
+      // pagination here; loadMoreStories appends subsequent pages
+      // using the cursor.
+      final result = await _api.listStories(limit: _pageSize);
+      await _cache.replaceAll(result.stories);
+      _nextCursor = result.nextCursor;
       state = state.copyWith(
-        serverStories: stories.where((s) => s.status != 'draft').toList(),
-        // Got a full page → there's likely more to fetch. If the
-        // first page was short the list ends here.
-        hasMoreStories: stories.length == _pageSize,
+        serverStories:
+            result.stories.where((s) => s.status != 'draft').toList(),
+        // Server tells us via the X-Next-Cursor header whether there's
+        // more to fetch. No cursor = end of list.
+        hasMoreStories: _nextCursor != null,
         isLoading: false,
         isLoadingMore: false,
       );
@@ -218,22 +217,23 @@ class StoriesNotifier extends Notifier<StoriesState> {
 
     state = state.copyWith(isLoadingMore: true, clearError: true);
     try {
-      final more = await _api.listStories(
-        offset: _serverFetchedCount,
+      final result = await _api.listStories(
+        cursor: _nextCursor,
         limit: _pageSize,
       );
-      _serverFetchedCount += more.length;
+      _nextCursor = result.nextCursor;
       // Upsert the new rows into cache so the next cold-start has a
       // longer pre-fetched list to render instantly. We don't replace
       // — that would clobber page 1.
-      for (final s in more) {
+      for (final s in result.stories) {
         await _cache.upsert(s);
       }
-      final newVisible =
-          more.where((s) => s.status != 'draft').toList(growable: false);
+      final newVisible = result.stories
+          .where((s) => s.status != 'draft')
+          .toList(growable: false);
       state = state.copyWith(
         serverStories: [...state.serverStories, ...newVisible],
-        hasMoreStories: more.length == _pageSize,
+        hasMoreStories: _nextCursor != null,
         isLoadingMore: false,
       );
     } catch (_) {

@@ -23,10 +23,20 @@ if not settings.DATABASE_URL.startswith("sqlite"):
         "keepalives_interval": 10,
         "keepalives_count": 5,
     })
+    # Pool sizing math:
+    # - Cloud SQL tier db-f1-micro caps `max_connections` at 25.
+    # - Cloud Run service is min=1, max=3 instances.
+    # - Each instance needs to fit comfortably; reserve a couple slots for
+    #   admin/migration/cloud-sql-proxy idle connections.
+    # - 5 persistent + 3 overflow = 8 max per instance * 3 instances = 24
+    #   which fits 25 with one slot of headroom.
+    # If we ever bump the Cloud SQL tier, raise these in lockstep — the
+    # ratio matters: pool too small = request queueing, pool too big =
+    # Cloud SQL "too many connections" failures.
     pool_kwargs = {
         "poolclass": QueuePool,
-        "pool_size": 3,           # max persistent connections per instance
-        "max_overflow": 2,        # allow 2 extra temporary connections
+        "pool_size": 5,
+        "max_overflow": 3,
         "pool_timeout": 30,       # wait 30s for a connection before erroring
         # Cloud SQL kills idle TCP at ~5 min. Recycling at exactly 300 races
         # the kill (the connection can die between pre_ping and the real
