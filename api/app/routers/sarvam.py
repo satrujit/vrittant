@@ -196,18 +196,66 @@ async def websocket_stt_proxy(
                 await asyncio.sleep(0.1)
 
     # --- Task 3: Forward Sarvam transcripts → Flutter client --------------
+    #
+    # Per-session diagnostics: when reporters complain "I spoke for 10s
+    # and nothing showed up live", we need to know whether Sarvam was
+    # emitting interim transcripts during that time or whether it only
+    # spoke at end-of-utterance. The instrumentation below logs:
+    #   - time-to-first-data (latency from session open to first interim)
+    #   - total data messages received
+    #   - vad_end events received
+    # These three numbers tell us Sarvam-side vs mobile-side responsibility.
     async def relay_from_sarvam(s_ws):
+        session_started = time.monotonic()
+        first_data_at: Optional[float] = None
+        data_count = 0
+        vad_end_count = 0
         try:
             async for message in s_ws:
                 try:
                     if isinstance(message, bytes):
                         await ws.send_bytes(message)
                     else:
+                        # Cheap inspection — we already json.loads inside
+                        # _rewrite_transcript_message, but we want the raw
+                        # type/event before mutation. Parse once here.
+                        try:
+                            parsed = json.loads(message) if message else None
+                        except (ValueError, TypeError):
+                            parsed = None
+                        if isinstance(parsed, dict):
+                            t = parsed.get("type")
+                            if t == "data":
+                                data_count += 1
+                                if first_data_at is None:
+                                    first_data_at = time.monotonic()
+                                    logger.info(
+                                        "STT proxy: first transcript at %.2fs "
+                                        "(reporter=%s)",
+                                        first_data_at - session_started,
+                                        reporter_id,
+                                    )
+                            elif t == "events":
+                                ev = (parsed.get("data") or {}).get("event")
+                                if ev == "vad_end":
+                                    vad_end_count += 1
                         await ws.send_text(_rewrite_transcript_message(message))
                 except Exception:
                     break
         except websockets.exceptions.ConnectionClosed:
             pass
+        finally:
+            duration = time.monotonic() - session_started
+            ttf = (
+                f"{first_data_at - session_started:.2f}s"
+                if first_data_at is not None
+                else "never"
+            )
+            logger.info(
+                "STT proxy: relay summary (reporter=%s) "
+                "duration=%.1fs data_msgs=%d vad_ends=%d ttf=%s",
+                reporter_id, duration, data_count, vad_end_count, ttf,
+            )
 
     # --- Main loop: single connection, reconnect only on disconnect -------
     try:
