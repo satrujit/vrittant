@@ -445,6 +445,10 @@ async def upload_audio(
         filename=filename,
         language_code=language_code,
         user_id=user.id,
+        # Pass through the validated org so the helper re-checks before
+        # the write. Belt + suspenders against future callers that
+        # forget to validate the story upfront.
+        expected_org_id=org_id,
     )
 
     return {
@@ -461,8 +465,16 @@ def _run_stt_in_background(
     filename: str,
     language_code: str,
     user_id: Optional[str] = None,
+    expected_org_id: Optional[str] = None,
 ) -> None:
-    """Background task: run STT and update paragraph in a fresh DB session."""
+    """Background task: run STT and update paragraph in a fresh DB session.
+
+    [expected_org_id] is the organization the calling endpoint already
+    validated this story belongs to. We re-check inside the helper as
+    defense-in-depth: if a future caller forgets to validate before
+    queueing this task, the helper will quietly drop a misrouted
+    update rather than scribbling on a story in a different org.
+    """
     import asyncio as _asyncio
     from ..database import SessionLocal
 
@@ -500,9 +512,15 @@ def _run_stt_in_background(
 
     db = SessionLocal()
     try:
-        story = db.query(Story).filter(Story.id == story_id).first()
+        story_q = db.query(Story).filter(Story.id == story_id)
+        if expected_org_id is not None:
+            story_q = story_q.filter(Story.organization_id == expected_org_id)
+        story = story_q.first()
         if story is None:
-            logger.warning("Background STT: story %s gone", story_id)
+            # Either deleted, or org mismatch (defense-in-depth). The
+            # second case is silently dropped — we don't want a noisy
+            # log for what should be a never-happens condition.
+            logger.warning("Background STT: story %s gone or wrong org", story_id)
             return
         paragraphs = list(story.paragraphs or [])
         idx = next(

@@ -374,7 +374,14 @@ def create_editor_story(
     # the editor doesn't wait on Sarvam. Skips itself if the editor already
     # picked a category. The cron sweep mops up any failures.
     if not (story.category or "").strip():
-        background_tasks.add_task(categorize_story_in_background, story.id)
+        # Pass org_id through so the background task re-checks before
+        # mutating — defense-in-depth against future refactors that
+        # might decouple this caller from get_owned_or_404.
+        background_tasks.add_task(
+            categorize_story_in_background,
+            story.id,
+            expected_org_id=story.organization_id,
+        )
 
     resp = AdminStoryWithRevisionResponse.model_validate(story)
     resp.edition_info = _get_edition_info(db, story.id)
@@ -687,7 +694,14 @@ def admin_update_story(
     # category after this save. Same fire-and-forget pattern as the create
     # path; the cron sweep retries on failure.
     if not (story.category or "").strip():
-        background_tasks.add_task(categorize_story_in_background, story.id)
+        # Pass org_id through so the background task re-checks before
+        # mutating — defense-in-depth against future refactors that
+        # might decouple this caller from get_owned_or_404.
+        background_tasks.add_task(
+            categorize_story_in_background,
+            story.id,
+            expected_org_id=story.organization_id,
+        )
 
     resp = AdminStoryWithRevisionResponse.model_validate(story)
     resp.edition_info = _get_edition_info(db, story.id)

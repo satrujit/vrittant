@@ -133,7 +133,20 @@ def update_user_entitlements(
     org_id: str = Depends(get_current_org_id),
 ):
     user = get_owned_or_404(db, User, user_id, org_id)
-    db.query(Entitlement).filter(Entitlement.user_id == user_id).delete()
+    # Belt + suspenders. get_owned_or_404 above already proved this user
+    # belongs to org_id, so a delete-by-user_id alone is safe today. But
+    # the Entitlement table has no organization_id of its own, and a
+    # future refactor that drops the get_owned_or_404 call (or moves it)
+    # would silently make this delete cross-org. Constrain the delete
+    # to entitlements whose user is also in this org via subquery — if
+    # the user moves orgs (we don't do that today, but...) the wrong-
+    # org entitlements simply don't match and stay put.
+    db.query(Entitlement).filter(
+        Entitlement.user_id == user_id,
+        Entitlement.user_id.in_(
+            db.query(User.id).filter(User.organization_id == org_id)
+        ),
+    ).delete(synchronize_session=False)
     for key in body.page_keys:
         db.add(Entitlement(user_id=user_id, page_key=key))
     db.commit()

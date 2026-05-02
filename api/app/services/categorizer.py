@@ -152,12 +152,22 @@ def _story_text_for_classification(story) -> str:
     return "\n\n".join(parts).strip()
 
 
-def categorize_story_in_background(story_id: str) -> None:
+def categorize_story_in_background(
+    story_id: str,
+    expected_org_id: Optional[str] = None,
+) -> None:
     """Sync entrypoint for ``BackgroundTasks``: classify one story and persist.
 
     Opens its own DB session (FastAPI's request-scoped session is gone by
     the time background tasks run). Skips work if the story already has a
     category, has no usable text, or has been deleted.
+
+    [expected_org_id] is the organization the calling endpoint validated
+    the story belongs to. We re-check inside the helper as
+    defense-in-depth: a future caller that forgets to validate before
+    queueing this task will quietly drop the categorization rather than
+    write to a story in a different org. Optional for backward-compat —
+    callers should always pass it.
 
     Failures are swallowed — categorisation is best-effort. The cron sweep
     will retry on the next tick.
@@ -167,11 +177,12 @@ def categorize_story_in_background(story_id: str) -> None:
 
     db: Session = SessionLocal()
     try:
-        story = (
-            db.query(Story)
-            .filter(Story.id == story_id, Story.deleted_at.is_(None))
-            .first()
+        q = db.query(Story).filter(
+            Story.id == story_id, Story.deleted_at.is_(None)
         )
+        if expected_org_id is not None:
+            q = q.filter(Story.organization_id == expected_org_id)
+        story = q.first()
         if story is None:
             return
         if (story.category or "").strip():
@@ -200,8 +211,13 @@ def categorize_story_in_background(story_id: str) -> None:
             return
 
         # Re-read inside the same session so we don't clobber a parallel
-        # human-tagged category. The race window is tiny but real.
-        story = db.query(Story).filter(Story.id == story_id).first()
+        # human-tagged category. The race window is tiny but real. Org
+        # filter is preserved on the re-fetch — same defense-in-depth as
+        # the initial query.
+        re_q = db.query(Story).filter(Story.id == story_id)
+        if expected_org_id is not None:
+            re_q = re_q.filter(Story.organization_id == expected_org_id)
+        story = re_q.first()
         if story is None or (story.category or "").strip():
             return
         story.category = category

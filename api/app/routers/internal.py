@@ -83,20 +83,23 @@ async def sweep_pending_stt(
 
     for item in candidates:
         story_id = item["story_id"]
+        org_id = item["organization_id"]
         para_id = item["paragraph_id"]
         attempts = item["attempts"]
         audio_url = item["audio_url"]
         language_code = item["language_code"] or "od-IN"
 
         if attempts >= _MAX_ATTEMPTS:
-            _mark_status(story_id, para_id, "failed", increment_attempts=False)
+            _mark_status(story_id, para_id, "failed",
+                         increment_attempts=False, expected_org_id=org_id)
             given_up += 1
             continue
 
         audio_bytes = await _fetch_audio_bytes(audio_url)
         if not audio_bytes:
             logger.warning("sweep: audio fetch failed for %s/%s", story_id, para_id)
-            _mark_status(story_id, para_id, "pending_retry", increment_attempts=True)
+            _mark_status(story_id, para_id, "pending_retry",
+                         increment_attempts=True, expected_org_id=org_id)
             still_failing += 1
             continue
 
@@ -108,21 +111,24 @@ async def sweep_pending_stt(
             )
         except stt_service.SttRetryable as exc:
             logger.info("sweep: still retryable for %s/%s: %s", story_id, para_id, exc)
-            _mark_status(story_id, para_id, "pending_retry", increment_attempts=True)
+            _mark_status(story_id, para_id, "pending_retry",
+                         increment_attempts=True, expected_org_id=org_id)
             still_failing += 1
             continue
         except stt_service.SttError as exc:
             logger.warning("sweep: permanent failure for %s/%s: %s", story_id, para_id, exc)
-            _mark_status(story_id, para_id, "failed", increment_attempts=True)
+            _mark_status(story_id, para_id, "failed",
+                         increment_attempts=True, expected_org_id=org_id)
             given_up += 1
             continue
         except Exception as exc:  # noqa: BLE001
             logger.exception("sweep: unexpected error for %s/%s: %s", story_id, para_id, exc)
-            _mark_status(story_id, para_id, "pending_retry", increment_attempts=True)
+            _mark_status(story_id, para_id, "pending_retry",
+                         increment_attempts=True, expected_org_id=org_id)
             still_failing += 1
             continue
 
-        _apply_transcript(story_id, para_id, transcript)
+        _apply_transcript(story_id, para_id, transcript, expected_org_id=org_id)
         succeeded += 1
 
     return {
@@ -259,6 +265,13 @@ def _find_pending_paragraphs(db: Session, *, limit: int) -> list[dict]:
                 continue
             out.append({
                 "story_id": story.id,
+                # Carry organization_id through so _mark_status and
+                # _apply_transcript can re-verify before mutating.
+                # Without this, those helpers would write by-id only,
+                # which is fine while the cron is the only caller but
+                # becomes a cross-tenant hole the day someone adds a
+                # second caller.
+                "organization_id": story.organization_id,
                 "paragraph_id": p.get("id"),
                 "attempts": p.get("transcription_attempts") or 0,
                 "audio_url": p["transcription_audio_path"],
@@ -269,10 +282,25 @@ def _find_pending_paragraphs(db: Session, *, limit: int) -> list[dict]:
     return out
 
 
-def _mark_status(story_id: str, paragraph_id: str, new_status: str, *, increment_attempts: bool) -> None:
+def _mark_status(
+    story_id: str,
+    paragraph_id: str,
+    new_status: str,
+    *,
+    increment_attempts: bool,
+    expected_org_id: Optional[str] = None,
+) -> None:
+    """Update a paragraph's transcription_status. Defense-in-depth:
+    callers MUST pass [expected_org_id] so the SQL query rejects a
+    cross-org write even if the story_id is somehow attacker-influenced.
+    Optional for backward-compat with one-off ad-hoc calls but the
+    cron sweep below always supplies it now."""
     db = SessionLocal()
     try:
-        story = db.query(Story).filter(Story.id == story_id).first()
+        story_q = db.query(Story).filter(Story.id == story_id)
+        if expected_org_id is not None:
+            story_q = story_q.filter(Story.organization_id == expected_org_id)
+        story = story_q.first()
         if story is None:
             return
         paragraphs = list(story.paragraphs or [])
@@ -294,10 +322,22 @@ def _mark_status(story_id: str, paragraph_id: str, new_status: str, *, increment
         db.close()
 
 
-def _apply_transcript(story_id: str, paragraph_id: str, transcript: str) -> None:
+def _apply_transcript(
+    story_id: str,
+    paragraph_id: str,
+    transcript: str,
+    *,
+    expected_org_id: Optional[str] = None,
+) -> None:
+    """Write a transcribed paragraph back to the story. Same
+    defense-in-depth as _mark_status — pass [expected_org_id] from the
+    iteration so a cross-org write is rejected by the SQL filter."""
     db = SessionLocal()
     try:
-        story = db.query(Story).filter(Story.id == story_id).first()
+        story_q = db.query(Story).filter(Story.id == story_id)
+        if expected_org_id is not None:
+            story_q = story_q.filter(Story.organization_id == expected_org_id)
+        story = story_q.first()
         if story is None:
             return
         paragraphs = list(story.paragraphs or [])
