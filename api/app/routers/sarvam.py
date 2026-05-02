@@ -169,6 +169,22 @@ async def websocket_stt_proxy(
         finally:
             client_alive = False
             await audio_queue.put(None)
+            # CRITICAL: also force-close the upstream Sarvam WS so the main
+            # loop's `await relay_task` returns. Without this, the relay
+            # task stays parked inside `async for message in s_ws` until
+            # Sarvam decides to close on its own — which empirically can
+            # be hours. While wedged, the proxy holds a Cloud Run instance
+            # from scaling down AND a fresh recording from the same reporter
+            # opens a SECOND parallel server-side session because the old
+            # one is still alive. Closing the Sarvam ref here cascades:
+            # ConnectionClosed on the relay → relay_task completes → main
+            # loop checks client_alive=False → breaks → cleanup runs.
+            s_ws = sarvam_ws
+            if s_ws is not None:
+                try:
+                    await s_ws.close()
+                except Exception:
+                    pass
 
     # --- Task 2: Dequeue audio and send to Sarvam WS ---------------------
     async def send_to_sarvam():
