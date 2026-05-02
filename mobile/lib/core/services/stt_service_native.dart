@@ -41,6 +41,28 @@ class StreamingSttService {
   StreamSubscription? _audioSubscription;
   StreamSubscription? _wsSubscription;
 
+  // ── Reconnect machinery ────────────────────────────────────────────────
+  /// True after the caller invokes stop(). Used to distinguish "user
+  /// finished recording" from "WS dropped, we should reconnect".
+  bool _userStopped = false;
+
+  /// True while a reconnect attempt is in flight. While this is true,
+  /// audio chunks coming from the recorder go into [_pendingBuffer]
+  /// instead of being sent over the (closed/closing) WebSocket.
+  bool _reconnecting = false;
+
+  /// Audio chunks captured while the WS is down or reconnecting. Drained
+  /// as a burst to the new WS once the reconnect completes. Capped at
+  /// roughly ~30s of audio (16 kHz × 16-bit mono × 30 = 960 KB) so a
+  /// catastrophic prolonged disconnect doesn't grow memory unbounded.
+  final List<Uint8List> _pendingBuffer = [];
+  static const int _pendingBufferMaxBytes = 960 * 1024;
+  int _pendingBufferBytes = 0;
+
+  /// Counter for exponential-backoff scheduling between reconnect tries.
+  int _reconnectAttempts = 0;
+  static const int _reconnectMaxAttempts = 5;
+
   String _committedText = '';
   String _currentWindowText = '';
 
@@ -100,32 +122,18 @@ class StreamingSttService {
       }
     }
 
-    // Connect WebSocket to backend proxy. The handshake (DNS + TCP +
-    // TLS + WS upgrade) can take 1–3s on a cold connection. We start it
-    // FIRST and run mic + denoiser setup in parallel so the slow paths
-    // overlap; then await readiness before pumping audio.
-    final wsBase = ApiConfig.baseUrl.replaceFirst('http', 'ws');
-    final uri = Uri.parse(
-      '$wsBase/ws/stt?token=${authToken ?? ""}&language_code=$languageCode&model=$model',
-    );
-    _channel = WebSocketChannel.connect(uri);
+    // Reset reconnect state for this fresh session.
+    _userStopped = false;
+    _reconnecting = false;
+    _reconnectAttempts = 0;
+    _pendingBuffer.clear();
+    _pendingBufferBytes = 0;
 
-    // Listen for transcript messages from backend
-    _wsSubscription = _channel!.stream.listen(
-      (message) {
-        if (message is String) {
-          _handleTranscriptMessage(message);
-        }
-      },
-      onError: (error) {
-        _transcriptController?.addError(
-          StreamingSttException('WebSocket error: $error'),
-        );
-      },
-      onDone: () {
-        _transcriptController?.close();
-      },
-    );
+    // Initial WS connect. Same handshake-overlap optimisation: kick the
+    // connect off first, run mic + denoiser setup in parallel, then
+    // await readiness before pumping audio. Reconnects on drop are
+    // handled inside _openWebSocket via the onError/onDone callbacks.
+    await _openWebSocket();
 
     // Start recording PCM 16kHz mono
     final hasPermission = await _recorder.hasPermission();
@@ -147,25 +155,10 @@ class StreamingSttService {
     // Initialize on-device speech enhancement (fail-safe)
     await _denoiser.init();
 
-    // CRITICAL: wait for the WebSocket handshake to complete before
-    // pumping audio. Without this, audio chunks sent during the cold
-    // handshake either get dropped at the proxy or arrive before the
-    // upstream Sarvam session is set up — Sarvam silently discards them
-    // and the user sees zero transcripts during the FIRST recording.
-    // Subsequent recordings worked because TLS session resumption made
-    // the handshake fast enough that audio start happened to land after
-    // it. The 10s timeout exits the recording with a clear error rather
-    // than hanging forever on a broken connection.
-    final wsStartedAt = DateTime.now();
-    try {
-      await _channel!.ready.timeout(const Duration(seconds: 10));
-      final ms = DateTime.now().difference(wsStartedAt).inMilliseconds;
-      debugPrint('[STT] WebSocket ready in ${ms}ms');
-    } on TimeoutException {
-      throw StreamingSttException(
-        'Could not connect to transcription server. Check your internet.',
-      );
-    }
+    // _openWebSocket already awaited the WS handshake; the recorder
+    // started while the handshake was in flight and any audio captured
+    // during that overlap stayed buffered in [audioStream]. Now that
+    // the WS is up, the listener below drains audio to the wire.
 
     // Forward audio chunks to WebSocket as JSON (Sarvam expected format).
     // Audio captured during the await above is buffered in [audioStream]
@@ -200,6 +193,173 @@ class StreamingSttService {
     );
 
     return _transcriptController!.stream;
+  }
+
+  /// Open (or re-open) the WebSocket to the backend STT proxy.
+  ///
+  /// Wires up the message listener with onError/onDone handlers that
+  /// trigger [_scheduleReconnect] when the connection drops mid-session.
+  /// Awaits the handshake (10s timeout) so the caller can be sure the
+  /// WS is ready to accept audio before returning.
+  ///
+  /// On reconnect (i.e., `_reconnecting == true` when called), drains
+  /// any audio that was buffered during the gap to the freshly-opened
+  /// WS so no speech is lost.
+  Future<void> _openWebSocket() async {
+    final wsBase = ApiConfig.baseUrl.replaceFirst('http', 'ws');
+    final uri = Uri.parse(
+      '$wsBase/ws/stt?token=${authToken ?? ""}&language_code=$languageCode&model=$model',
+    );
+    _channel = WebSocketChannel.connect(uri);
+
+    // Listen for transcript messages.
+    _wsSubscription = _channel!.stream.listen(
+      (message) {
+        if (message is String) {
+          _handleTranscriptMessage(message);
+        }
+      },
+      onError: (error) {
+        debugPrint('[STT] WebSocket error: $error');
+        _scheduleReconnect(reason: 'error: $error');
+      },
+      onDone: () {
+        debugPrint('[STT] WebSocket closed (userStopped=$_userStopped)');
+        // If the user explicitly stopped, close the transcript stream
+        // so listeners learn the session is done. Otherwise the WS
+        // dropped on us — try to reconnect, keep the controller alive.
+        if (_userStopped) {
+          _transcriptController?.close();
+        } else {
+          _scheduleReconnect(reason: 'remote closed');
+        }
+      },
+    );
+
+    // Wait for handshake. Without this, audio chunks sent during the
+    // handshake window either get dropped at the proxy or arrive before
+    // the upstream Sarvam session is set up — Sarvam silently discards
+    // them and the user sees zero transcripts. 10s timeout exits with
+    // a clear error rather than hanging forever.
+    final startedAt = DateTime.now();
+    try {
+      await _channel!.ready.timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      throw StreamingSttException(
+        'Could not connect to transcription server. Check your internet.',
+      );
+    }
+    final ms = DateTime.now().difference(startedAt).inMilliseconds;
+    debugPrint('[STT] WebSocket ready in ${ms}ms');
+
+    // If this is a reconnect, drain whatever audio piled up while we
+    // were down. We do this synchronously so any chunks captured while
+    // the handshake was completing also flush before we return.
+    if (_pendingBuffer.isNotEmpty) {
+      debugPrint(
+        '[STT] draining ${_pendingBuffer.length} buffered chunks '
+        '($_pendingBufferBytes bytes) to reconnected WS',
+      );
+      for (final chunk in _pendingBuffer) {
+        _writeToChannel(chunk);
+      }
+      _pendingBuffer.clear();
+      _pendingBufferBytes = 0;
+    }
+
+    // Connection established → not reconnecting any more.
+    _reconnecting = false;
+    _reconnectAttempts = 0;
+  }
+
+  /// Schedule an asynchronous reconnect attempt when the WS drops mid-
+  /// session. Idempotent: a second call while a reconnect is already in
+  /// flight is a no-op. Caps total attempts to avoid an infinite retry
+  /// loop on a permanently-broken backend.
+  void _scheduleReconnect({required String reason}) {
+    if (_userStopped) return; // user-initiated stop; teardown owns the close
+    if (_reconnecting) return; // already trying
+    if (_transcriptController == null) return; // session torn down
+    if (_reconnectAttempts >= _reconnectMaxAttempts) {
+      debugPrint('[STT] reconnect: giving up after $_reconnectAttempts attempts');
+      _transcriptController?.addError(
+        StreamingSttException(
+          'Lost connection to transcription server. Stop and try again.',
+        ),
+      );
+      _transcriptController?.close();
+      return;
+    }
+    _reconnecting = true;
+    _reconnectAttempts++;
+
+    // Cap the backoff at 5s — a reporter mid-dictation needs the
+    // pipeline restored quickly. Exponential 0.3s, 0.6s, 1.2s, 2.4s, 5s.
+    final backoffMs = (300 * (1 << (_reconnectAttempts - 1))).clamp(300, 5000);
+    debugPrint(
+      '[STT] reconnect #$_reconnectAttempts scheduled in ${backoffMs}ms ($reason)',
+    );
+
+    Future.delayed(Duration(milliseconds: backoffMs), () async {
+      if (_userStopped || _transcriptController == null) {
+        _reconnecting = false;
+        return;
+      }
+      // Tear down the dead WS before opening a new one.
+      try {
+        await _wsSubscription?.cancel();
+      } catch (_) {}
+      _wsSubscription = null;
+      try {
+        await _channel?.sink.close();
+      } catch (_) {}
+      _channel = null;
+
+      try {
+        await _openWebSocket();
+        debugPrint('[STT] reconnect #$_reconnectAttempts succeeded');
+      } catch (exc) {
+        debugPrint('[STT] reconnect #$_reconnectAttempts failed: $exc');
+        _reconnecting = false;
+        // Schedule the next attempt — guarded by max-attempts above.
+        _scheduleReconnect(reason: 'retry');
+      }
+    });
+  }
+
+  /// Buffer-aware write to the WS. While reconnecting OR before the
+  /// initial handshake, audio chunks are queued in [_pendingBuffer]
+  /// instead of sent. Once the WS is up, [_openWebSocket] drains the
+  /// buffer and clears it. Hard-caps memory at [_pendingBufferMaxBytes]
+  /// so a permanently-broken connection doesn't OOM the app.
+  void _writeToChannel(Uint8List enhanced) {
+    if (_channel == null || _reconnecting) {
+      // Buffer for replay after reconnect.
+      if (_pendingBufferBytes + enhanced.length <= _pendingBufferMaxBytes) {
+        _pendingBuffer.add(enhanced);
+        _pendingBufferBytes += enhanced.length;
+      } else {
+        // Drop oldest chunks to stay under the cap. Better to lose a
+        // few seconds of the start of a long outage than crash with OOM.
+        while (_pendingBuffer.isNotEmpty &&
+            _pendingBufferBytes + enhanced.length > _pendingBufferMaxBytes) {
+          final dropped = _pendingBuffer.removeAt(0);
+          _pendingBufferBytes -= dropped.length;
+        }
+        _pendingBuffer.add(enhanced);
+        _pendingBufferBytes += enhanced.length;
+      }
+      return;
+    }
+    final base64Audio = base64Encode(enhanced);
+    final message = jsonEncode({
+      'audio': {
+        'data': base64Audio,
+        'sample_rate': 16000,
+        'encoding': 'audio/wav',
+      },
+    });
+    _channel!.sink.add(message);
   }
 
   /// Run speaker verification in the background as an **advisory** indicator.
@@ -253,17 +413,9 @@ class StreamingSttService {
   }
 
   void _sendToBackend(Uint8List enhanced) {
-    if (_channel != null) {
-      final base64Audio = base64Encode(enhanced);
-      final message = jsonEncode({
-        'audio': {
-          'data': base64Audio,
-          'sample_rate': 16000,
-          'encoding': 'audio/wav',
-        },
-      });
-      _channel!.sink.add(message);
-    }
+    // Route through _writeToChannel so audio captured during a reconnect
+    // gap is buffered + replayed instead of lost.
+    _writeToChannel(enhanced);
   }
 
   /// Returns the accumulated audio as WAV bytes. Only valid after [stop]
@@ -427,6 +579,10 @@ class StreamingSttService {
   }
 
   Future<void> stop() async {
+    // Mark stop FIRST so any in-flight WS onDone callback knows this
+    // was user-initiated and skips the reconnect path.
+    _userStopped = true;
+
     await _audioSubscription?.cancel();
     _audioSubscription = null;
 
@@ -437,6 +593,13 @@ class StreamingSttService {
 
     // Clear SV buffer (audio was already sent in real-time)
     _svBuffer.clear();
+
+    // Drop any reconnect-time buffer — recording is over, no point
+    // replaying audio to a WS we're about to close.
+    _pendingBuffer.clear();
+    _pendingBufferBytes = 0;
+    _reconnecting = false;
+    _reconnectAttempts = 0;
 
     try { _channel?.sink.add(jsonEncode({"type": "flush"})); } catch (_) {}
     await Future.delayed(const Duration(milliseconds: 500));
@@ -459,6 +622,7 @@ class StreamingSttService {
   }
 
   void dispose() {
+    _userStopped = true;
     _audioSubscription?.cancel();
     _wsSubscription?.cancel();
     _channel?.sink.close();
@@ -483,6 +647,10 @@ class StreamingSttService {
     _svBuffer.clear();
     _lastSpeakerVerified = true;
     _svBusy = false;
+    _pendingBuffer.clear();
+    _pendingBufferBytes = 0;
+    _reconnecting = false;
+    _reconnectAttempts = 0;
   }
 }
 
