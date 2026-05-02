@@ -6,16 +6,24 @@ import 'app.dart';
 import 'core/services/local_drafts_store.dart';
 import 'core/services/local_profile_cache.dart';
 import 'core/services/local_stories_cache.dart';
+import 'core/services/sentry_setup.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  // Local-first auth + drafts + stories: open Hive boxes before any
-  // provider that touches them. Profile cache is needed by
-  // AuthNotifier.tryAutoLogin which fires from the splash screen, so
-  // it must be open before the first widget tree builds.
-  await Hive.initFlutter();
-  await LocalDraftsStore.init();
-  await LocalStoriesCache.init();
-  await LocalProfileCache.init();
-  runApp(const ProviderScope(child: NewsFlowApp()));
+  // Sentry must wrap runApp so uncaught Dart errors AND Flutter framework
+  // errors are reported. SentrySetup.init no-ops when no DSN is provided
+  // at build time, so the app still launches in dev / pre-Sentry-account
+  // builds. The async initialization of Hive boxes happens INSIDE the
+  // appRunner so any failure during box-open is captured too.
+  await SentrySetup.init(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    // Local-first auth + drafts + stories: open Hive boxes before any
+    // provider that touches them. Profile cache is needed by
+    // AuthNotifier.tryAutoLogin which fires from the splash screen, so
+    // it must be open before the first widget tree builds.
+    await Hive.initFlutter();
+    await LocalDraftsStore.init();
+    await LocalStoriesCache.init();
+    await LocalProfileCache.init();
+    runApp(const ProviderScope(child: NewsFlowApp()));
+  });
 }

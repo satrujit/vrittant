@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/local_profile_cache.dart';
 import '../../../core/services/local_stories_cache.dart';
+import '../../../core/services/sentry_setup.dart';
 
 class AuthState {
   final ReporterProfile? reporter;
@@ -143,6 +144,12 @@ class AuthNotifier extends Notifier<AuthState> {
         token: storedToken,
         initialized: true,
       );
+      // Tag Sentry events with this reporter's id so we can correlate
+      // crashes / errors back to a specific user when triaging.
+      await SentrySetup.setReporter(
+        reporterId: me.reporter.id,
+        orgId: me.reporter.organizationId,
+      );
       return true;
     } catch (e) {
       // Only clear token + cache on 401 (expired/invalid). For network
@@ -207,6 +214,10 @@ class AuthNotifier extends Notifier<AuthState> {
       _reqId = '';
       state = AuthState(
           reporter: result.reporter, token: result.token, initialized: true);
+      await SentrySetup.setReporter(
+        reporterId: result.reporter.id,
+        orgId: result.reporter.organizationId,
+      );
       return true;
     } catch (e) {
       state = state.copyWith(isLoading: false, error: _extractError(e));
@@ -237,6 +248,9 @@ class AuthNotifier extends Notifier<AuthState> {
     // user's list flashing or their name in the header for a moment.
     await ref.read(localStoriesCacheProvider).clear();
     await ref.read(localProfileCacheProvider).clear();
+    // Detach Sentry user context — the next reporter on this device
+    // shouldn't see crashes attributed to the previous one.
+    await SentrySetup.setReporter(reporterId: null);
     _reqId = '';
     state = const AuthState();
   }

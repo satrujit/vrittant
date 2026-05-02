@@ -79,6 +79,12 @@ dependencies:
   sherpa_onnx: ^1.12.28
   package_info_plus: ^8.1.2
   wakelock_plus: ^1.2.10
+  # Crash + error reporting. Configured at app startup with a DSN
+  # injected at build time via --dart-define=SENTRY_DSN=...; when the
+  # DSN is empty (e.g. local dev or initial-rollout builds without a
+  # Sentry account configured yet) Sentry no-ops cleanly so we never
+  # ship a build that crashes because crash-reporting is misconfigured.
+  sentry_flutter: ^9.5.0
 
 dev_dependencies:
   flutter_test:
