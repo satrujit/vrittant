@@ -12,7 +12,8 @@
     "settings": "Settings",
     "poweredBy": "Powered by",
     "newsFeed": "News Feed",
-    "widgets": "Widgets"
+    "widgets": "Widgets",
+    "reportBug": "Report a bug"
   },
   "widgets": {
     "title": "Daily Widgets",

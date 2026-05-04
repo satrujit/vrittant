@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Archive, Users, Columns3, Newspaper, LogOut, Settings, LayoutGrid, ChevronsLeft, ChevronsRight, Plus } from 'lucide-react';
+import { LayoutDashboard, Archive, Users, Columns3, Newspaper, LogOut, Settings, LayoutGrid, ChevronsLeft, ChevronsRight, Plus, Bug } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { useAuth } from '../../contexts/AuthContext';
 import { getInitialsFromName, getMediaUrl } from '../../services/api';
@@ -158,9 +158,33 @@ function Sidebar() {
         })}
       </nav>
 
-      {/* Settings — org_admin only */}
+      {/* Bug report — visible to every user, not gated on entitlements
+          or admin status. Opens the shared Google Form in a new tab so
+          a half-typed report doesn't get nuked if the reviewer reloads
+          the panel. Sits in the bottom block above Settings/profile so
+          it's always reachable without scrolling the nav. */}
+      <div className="px-2 pt-2 border-t border-border">
+        <a
+          href="https://docs.google.com/forms/d/e/1FAIpQLSdjb0HfUXTQfwC3DVUpS9l6ayrbqmLltNURobUbXzSq-vKKwA/viewform"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(navItemBase, navItemInactive, collapsed && 'justify-center px-0')}
+          title={collapsed ? t('nav.reportBug', 'Report a bug') : undefined}
+        >
+          <Bug size={20} className="shrink-0" />
+          {!collapsed && (
+            <span className="whitespace-nowrap overflow-hidden text-ellipsis">
+              {t('nav.reportBug', 'Report a bug')}
+            </span>
+          )}
+        </a>
+      </div>
+
+      {/* Settings — org_admin only. No top border here because the bug-
+          report block above already supplies the separator from the
+          main nav region. */}
       {isOrgAdmin && (
-        <div className="px-2 border-t border-border pt-2">
+        <div className="px-2 pt-1">
           <NavLink
             to="/settings"
             className={({ isActive }) =>

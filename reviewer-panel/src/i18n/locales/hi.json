@@ -12,7 +12,8 @@
     "settings": "सेटिंग्स",
     "poweredBy": "द्वारा संचालित",
     "newsFeed": "न्यूज़ फीड",
-    "widgets": "विजेट्स"
+    "widgets": "विजेट्स",
+    "reportBug": "बग रिपोर्ट करें"
   },
   "widgets": {
     "title": "दैनिक विजेट्स",
