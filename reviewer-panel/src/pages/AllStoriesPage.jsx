@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 import {
   Sparkles,
   MoreHorizontal,
@@ -299,8 +300,123 @@ export default function AllStoriesPage() {
     }
   };
 
+  // Keyboard shortcuts — mirror DashboardPage so muscle memory carries over.
+  // (1) ←/→ flip pages. (2) Type digits + Enter to jump to a story by its
+  // display_id suffix (e.g. "VRT-0421" → type 421 → Enter) or seq_no.
+  // Capture-phase listener so page-level shortcuts win over any focused
+  // child element except text-input fields, which we explicitly skip below.
+  const [jumpBuffer, setJumpBuffer] = useState('');
+  const jumpBufferRef = useRef('');
+  useEffect(() => { jumpBufferRef.current = jumpBuffer; }, [jumpBuffer]);
+
+  const tryJumpToSeq = useCallback((digitsStr) => {
+    if (!digitsStr) return false;
+    const n = parseInt(digitsStr, 10);
+    if (Number.isNaN(n)) return false;
+    const match = stories.find(
+      (s) => s.seqNo === n || s.display_id?.endsWith('-' + digitsStr),
+    );
+    if (match) {
+      navigate(`/review/${match.id}`);
+      return true;
+    }
+    return false;
+  }, [stories, navigate]);
+
+  // ←/→ pagination. Skip when focus is in a typing context or modifier keys
+  // are pressed (so Cmd-← still navigates browser history).
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = (e.target?.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.target?.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === 'ArrowLeft' && currentPage > 1) {
+        e.preventDefault();
+        setCurrentPage((p) => Math.max(1, p - 1));
+      } else if (e.key === 'ArrowRight' && currentPage < totalPages) {
+        e.preventDefault();
+        setCurrentPage((p) => Math.min(totalPages, p + 1));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [currentPage, totalPages, setCurrentPage]);
+
+  // Digit-buffer + Enter jump. Capture phase so we beat downstream handlers.
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = (e.target?.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.target?.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
+        setJumpBuffer((b) => (b + e.key).slice(0, 6));
+        return;
+      }
+      if (e.key === 'Enter') {
+        const buf = jumpBufferRef.current;
+        if (buf) {
+          e.preventDefault();
+          tryJumpToSeq(buf);
+          setJumpBuffer('');
+        }
+        return;
+      }
+      if (e.key === 'Backspace') {
+        if (jumpBufferRef.current) {
+          e.preventDefault();
+          setJumpBuffer((b) => b.slice(0, -1));
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (jumpBufferRef.current) {
+          e.preventDefault();
+          setJumpBuffer('');
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [tryJumpToSeq]);
+
+  // Live preview — does the buffered number match a row on this page? Drives
+  // the indicator chip's colour so the user knows whether Enter will jump.
+  const jumpMatch = useMemo(() => {
+    if (!jumpBuffer) return null;
+    const n = parseInt(jumpBuffer, 10);
+    if (Number.isNaN(n)) return null;
+    return stories.find(
+      (s) => s.seqNo === n || s.display_id?.endsWith('-' + jumpBuffer),
+    ) || null;
+  }, [jumpBuffer, stories]);
+
   return (
     <div className="flex h-full flex-col">
+      {/* Floating jump-to-story indicator. Appears bottom-right while the
+          user types digits; green when the buffered number matches a story
+          on the current page (Enter will jump), muted when no match. */}
+      {jumpBuffer && (
+        <div
+          className={cn(
+            'pointer-events-none fixed bottom-6 right-6 z-50 rounded-lg border px-3 py-2 text-sm shadow-lg backdrop-blur',
+            jumpMatch
+              ? 'border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-300'
+              : 'border-border bg-background/90 text-muted-foreground',
+          )}
+        >
+          <span className="font-mono font-medium">#{jumpBuffer}</span>
+          {jumpMatch ? (
+            <span className="ml-2 text-xs">↵ {jumpMatch.headline?.slice(0, 40) || 'Open'}</span>
+          ) : (
+            <span className="ml-2 text-xs">no match on page</span>
+          )}
+        </div>
+      )}
+
       {/* Header strip — matches DashboardPage's pattern: inline title on
           the left, DensityToggle on the right. The PageHeader component
           (used elsewhere) was replaced here so the two queue-style pages
