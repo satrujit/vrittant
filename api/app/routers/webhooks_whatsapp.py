@@ -322,10 +322,16 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     # users have different keys → they continue to run in parallel. Adds
     # ~1-2 ms per webhook in the uncontended case, ~10-50 ms in the
     # multi-forward case (waiting for the first one to commit). Worth it.
-    db.execute(
-        _sql("SELECT pg_advisory_xact_lock(:k)"),
-        {"k": _user_lock_key(user.id)},
-    )
+    #
+    # SQLite (CI tests) has no advisory-lock function and would error.
+    # Skip on non-PostgreSQL dialects — SQLite serialises transactions at
+    # the file-lock level anyway, so the test suite gets equivalent
+    # serialisation for free without us having to call anything.
+    if db.bind.dialect.name == "postgresql":
+        db.execute(
+            _sql("SELECT pg_advisory_xact_lock(:k)"),
+            {"k": _user_lock_key(user.id)},
+        )
 
     inner_type = payload.get("type", "text")
     inner_payload = payload.get("payload") or {}
