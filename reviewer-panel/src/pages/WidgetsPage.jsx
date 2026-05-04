@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { LayoutGrid } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { CATALOG } from '../components/widgets';
-import { PageHeader } from '../components/common';
+import { cn } from '@/lib/utils';
 
 // Same host-routing as the rest of the app: UAT site → UAT backend
 const API_BASE = (typeof window !== 'undefined' && window.location.hostname === 'vrittant-uat.web.app')
@@ -77,7 +77,7 @@ const CATEGORY_THEME = {
 };
 
 function FallbackRenderer({ value }) {
-  return <pre className="text-xs text-gray-600 whitespace-pre-wrap break-words">{JSON.stringify(value, null, 2).slice(0, 400)}</pre>;
+  return <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words">{JSON.stringify(value, null, 2).slice(0, 400)}</pre>;
 }
 
 function WidgetCard({ id, payload, allWidgets }) {
@@ -86,19 +86,19 @@ function WidgetCard({ id, payload, allWidgets }) {
   const Renderer = CATALOG[id];
   const theme = CATEGORY_THEME[meta?.category] || {};
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-4 break-inside-avoid">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
-          <span className={`inline-block w-1.5 h-1.5 rounded-full ${theme.dot || 'bg-gray-400'}`} />
+    <div className="mb-4 break-inside-avoid rounded-lg border border-border bg-card p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <span className={`inline-block size-1.5 rounded-full ${theme.dot || 'bg-muted-foreground'}`} />
           {title}
         </h3>
-        {meta && <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full ${theme.pillBg} ${theme.pillText}`}>{meta.category}</span>}
+        {meta && <span className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide ${theme.pillBg} ${theme.pillText}`}>{meta.category}</span>}
       </div>
-      <div className="text-gray-800">
+      <div className="text-foreground">
         {Renderer ? <Renderer data={payload} allWidgets={allWidgets} /> : <FallbackRenderer value={payload} />}
       </div>
       {meta?.source && (
-        <div className="mt-3 pt-2 border-t border-dashed border-gray-200 text-[10px] text-gray-400 text-right">
+        <div className="mt-3 border-t border-dashed border-border pt-2 text-right text-[10px] text-muted-foreground">
           Source: {meta.source}
         </div>
       )}
@@ -139,47 +139,111 @@ export default function WidgetsPage() {
       });
   }, [data, search, activeCat]);
 
-  if (error) return <div className="p-8 text-red-600">Failed to load widgets: {error}</div>;
-  if (!data) return <div className="p-8 text-gray-500">Loading…</div>;
-
   const categories = ['All', ...CATEGORY_ORDER];
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1400px]">
-      <PageHeader
-        icon={LayoutGrid}
-        title="Newspaper Widgets"
-        subtitle={`As of ${data.as_of || '—'} · ${ordered.length} widgets`}
-        actions={
-          <input
-            type="search"
-            placeholder="Search widgets…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-input rounded-md w-64 focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        }
-      />
-      <div className="mb-5">
-        <div className="flex flex-wrap gap-2">
-          {categories.map(c => (
+    <div className="flex h-full flex-col">
+      {/* Header strip — same inline-title pattern as Dashboard / All
+          Stories / News Feed / Reporters. The "as of" + widget count
+          replaces the old PageHeader subtitle so the timestamp stays
+          visible (it tells reviewers how stale the cached payloads
+          are). */}
+      <header className="shrink-0 flex flex-wrap items-center justify-between gap-4 px-6 pt-6">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground truncate">
+            Newspaper Widgets
+          </h1>
+          <p className="text-[12.5px] text-muted-foreground">
+            As of {data?.as_of || '—'} · {data ? ordered.length : 0} widgets
+          </p>
+        </div>
+      </header>
+
+      {/* Filter strip — same chrome as the queue pages: h-7,
+          text-[11.5px], gap-1.5, border-b underline. Search left,
+          category chips next to it. The chip strip uses the same
+          segmented-control pattern as Dashboard's status filter and
+          Reporters' period toggle. */}
+      <div className="shrink-0 px-6 pt-3 pb-2">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-1 py-2.5">
+          <div className="relative">
+            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="search"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search widgets…"
+              className="h-7 w-44 rounded-md border border-border/60 bg-card pl-7 pr-7 text-[11.5px] outline-none transition-colors focus:border-ring focus:shadow-[0_0_0_3px_rgba(250,108,56,0.08)]"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent"
+                aria-label="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Category chips — 9 categories total. Wrapping is allowed
+              (flex-wrap on the parent strip) so on narrow widths they
+              flow to a second line rather than scroll horizontally. */}
+          <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-card p-0.5">
+            {categories.map(c => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setActiveCat(c)}
+                aria-pressed={activeCat === c}
+                className={cn(
+                  'rounded-[5px] px-2 py-1 text-[11.5px] font-medium transition-colors',
+                  activeCat === c
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                )}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+
+          {(search || activeCat !== 'All') && (
             <button
-              key={c}
-              onClick={() => setActiveCat(c)}
-              className={`px-3 py-1 text-xs rounded-full border transition-colors ${
-                activeCat === c
-                  ? 'bg-orange-500 text-white border-orange-500'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-orange-400'
-              }`}
+              type="button"
+              onClick={() => { setSearch(''); setActiveCat('All'); }}
+              className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
             >
-              {c}
+              <X size={12} />
+              Clear
             </button>
-          ))}
+          )}
         </div>
       </div>
 
-      <div className="columns-1 md:columns-2 lg:columns-3 gap-4">
-        {ordered.map(id => <WidgetCard key={id} id={id} payload={data.widgets[id]} allWidgets={data.widgets} />)}
+      {/* Widget masonry — kept as-is (this surface is a different
+          paradigm from the queue tables). The cards themselves now use
+          theme tokens (border-border, bg-card, text-foreground) so
+          they adapt to dark mode. */}
+      <div className="flex-1 min-h-0 overflow-auto px-6 pb-6 pt-2">
+        {error ? (
+          <div className="flex h-32 items-center justify-center text-sm text-destructive">
+            Failed to load widgets: {error}
+          </div>
+        ) : !data ? (
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+            Loading…
+          </div>
+        ) : ordered.length === 0 ? (
+          <div className="flex h-40 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
+            <span className="text-base font-medium text-foreground">No widgets match.</span>
+          </div>
+        ) : (
+          <div className="columns-1 gap-4 md:columns-2 lg:columns-3">
+            {ordered.map(id => <WidgetCard key={id} id={id} payload={data.widgets[id]} allWidgets={data.widgets} />)}
+          </div>
+        )}
       </div>
     </div>
   );
