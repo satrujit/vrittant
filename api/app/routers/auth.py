@@ -64,7 +64,7 @@ def _expected_test_otp() -> str:
 # REMOVE THIS BLOCK once the apps are approved and live in both stores.
 _REVIEWER_PHONE = "+917362837632"
 _REVIEWER_OTP = "736826"
-_REVIEWER_BYPASS_UNTIL = date(2026, 5, 7)  # 15 days from 2026-04-22
+_REVIEWER_BYPASS_UNTIL = date(2026, 8, 31)  # extended for App Store re-submission window — covers initial review (24–48h) plus any rejection-round re-reviews and a post-launch spot-check buffer. Tighten back down once both stores have approved and we've had a few weeks of clean operation.
 
 
 def _is_reviewer_bypass(phone: str) -> bool:
