@@ -1,6 +1,7 @@
 import { Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '../../i18n';
+import SearchableSelect from '../common/SearchableSelect';
 
 // Status filter chips. We deliberately omit 'in_progress' — it's a
 // transient state, not a bucket reviewers triage. They want to see what's
@@ -21,16 +22,16 @@ export default function FilterBar({
   const { t } = useI18n();
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-1 py-2.5">
+    <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-1 py-2.5">
       {/* Search */}
       <div className="relative">
-        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder={t('dashboard.searchPlaceholder')}
-          className="h-8 w-56 rounded-md border border-border/60 bg-card pl-8 pr-7 text-xs outline-none transition-colors focus:border-ring focus:shadow-[0_0_0_3px_rgba(250,108,56,0.08)]"
+          className="h-7 w-44 rounded-md border border-border/60 bg-card pl-7 pr-7 text-[11.5px] outline-none transition-colors focus:border-ring focus:shadow-[0_0_0_3px_rgba(250,108,56,0.08)]"
         />
         {search && (
           <button
@@ -64,32 +65,30 @@ export default function FilterBar({
         ))}
       </div>
 
-      {/* Category dropdown — kept simple; categories vary per org */}
+      {/* Category — SearchableSelect so reviewers can typeahead through
+          longer category lists rather than scrolling a native menu. */}
       {categories.length > 0 && (
-        <select
+        <SearchableSelect
+          triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px]"
           value={category || ''}
-          onChange={(e) => onCategoryChange(e.target.value)}
-          className="h-8 rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
-        >
-          <option value="">{t('dashboard.filterAllCategories') || 'All categories'}</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
+          onChange={onCategoryChange}
+          placeholder={t('dashboard.filterAllCategories') || 'All categories'}
+          allLabel={t('dashboard.filterAllCategories') || 'All categories'}
+          options={categories.map((c) => ({ value: c, label: c }))}
+        />
       )}
 
-      {/* Reporter dropdown — same pattern as category */}
+      {/* Reporter — same component. Auto-shows the inline search input
+          when there are >6 reporters (typical for a real org). */}
       {reporters.length > 0 && (
-        <select
+        <SearchableSelect
+          triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px] max-w-[180px]"
           value={reporter || ''}
-          onChange={(e) => onReporterChange(e.target.value)}
-          className="h-8 max-w-44 truncate rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
-        >
-          <option value="">{t('dashboard.filterAllReporters') || 'All reporters'}</option>
-          {reporters.map((r) => (
-            <option key={r.id} value={r.id}>{r.name}</option>
-          ))}
-        </select>
+          onChange={onReporterChange}
+          placeholder={t('dashboard.filterAllReporters') || 'All reporters'}
+          allLabel={t('dashboard.filterAllReporters') || 'All reporters'}
+          options={reporters.map((r) => ({ value: String(r.id), label: r.name }))}
+        />
       )}
     </div>
   );

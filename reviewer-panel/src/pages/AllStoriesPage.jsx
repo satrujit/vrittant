@@ -17,7 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Pagination } from '../components/common';
+import { Pagination, SearchableSelect } from '../components/common';
 import { formatDate } from '../utils/helpers';
 import { assignableReviewers } from '../utils/users';
 import { useDensityPreference } from '../hooks/useDensityPreference';
@@ -476,70 +476,64 @@ export default function AllStoriesPage() {
             ) : null}
           </div>
 
-          {/* Status — native <select> styled identically to Dashboard's
-              category/reporter selects. Six statuses is too many for a
-              chip-segmented control, so we keep the dropdown affordance. */}
-          <select
+          {/* Filter dropdowns — SearchableSelect for typeahead inside the
+              option list (>6 options auto-shows the inline search box).
+              Compact trigger overrides match the search input chrome:
+              h-7, text-[11.5px], border-border/60. */}
+          <SearchableSelect
+            triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[110px]"
             value={statusFilter}
-            onChange={(e) => handleStatusChange(e.target.value)}
-            className="h-7 rounded-md border border-border/60 bg-card px-1.5 text-[11.5px] text-foreground outline-none focus:border-ring"
-          >
-            <option value="">{t('allStories.filterByStatus')}</option>
-            {ALL_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {t(`status.${s === 'layout_completed' ? 'layoutCompleted' : s}`)}
-              </option>
-            ))}
-          </select>
+            onChange={handleStatusChange}
+            placeholder={t('allStories.filterByStatus')}
+            allLabel={t('allStories.all')}
+            options={ALL_STATUSES.map((s) => ({
+              value: s,
+              label: t(`status.${s === 'layout_completed' ? 'layoutCompleted' : s}`),
+            }))}
+          />
 
-          <select
+          <SearchableSelect
+            triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px]"
             value={categoryFilter}
-            onChange={(e) => handleCategoryChange(e.target.value)}
-            className="h-7 rounded-md border border-border/60 bg-card px-1.5 text-[11.5px] text-foreground outline-none focus:border-ring"
-          >
-            <option value="">{t('allStories.filterByCategory')}</option>
-            {categoryList.map((c) => {
+            onChange={handleCategoryChange}
+            placeholder={t('allStories.filterByCategory')}
+            allLabel={t('allStories.all')}
+            options={categoryList.map((c) => {
               const localized = t(`categories.${c}`);
               const label = localized !== `categories.${c}` ? localized : c.replace(/_/g, ' ');
-              return <option key={c} value={c}>{label}</option>;
+              return { value: c, label };
             })}
-          </select>
+          />
 
-          <select
+          <SearchableSelect
+            triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px] max-w-[160px]"
             value={reporterFilter}
-            onChange={(e) => handleReporterChange(e.target.value)}
-            className="h-7 max-w-36 truncate rounded-md border border-border/60 bg-card px-1.5 text-[11.5px] text-foreground outline-none focus:border-ring"
-          >
-            <option value="">{t('allStories.filterByReporter')}</option>
-            {reporters.map((r) => (
-              <option key={r.id} value={String(r.id)}>{r.name}</option>
-            ))}
-          </select>
+            onChange={handleReporterChange}
+            placeholder={t('allStories.filterByReporter')}
+            allLabel={t('allStories.all')}
+            options={reporters.map((r) => ({ value: String(r.id), label: r.name }))}
+          />
 
           {/* #57 — Assigned-to filter. Backed by the same reviewer pool
               the inline reassign popover uses so the dropdown can never
               offer a user who can't actually own a story. */}
-          <select
+          <SearchableSelect
+            triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px] max-w-[160px]"
             value={assigneeFilter}
-            onChange={(e) => handleAssigneeChange(e.target.value)}
-            className="h-7 max-w-36 truncate rounded-md border border-border/60 bg-card px-1.5 text-[11.5px] text-foreground outline-none focus:border-ring"
-          >
-            <option value="">{t('allStories.filterByAssignee', 'Assigned to')}</option>
-            {reviewers.map((r) => (
-              <option key={r.id} value={String(r.id)}>{r.name}</option>
-            ))}
-          </select>
+            onChange={handleAssigneeChange}
+            placeholder={t('allStories.filterByAssignee', 'Assigned to')}
+            allLabel={t('allStories.all')}
+            options={reviewers.map((r) => ({ value: String(r.id), label: r.name }))}
+          />
 
-          <select
+          <SearchableSelect
+            triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[110px] max-w-[160px]"
             value={locationFilter}
-            onChange={(e) => handleLocationChange(e.target.value)}
-            className="h-7 max-w-36 truncate rounded-md border border-border/60 bg-card px-1.5 text-[11.5px] text-foreground outline-none focus:border-ring"
-          >
-            <option value="">{t('allStories.filterByLocation')}</option>
-            {uniqueLocations.map((loc) => (
-              <option key={loc} value={loc}>{loc}</option>
-            ))}
-          </select>
+            onChange={handleLocationChange}
+            placeholder={t('allStories.filterByLocation')}
+            allLabel={t('allStories.all')}
+            options={uniqueLocations.map((loc) => ({ value: loc, label: loc }))}
+          />
 
           {/* Date inputs — same h-8 chrome as the selects so the strip
               reads as one continuous row of controls. */}
