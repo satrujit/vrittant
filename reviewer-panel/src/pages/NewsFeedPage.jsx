@@ -197,44 +197,14 @@ export default function NewsFeedPage() {
         </div>
       </header>
 
-      {/* Quick-source chips — one-click jump to a featured source.
-          Clicking the active chip clears the filter; chips for sources
-          that haven't ingested an article yet are disabled. */}
-      <div className="flex flex-wrap items-center gap-1.5 px-6 pt-3">
-        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-          {t('newsFeed.quickSources') || 'Quick sources'}
-        </span>
-        <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-card p-0.5">
-          {resolvedQuickSources.map((qs) => {
-            const active = qs.value && qs.value === source;
-            return (
-              <button
-                key={qs.label}
-                type="button"
-                disabled={!qs.value}
-                onClick={() => setSource(active ? '' : qs.value)}
-                aria-pressed={active}
-                className={cn(
-                  'rounded-[5px] px-2 py-1 text-[11.5px] font-medium transition-colors',
-                  active
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                  !qs.value && 'cursor-default opacity-40 hover:bg-transparent hover:text-muted-foreground',
-                )}
-                title={qs.value ? qs.label : `${qs.label} — no articles ingested yet`}
-              >
-                {qs.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Filter bar — matches Dashboard / All Stories chrome: h-7,
-          text-[11.5px], gap-1.5, search-icon left, border-b underline.
-          Search left, category + source dropdowns next to it, clear
-          button when any filter is set. */}
-      <div className="px-6">
+      {/* Filter bar — single row: search left, quick-source chips, then
+          category / source dropdowns, then clear. Same compact chrome
+          as Dashboard / All Stories / Reporters: h-7, text-[11.5px],
+          gap-1.5, border-b underline. The quick-source chips live in
+          the strip itself so reviewers don't need to look in two
+          places to filter — the chip strip and the All Sources
+          dropdown both write to the same `source` state. */}
+      <div className="px-6 pt-3">
         <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-1 py-2.5">
           <div className="relative">
             <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -255,6 +225,36 @@ export default function NewsFeedPage() {
                 <X size={12} />
               </button>
             )}
+          </div>
+
+          {/* Quick-source chip strip — one-click jump to a featured
+              source. Clicking the active chip clears the filter; chips
+              for sources that haven't ingested an article yet are
+              disabled. Same segmented-control look as Reporters'
+              period toggle and Dashboard's status filter. */}
+          <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-card p-0.5">
+            {resolvedQuickSources.map((qs) => {
+              const active = qs.value && qs.value === source;
+              return (
+                <button
+                  key={qs.label}
+                  type="button"
+                  disabled={!qs.value}
+                  onClick={() => setSource(active ? '' : qs.value)}
+                  aria-pressed={active}
+                  className={cn(
+                    'rounded-[5px] px-2 py-1 text-[11.5px] font-medium transition-colors',
+                    active
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                    !qs.value && 'cursor-default opacity-40 hover:bg-transparent hover:text-muted-foreground',
+                  )}
+                  title={qs.value ? qs.label : `${qs.label} — no articles ingested yet`}
+                >
+                  {qs.label}
+                </button>
+              );
+            })}
           </div>
 
           <SearchableSelect
