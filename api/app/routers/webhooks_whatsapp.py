@@ -14,6 +14,7 @@ Always returns 200 — Gupshup retries on any non-2xx, which would amplify
 errors and double-create stories. Idempotency is enforced via the
 `whatsapp_inbound_dedup` table (PK on Gupshup's `message.id`).
 """
+import hashlib
 import json
 import logging
 import os
@@ -22,6 +23,7 @@ from datetime import timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy import text as _sql
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -73,6 +75,28 @@ GUPSHUP_API_URL = "https://api.gupshup.io/wa/api/v1/msg"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+def _user_lock_key(user_id: str) -> int:
+    """Stable signed-int64 derived from a user UUID, for use with
+    PostgreSQL's pg_advisory_xact_lock.
+
+    Why we need this: when a reporter forwards multiple WhatsApp messages
+    in quick succession (the "share to" multi-select flow), Gupshup posts
+    every webhook within ~50-200 ms. Without serialisation, all N webhook
+    handlers race past `_find_open_draft` at the same time — none of them
+    sees the others' uncommitted draft, and we end up with N parallel
+    Stories instead of one stitched Story with N paragraphs.
+
+    pg_advisory_xact_lock takes a bigint key; webhooks for the SAME user
+    serialise on the same key, webhooks for DIFFERENT users continue to
+    run in parallel. Lock auto-releases at commit/rollback so we don't
+    leak it on errors. Hash is deterministic across instances and
+    runs — every replica computes the same key from a given UUID.
+    """
+    digest = hashlib.sha256(user_id.encode("utf-8")).digest()
+    # int8 (bigint) is signed 64-bit. Take 8 bytes, treat as signed.
+    return int.from_bytes(digest[:8], "big", signed=True)
+
+
 def _normalize_phone(raw: str) -> str:
     """Gupshup sends '919...' (no plus); our DB stores '+919...'. Normalize."""
     raw = (raw or "").strip()
@@ -286,6 +310,22 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
             "This number is not registered with Vrittant. Please contact your editor.",
         )
         return {"ok": True, "skipped": "unknown sender"}
+
+    # ── Serialise concurrent webhooks for the SAME user ────────────────────
+    # Multi-forward in WhatsApp posts N webhooks within ~50-200 ms. Without
+    # this lock all N pass `_find_open_draft` before any commits, each
+    # creates its own Story, and the reporter gets N stories instead of one
+    # stitched Story with N paragraphs.
+    #
+    # pg_advisory_xact_lock blocks subsequent acquirers on the same key
+    # until this transaction commits/rollbacks (auto-release). Different
+    # users have different keys → they continue to run in parallel. Adds
+    # ~1-2 ms per webhook in the uncontended case, ~10-50 ms in the
+    # multi-forward case (waiting for the first one to commit). Worth it.
+    db.execute(
+        _sql("SELECT pg_advisory_xact_lock(:k)"),
+        {"k": _user_lock_key(user.id)},
+    )
 
     inner_type = payload.get("type", "text")
     inner_payload = payload.get("payload") or {}
