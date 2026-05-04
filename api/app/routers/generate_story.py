@@ -220,9 +220,14 @@ SYSTEM_PROMPT = (
 # Model picks (centralized so a future swap is one constant change).
 # Migrated from Anthropic Claude Haiku → Gemini 2.5 Flash on
 # 2026-04-29 after a sample bake-off showed Flash matched Haiku on
-# Odia journalistic faithfulness at ~3-4× lower cost. Sarvam-30b
-# stays as the safety-net fallback.
-PRIMARY_MODEL = "gemini-2.5-flash"
+# Odia journalistic faithfulness at ~3-4× lower cost. Then moved to
+# Flash-Lite on 2026-05-04 — Flash-Lite is ~5× cheaper per refine
+# (₹0.025 vs ₹0.121 per call), ~2-3× faster (~3-4s vs ~10s), and
+# matches Flash-Lite is the documented default for everything in this
+# codebase (see config.GEMINI_DEFAULT_MODEL); story-refine had been
+# the one outlier pinned to Flash. Sarvam-30b stays as the safety-
+# net fallback when Gemini returns transient errors or empty content.
+PRIMARY_MODEL = "gemini-2.5-flash-lite"
 FALLBACK_MODEL = "sarvam-30b"
 
 PRIMARY_MAX_TOKENS = 4096
@@ -254,7 +259,7 @@ class GenerateStoryResponse(BaseModel):
     model: str = Field(
         ...,
         description="Which model actually served the response. Useful for "
-        "monitoring fallback rate. One of 'gemini-2.5-flash' (primary) "
+        "monitoring fallback rate. One of 'gemini-2.5-flash-lite' (primary) "
         "or 'sarvam-30b' (fallback).",
     )
     fallback_used: bool = Field(
@@ -343,7 +348,12 @@ async def generate_story(
             text = await gemini_client.chat_with_cached_system(
                 prompt=notes,
                 system=SYSTEM_PROMPT,
-                cache_key="generate_story.system_prompt.v2",
+                # v3 = bumped 2026-05-04 when PRIMARY_MODEL switched from
+                # gemini-2.5-flash to gemini-2.5-flash-lite. Gemini explicit
+                # cache is per-model — the v2 resource is bound to Flash and
+                # can't serve Flash-Lite calls. New suffix forces a fresh
+                # cachedContents create against Flash-Lite on first call.
+                cache_key="generate_story.system_prompt.v3",
                 model=PRIMARY_MODEL,
                 max_tokens=PRIMARY_MAX_TOKENS,
                 temperature=0.3,
