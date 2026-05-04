@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import {
   Sparkles,
+  Search,
   MoreHorizontal,
   Trash2,
   X,
@@ -16,15 +17,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SearchBar, SearchableSelect, Pagination } from '../components/common';
+import { Pagination } from '../components/common';
 import { formatDate } from '../utils/helpers';
 import { assignableReviewers } from '../utils/users';
 import { useDensityPreference } from '../hooks/useDensityPreference';
 import DensityToggle from '../components/dashboard/DensityToggle';
 import ReviewQueueTable from '../components/dashboard/ReviewQueueTable';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import ReassignPopover from '../components/assignment/ReassignPopover';
 
 const PAGE_SIZE = 100;
@@ -433,150 +432,31 @@ export default function AllStoriesPage() {
         <DensityToggle value={density} onChange={setDensity} />
       </header>
 
-      {/* Filter row + scrollable table region.  Outer wrapper drops the
-          max-w-[1400px] cap to match Dashboard's full-bleed table. */}
-      <div className="shrink-0 px-6 pt-3 pb-2 flex flex-col gap-3">
-        {/* (filter row contents follow — wrapper preserved so the
-            existing closing markup downstream stays balanced.) */}
-        {/* Filters Row — compact inline. Search bar now lives at the
-            far right of the same row (ml-auto pushes it over) so the
-            page header stays a single tidy strip instead of stacking. */}
-        <div className="flex items-end gap-3 flex-wrap max-[900px]:flex-col max-[900px]:items-stretch">
-          <div className="flex flex-col gap-0.5 max-[900px]:min-w-0">
-            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
-              {t('allStories.filterByStatus')}
-            </Label>
-            <SearchableSelect
-              triggerClassName="min-w-[120px]"
-              value={statusFilter}
-              onChange={handleStatusChange}
-              placeholder={t('allStories.all')}
-              allLabel={t('allStories.all')}
-              options={ALL_STATUSES.map((s) => ({
-                value: s,
-                label: t(`status.${s === 'layout_completed' ? 'layoutCompleted' : s}`),
-              }))}
-            />
-          </div>
-
-          <div className="flex flex-col gap-0.5 max-[900px]:min-w-0">
-            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
-              {t('allStories.filterByCategory')}
-            </Label>
-            <SearchableSelect
-              triggerClassName="min-w-[120px]"
-              value={categoryFilter}
-              onChange={handleCategoryChange}
-              placeholder={t('allStories.all')}
-              allLabel={t('allStories.all')}
-              options={categoryList.map((c) => {
-                const localized = t(`categories.${c}`);
-                const label = localized !== `categories.${c}` ? localized : c.replace(/_/g, ' ');
-                return { value: c, label };
-              })}
-            />
-          </div>
-
-          <div className="flex flex-col gap-0.5 max-[900px]:min-w-0">
-            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
-              {t('allStories.filterByReporter')}
-            </Label>
-            <SearchableSelect
-              triggerClassName="min-w-[140px]"
-              value={reporterFilter}
-              onChange={handleReporterChange}
-              placeholder={t('allStories.all')}
-              allLabel={t('allStories.all')}
-              options={reporters.map((r) => ({ value: String(r.id), label: r.name }))}
-            />
-          </div>
-
-          {/* #57 — "Assigned to" filter, restored after the rebuild. Backed
-              by the same reviewer pool the inline reassign popover uses
-              (assignableReviewers(reporters)) so the dropdown can never
-              offer a user who can't actually own a story. Maps to the
-              backend's `assigned_to` query param (also accepts 'me' but
-              we expose explicit user picks here — the dashboard already
-              covers the personal queue case). */}
-          <div className="flex flex-col gap-0.5 max-[900px]:min-w-0">
-            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
-              {t('allStories.filterByAssignee', 'Assigned to')}
-            </Label>
-            <SearchableSelect
-              triggerClassName="min-w-[140px]"
-              value={assigneeFilter}
-              onChange={handleAssigneeChange}
-              placeholder={t('allStories.all')}
-              allLabel={t('allStories.all')}
-              options={reviewers.map((r) => ({ value: String(r.id), label: r.name }))}
-            />
-          </div>
-
-          <div className="flex flex-col gap-0.5 max-[900px]:min-w-0">
-            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
-              {t('allStories.filterByLocation')}
-            </Label>
-            <SearchableSelect
-              triggerClassName="min-w-[120px]"
-              value={locationFilter}
-              onChange={handleLocationChange}
-              placeholder={t('allStories.all')}
-              allLabel={t('allStories.all')}
-              options={uniqueLocations.map((loc) => ({ value: loc, label: loc }))}
-            />
-          </div>
-
-          <div className="flex flex-col gap-0.5 min-w-[120px] max-[900px]:min-w-0">
-            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
-              {t('allStories.dateFrom')}
-            </Label>
-            <Input
-              type="date"
-              className="h-8 text-xs"
-              value={dateFrom}
-              onChange={handleDateFromChange}
-            />
-          </div>
-
-          <div className="flex flex-col gap-0.5 min-w-[120px] max-[900px]:min-w-0">
-            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.04em]">
-              {t('allStories.dateTo')}
-            </Label>
-            <Input
-              type="date"
-              className="h-8 text-xs"
-              value={dateTo}
-              onChange={handleDateToChange}
-            />
-          </div>
-
-          {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={handleClearFilters}
-              className="h-8 text-muted-foreground hover:text-foreground"
-            >
-              <X size={12} />
-              {t('allStories.clearFilters')}
-            </Button>
-          )}
-
-          {/* Search — right-aligned via ml-auto. Submits on Enter only
-              (semantic search is metered + slow). The "press ↵" hint and
-              "AI searching..." spinner are mutually exclusive: one shows
-              what hasn't been applied yet, the other shows what's in
-              flight. */}
-          <div className="relative ml-auto w-full max-w-[280px] max-[900px]:ml-0 max-[900px]:max-w-none">
-            <SearchBar
+      {/* Filter strip — matches DashboardPage's FilterBar visual language:
+          single horizontal row, no stacked labels, native <select> styled
+          to match the search input, h-8 across the board. Search lives at
+          the left like Dashboard. We carry extra filters (Assignee /
+          Location / DateFrom / DateTo) that the Dashboard doesn't have,
+          but they share the same chrome so the two pages read as one
+          product. */}
+      <div className="shrink-0 px-6 pt-3 pb-2">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-1 py-2.5">
+          {/* Search — left, Search icon (matches Dashboard). Submits on
+              Enter only because semantic search is metered + slow. The
+              "press ↵" hint and AI spinner replace the clear-X when
+              relevant; otherwise the X stays available like Dashboard. */}
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
               value={searchQuery}
               onChange={handleSearch}
               onKeyDown={handleSearchKeyDown}
               placeholder={t('allStories.searchPlaceholder')}
-              icon={Sparkles}
+              className="h-8 w-56 rounded-md border border-border/60 bg-card pl-8 pr-7 text-xs outline-none transition-colors focus:border-ring focus:shadow-[0_0_0_3px_rgba(250,108,56,0.08)]"
             />
             {semanticLoading ? (
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-primary">
+              <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-primary">
                 <Sparkles size={12} className="animate-pulse" />
                 <span className="text-[10px] font-medium">AI…</span>
               </div>
@@ -584,8 +464,110 @@ export default function AllStoriesPage() {
               <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                 ↵
               </kbd>
+            ) : searchQuery ? (
+              <button
+                type="button"
+                onClick={() => { setSearchQuery(''); setDebouncedSearch(''); setCurrentPage(1); }}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent"
+                aria-label="Clear search"
+              >
+                <X size={12} />
+              </button>
             ) : null}
           </div>
+
+          {/* Status — native <select> styled identically to Dashboard's
+              category/reporter selects. Six statuses is too many for a
+              chip-segmented control, so we keep the dropdown affordance. */}
+          <select
+            value={statusFilter}
+            onChange={(e) => handleStatusChange(e.target.value)}
+            className="h-8 rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+          >
+            <option value="">{t('allStories.filterByStatus')}</option>
+            {ALL_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {t(`status.${s === 'layout_completed' ? 'layoutCompleted' : s}`)}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={categoryFilter}
+            onChange={(e) => handleCategoryChange(e.target.value)}
+            className="h-8 rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+          >
+            <option value="">{t('allStories.filterByCategory')}</option>
+            {categoryList.map((c) => {
+              const localized = t(`categories.${c}`);
+              const label = localized !== `categories.${c}` ? localized : c.replace(/_/g, ' ');
+              return <option key={c} value={c}>{label}</option>;
+            })}
+          </select>
+
+          <select
+            value={reporterFilter}
+            onChange={(e) => handleReporterChange(e.target.value)}
+            className="h-8 max-w-44 truncate rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+          >
+            <option value="">{t('allStories.filterByReporter')}</option>
+            {reporters.map((r) => (
+              <option key={r.id} value={String(r.id)}>{r.name}</option>
+            ))}
+          </select>
+
+          {/* #57 — Assigned-to filter. Backed by the same reviewer pool
+              the inline reassign popover uses so the dropdown can never
+              offer a user who can't actually own a story. */}
+          <select
+            value={assigneeFilter}
+            onChange={(e) => handleAssigneeChange(e.target.value)}
+            className="h-8 max-w-44 truncate rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+          >
+            <option value="">{t('allStories.filterByAssignee', 'Assigned to')}</option>
+            {reviewers.map((r) => (
+              <option key={r.id} value={String(r.id)}>{r.name}</option>
+            ))}
+          </select>
+
+          <select
+            value={locationFilter}
+            onChange={(e) => handleLocationChange(e.target.value)}
+            className="h-8 max-w-44 truncate rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+          >
+            <option value="">{t('allStories.filterByLocation')}</option>
+            {uniqueLocations.map((loc) => (
+              <option key={loc} value={loc}>{loc}</option>
+            ))}
+          </select>
+
+          {/* Date inputs — same h-8 chrome as the selects so the strip
+              reads as one continuous row of controls. */}
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={handleDateFromChange}
+            aria-label={t('allStories.dateFrom')}
+            className="h-8 rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+          />
+          <input
+            type="date"
+            value={dateTo}
+            onChange={handleDateToChange}
+            aria-label={t('allStories.dateTo')}
+            className="h-8 rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+          />
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <X size={12} />
+              {t('allStories.clearFilters')}
+            </button>
+          )}
         </div>
       </div>
 
