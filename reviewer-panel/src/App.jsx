@@ -47,6 +47,9 @@ function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+            {/* /privacy alias — Play Store + mobile app deep-links use the
+                shorter path. Same component renders for both. */}
+            <Route path="/privacy" element={<PrivacyPolicyPage />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
                 <Route path="/" element={<DashboardPage />} />
