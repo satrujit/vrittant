@@ -1,24 +1,20 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Loader2, Flame, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
+import { Flame, Search, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import {
   fetchReporters,
   transformReporter,
   fetchLeaderboard,
 } from '../services/api';
-import { Avatar } from '../components/common';
-import { Button } from '@/components/ui/button';
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableHead,
-  TableRow,
-  TableCell,
-} from '@/components/ui/table';
-import { Card } from '@/components/ui/card';
+import { Avatar, Pagination } from '../components/common';
 import { cn } from '@/lib/utils';
+
+// Column geometry — header and rows MUST use the same string so the
+// columns line up. Same chrome as ReviewQueueTable / NewsFeedTable —
+// title-equivalent column gets flex space, numerics are fixed widths.
+const GRID_COLS =
+  '60px minmax(0,2.5fr) minmax(0,1.5fr) 90px 90px 110px 110px';
 
 const PERIODS = [
   { key: 'week', label: 'This Week' },
@@ -33,36 +29,6 @@ const RANK_STYLES = {
   2: 'bg-slate-100 text-slate-700 border-slate-300',
   3: 'bg-orange-100 text-orange-700 border-orange-300',
 };
-
-/** Compact prev/next pagination with page indicator. */
-function Pagination({ currentPage, totalPages, onChange }) {
-  if (totalPages <= 1) return null;
-  return (
-    <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-border">
-      <Button
-        variant="outline"
-        size="icon-xs"
-        onClick={() => onChange(Math.max(1, currentPage - 1))}
-        disabled={currentPage === 1}
-        aria-label="Previous page"
-      >
-        <ChevronLeft size={14} />
-      </Button>
-      <span className="text-xs text-muted-foreground tabular-nums px-1">
-        Page {currentPage} of {totalPages}
-      </span>
-      <Button
-        variant="outline"
-        size="icon-xs"
-        onClick={() => onChange(Math.min(totalPages, currentPage + 1))}
-        disabled={currentPage === totalPages}
-        aria-label="Next page"
-      >
-        <ChevronRight size={14} />
-      </Button>
-    </div>
-  );
-}
 
 /**
  * Reporters page — leaderboard view.
@@ -246,114 +212,126 @@ function ReportersPage() {
         </div>
       </div>
 
-      {/* Scrollable region — only the rows scroll; thead is sticky.
-          Full-bleed to match Dashboard / All Stories / News Feed. */}
-      <div className="flex-1 min-h-0 w-full px-6 pb-6">
-      {loading ? (
-        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground italic">
-          <Loader2 size={24} className="animate-spin" />
-        </div>
-      ) : reporters.length === 0 ? (
-        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground italic">
-          {t('reporters.noReporters')}
-        </div>
-      ) : (
-        <Card className="overflow-hidden p-0 h-full flex flex-col">
-          <div className="flex-1 min-h-0 overflow-auto">
-          <Table>
-            <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_var(--border)]">
-              <TableRow>
-                <TableHead className="w-14">Rank</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead className="text-right">Points</TableHead>
-                <TableHead className="text-right">Streak</TableHead>
-                <TableHead className="text-right">Submissions</TableHead>
-                <TableHead className="text-right">Approved</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+      {/* Table + pagination region — same shape as the other queue
+          pages: scrollable rows, sticky header, lightweight footer
+          with the result-range count + pager. No Card wrapper, no
+          shadcn <Table> — uses the role="grid" pattern shared with
+          ReviewQueueTable / NewsFeedTable. */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex-1 min-h-0 overflow-auto px-6">
+          {loading && reporters.length === 0 ? (
+            <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+              {t('common.loading') || 'Loading…'}
+            </div>
+          ) : !loading && reporters.length === 0 ? (
+            <div className="flex h-40 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
+              <span className="text-base font-medium text-foreground">
+                {t('reporters.noReporters')}
+              </span>
+            </div>
+          ) : (
+            <div role="grid" className="divide-y divide-border/80">
+              {/* Sticky header — same chrome as ReviewQueueTable. */}
+              <div
+                className="sticky top-0 z-10 grid items-center gap-4 bg-background/95 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur"
+                style={{ gridTemplateColumns: GRID_COLS, height: 36 }}
+              >
+                <div>Rank</div>
+                <div>Name</div>
+                <div>Location</div>
+                <div className="text-right">Points</div>
+                <div className="text-right">Streak</div>
+                <div className="text-right">Submissions</div>
+                <div className="text-right">Approved</div>
+              </div>
+
               {slice.map((user) => {
                 const rank = user._rank;
                 const rankStyle = RANK_STYLES[rank];
                 return (
-                  <TableRow
+                  <Link
                     key={user.id}
-                    className={cn(!user.isActive && 'opacity-50')}
+                    to={`/reporters/${user.id}`}
+                    role="row"
+                    data-row-id={user.id}
+                    className={cn(
+                      'group grid items-center gap-4 px-4 no-underline transition-colors hover:bg-accent/40',
+                      !user.isActive && 'opacity-50',
+                    )}
+                    style={{ gridTemplateColumns: GRID_COLS, height: 56 }}
                   >
-                    <TableCell>
+                    <div>
                       {rankStyle ? (
                         <span
                           className={cn(
                             'inline-flex items-center justify-center size-6 rounded-full border text-xs font-bold',
-                            rankStyle
+                            rankStyle,
                           )}
                         >
                           {rank}
                         </span>
                       ) : (
-                        <span className="text-xs text-muted-foreground font-medium pl-1.5">
+                        <span className="pl-1.5 text-xs font-medium text-muted-foreground tabular-nums">
                           {rank}
                         </span>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        to={`/reporters/${user.id}`}
-                        className="flex items-center gap-3 group no-underline"
-                      >
-                        <Avatar initials={user.initials} color={user.color} size="sm" />
-                        <div className="flex flex-col min-w-0">
-                          <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate">
-                            {user.name}
+                    </div>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar initials={user.initials} color={user.color} size="sm" />
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate text-[13.5px] font-medium text-foreground transition-colors group-hover:text-primary">
+                          {user.name}
+                        </span>
+                        {!user.isActive && (
+                          <span className="text-[10px] font-medium text-destructive">
+                            Deleted
                           </span>
-                          {!user.isActive && (
-                            <span className="text-[10px] font-medium text-destructive">
-                              Deleted
-                            </span>
-                          )}
-                        </div>
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                        )}
+                      </div>
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">
                       {user.areaName || '—'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <span className="text-sm font-semibold text-foreground tabular-nums">
-                        {user.points ?? 0}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right">
+                    </div>
+                    <div className="text-right text-[13px] font-semibold tabular-nums text-foreground">
+                      {user.points ?? 0}
+                    </div>
+                    <div className="text-right">
                       {user.streak > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-orange-600 font-medium tabular-nums">
+                        <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums text-orange-600">
                           <Flame size={12} />
                           {user.streak}d
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
-                    </TableCell>
-                    <TableCell className="text-right text-sm text-muted-foreground tabular-nums">
+                    </div>
+                    <div className="text-right text-xs tabular-nums text-muted-foreground">
                       {user.submissionCount ?? 0}
-                    </TableCell>
-                    <TableCell className="text-right text-sm text-muted-foreground tabular-nums">
+                    </div>
+                    <div className="text-right text-xs tabular-nums text-muted-foreground">
                       {user.publishedCount ?? 0}
-                    </TableCell>
-                  </TableRow>
+                    </div>
+                  </Link>
                 );
               })}
-            </TableBody>
-          </Table>
-          </div>
-          <div className="shrink-0">
+            </div>
+          )}
+        </div>
+
+        {/* Pagination footer — matches AllStoriesPage exactly: result
+            range count left, pager right, lightweight border-t/40. */}
+        {reporters.length > 0 && !loading && (
+          <div className="flex shrink-0 items-center justify-between border-t border-border/40 px-6 py-2 text-xs text-muted-foreground max-sm:flex-col max-sm:items-center max-sm:gap-3">
+            <span>
+              {((pageSafe - 1) * PAGE_SIZE) + 1}–{Math.min(reporters.length, pageSafe * PAGE_SIZE)} of {reporters.length}
+            </span>
             <Pagination
               currentPage={pageSafe}
               totalPages={totalPages}
-              onChange={setPage}
+              onPageChange={setPage}
             />
           </div>
-        </Card>
-      )}
+        )}
       </div>
     </div>
   );
