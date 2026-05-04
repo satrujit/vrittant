@@ -72,8 +72,8 @@ export default function FilterBar({
           triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px]"
           value={category || ''}
           onChange={onCategoryChange}
-          placeholder={t('dashboard.filterAllCategories') || 'All categories'}
-          allLabel={t('dashboard.filterAllCategories') || 'All categories'}
+          placeholder={t('allStories.allCategories', 'All categories')}
+          allLabel={t('allStories.allCategories', 'All categories')}
           options={categories.map((c) => ({ value: c, label: c }))}
         />
       )}
@@ -85,8 +85,8 @@ export default function FilterBar({
           triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px] max-w-[180px]"
           value={reporter || ''}
           onChange={onReporterChange}
-          placeholder={t('dashboard.filterAllReporters') || 'All reporters'}
-          allLabel={t('dashboard.filterAllReporters') || 'All reporters'}
+          placeholder={t('allStories.allReporters', 'All reporters')}
+          allLabel={t('allStories.allReporters', 'All reporters')}
           options={reporters.map((r) => ({ value: String(r.id), label: r.name }))}
         />
       )}

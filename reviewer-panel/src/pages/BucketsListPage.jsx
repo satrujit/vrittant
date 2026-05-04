@@ -647,8 +647,8 @@ export default function BucketsListPage() {
             triggerClassName="min-w-[150px]"
             value={filterPaperType}
             onChange={setFilterPaperType}
-            placeholder={t('allStories.all', 'All')}
-            allLabel={t('allStories.all', 'All')}
+            placeholder={t('buckets.allPaperTypes', 'All paper types')}
+            allLabel={t('buckets.allPaperTypes', 'All paper types')}
             options={pubTypes.map(pt => ({
               value: pt.key,
               label: t(`buckets.paperTypes.${pt.key}`) !== `buckets.paperTypes.${pt.key}`
@@ -666,8 +666,8 @@ export default function BucketsListPage() {
             triggerClassName="min-w-[150px]"
             value={filterStatus}
             onChange={setFilterStatus}
-            placeholder={t('allStories.all', 'All')}
-            allLabel={t('allStories.all', 'All')}
+            placeholder={t('allStories.allStatuses', 'All statuses')}
+            allLabel={t('allStories.allStatuses', 'All statuses')}
             options={[
               { value: 'draft', label: t('buckets.editionStatus.draft') },
               { value: 'finalized', label: t('buckets.editionStatus.finalized') },
