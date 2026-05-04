@@ -7,7 +7,6 @@ import {
   researchStoryFromArticle,
   confirmResearchedStory,
 } from '../services/api';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { SearchableSelect } from '../components/common';
 import NewsFeedTable from '../components/news_feed/NewsFeedTable';
@@ -231,18 +230,20 @@ export default function NewsFeedPage() {
         </div>
       </div>
 
-      {/* Filter bar — single row, segmented look. Search left, category +
-          source dropdowns next to it, clear-button when any filter set. */}
+      {/* Filter bar — matches Dashboard / All Stories chrome: h-7,
+          text-[11.5px], gap-1.5, search-icon left, border-b underline.
+          Search left, category + source dropdowns next to it, clear
+          button when any filter is set. */}
       <div className="px-6">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-1 py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-1 py-2.5">
           <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t('newsFeed.searchPlaceholder', 'Search articles...')}
-              className="h-8 w-56 rounded-md border border-border/60 bg-card pl-8 pr-7 text-xs outline-none transition-colors focus:border-ring focus:shadow-[0_0_0_3px_rgba(250,108,56,0.08)]"
+              className="h-7 w-44 rounded-md border border-border/60 bg-card pl-7 pr-7 text-[11.5px] outline-none transition-colors focus:border-ring focus:shadow-[0_0_0_3px_rgba(250,108,56,0.08)]"
             />
             {search && (
               <button
@@ -257,7 +258,7 @@ export default function NewsFeedPage() {
           </div>
 
           <SearchableSelect
-            triggerClassName="h-8 min-w-[140px] rounded-md border border-border/60 bg-card px-2 text-xs"
+            triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px]"
             value={category}
             onChange={setCategory}
             placeholder={t('allStories.all', 'All categories')}
@@ -269,7 +270,7 @@ export default function NewsFeedPage() {
 
           {sources.length > 0 && (
             <SearchableSelect
-              triggerClassName="h-8 min-w-[140px] rounded-md border border-border/60 bg-card px-2 text-xs"
+              triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px] max-w-[160px]"
               value={source}
               onChange={setSource}
               placeholder={t('newsFeed.allSources', 'All sources')}
@@ -279,15 +280,14 @@ export default function NewsFeedPage() {
           )}
 
           {(category || source || search) && (
-            <Button
-              variant="ghost"
-              size="xs"
+            <button
+              type="button"
               onClick={() => { setCategory(''); setSource(''); setSearch(''); }}
-              className="h-8 text-muted-foreground hover:text-foreground"
+              className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <X size={12} />
               {t('allStories.clearFilters', 'Clear')}
-            </Button>
+            </button>
           )}
         </div>
       </div>
