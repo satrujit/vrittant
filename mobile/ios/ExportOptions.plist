@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- App Store distribution. Switch to ad-hoc / development if you ever
+       need a sideload IPA for a specific device, but App Store Connect
+       and TestFlight both want the app-store method. -->
+  <key>method</key>
+  <string>app-store</string>
+  <!-- AttentionStack development team. Matches the
+       DEVELOPMENT_TEAM build setting in Runner.xcodeproj so Xcode
+       automatic signing can find the right cert + profile. -->
+  <key>teamID</key>
+  <string>STV4JYX8TT</string>
+  <!-- Upload dSYMs so App Store Connect can symbolicate any
+       Sentry / Crashlytics-side stack traces against the binary that
+       actually shipped. -->
+  <key>uploadSymbols</key>
+  <true/>
+  <key>signingStyle</key>
+  <string>automatic</string>
+  <!-- Strip Swift bitcode (Apple deprecated it; some old plugins still
+       toggle it on, which causes silent upload failures). -->
+  <key>stripSwiftSymbols</key>
+  <true/>
+  <key>compileBitcode</key>
+  <false/>
+</dict>
+</plist>
