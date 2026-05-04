@@ -272,8 +272,8 @@ export default function NewsFeedPage() {
             triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px]"
             value={category}
             onChange={setCategory}
-            placeholder={t('allStories.all', 'All categories')}
-            allLabel={t('allStories.all', 'All categories')}
+            placeholder={t('allStories.allCategories', 'All categories')}
+            allLabel={t('allStories.allCategories', 'All categories')}
             options={categories
               .filter((c) => c.value)
               .map((c) => ({ value: c.value, label: c.label }))}

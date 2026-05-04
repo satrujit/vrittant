@@ -484,8 +484,8 @@ export default function AllStoriesPage() {
             triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[110px]"
             value={statusFilter}
             onChange={handleStatusChange}
-            placeholder={t('allStories.filterByStatus')}
-            allLabel={t('allStories.all')}
+            placeholder={t('allStories.allStatuses', 'All statuses')}
+            allLabel={t('allStories.allStatuses', 'All statuses')}
             options={ALL_STATUSES.map((s) => ({
               value: s,
               label: t(`status.${s === 'layout_completed' ? 'layoutCompleted' : s}`),
@@ -496,8 +496,8 @@ export default function AllStoriesPage() {
             triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px]"
             value={categoryFilter}
             onChange={handleCategoryChange}
-            placeholder={t('allStories.filterByCategory')}
-            allLabel={t('allStories.all')}
+            placeholder={t('allStories.allCategories', 'All categories')}
+            allLabel={t('allStories.allCategories', 'All categories')}
             options={categoryList.map((c) => {
               const localized = t(`categories.${c}`);
               const label = localized !== `categories.${c}` ? localized : c.replace(/_/g, ' ');
@@ -509,8 +509,8 @@ export default function AllStoriesPage() {
             triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px] max-w-[160px]"
             value={reporterFilter}
             onChange={handleReporterChange}
-            placeholder={t('allStories.filterByReporter')}
-            allLabel={t('allStories.all')}
+            placeholder={t('allStories.allReporters', 'All reporters')}
+            allLabel={t('allStories.allReporters', 'All reporters')}
             options={reporters.map((r) => ({ value: String(r.id), label: r.name }))}
           />
 
@@ -521,8 +521,8 @@ export default function AllStoriesPage() {
             triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[120px] max-w-[160px]"
             value={assigneeFilter}
             onChange={handleAssigneeChange}
-            placeholder={t('allStories.filterByAssignee', 'Assigned to')}
-            allLabel={t('allStories.all')}
+            placeholder={t('allStories.allAssignees', 'All assignees')}
+            allLabel={t('allStories.allAssignees', 'All assignees')}
             options={reviewers.map((r) => ({ value: String(r.id), label: r.name }))}
           />
 
@@ -530,8 +530,8 @@ export default function AllStoriesPage() {
             triggerClassName="h-7 text-[11.5px] border-border/60 px-2 min-w-[110px] max-w-[160px]"
             value={locationFilter}
             onChange={handleLocationChange}
-            placeholder={t('allStories.filterByLocation')}
-            allLabel={t('allStories.all')}
+            placeholder={t('allStories.allLocations', 'All locations')}
+            allLabel={t('allStories.allLocations', 'All locations')}
             options={uniqueLocations.map((loc) => ({ value: loc, label: loc }))}
           />
 
