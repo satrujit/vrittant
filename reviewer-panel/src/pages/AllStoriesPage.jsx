@@ -2,15 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Sparkles,
-  ChevronLeft,
-  ChevronRight,
   MapPin,
   Loader2,
   MoreHorizontal,
   Trash2,
   Clock,
   X,
-  Archive,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,9 +18,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, StatusBadge, CategoryChip, SearchBar, SearchableSelect, PageHeader, Pagination } from '../components/common';
+import { Avatar, StatusBadge, CategoryChip, SearchBar, SearchableSelect, Pagination } from '../components/common';
 import { formatDate, formatTimeAgo } from '../utils/helpers';
 import { assignableReviewers } from '../utils/users';
+import { useDensityPreference, DENSITIES } from '../hooks/useDensityPreference';
+import DensityToggle from '../components/dashboard/DensityToggle';
 import {
   Table,
   TableBody,
@@ -66,6 +65,11 @@ export default function AllStoriesPage() {
   const navigate = useNavigate();
   const isOrgAdmin = user?.user_type === 'org_admin';
   const categoryList = (config?.categories || []).filter(c => c.is_active).map(c => c.key);
+  // Shared density preference with the Dashboard — flipping the toggle on
+  // either page propagates via localStorage + the density-preference-changed
+  // custom event, so the two pages always render at the same density.
+  const [density, setDensity] = useDensityPreference();
+  const rowHeight = DENSITIES[density].rowHeight;
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -306,17 +310,28 @@ export default function AllStoriesPage() {
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Fixed top: page header + filter row. The scrollable region
-          below contains only the story rows so reviewers can keep the
-          filters in view while paging through long lists. */}
-      <div className="shrink-0 max-w-[1400px] mx-auto w-full px-6 lg:px-8 pt-6 lg:pt-8 pb-3 flex flex-col gap-4">
-        <PageHeader
-          icon={Archive}
-          title={t('allStories.title')}
-          subtitle={t('allStories.subtitle')}
-          className="mb-0"
-        />
+    <div className="flex h-full flex-col">
+      {/* Header strip — matches DashboardPage's pattern: inline title on
+          the left, DensityToggle on the right. The PageHeader component
+          (used elsewhere) was replaced here so the two queue-style pages
+          (Dashboard + All Stories) read as the same product visually. */}
+      <header className="shrink-0 flex flex-wrap items-center justify-between gap-4 px-6 pt-6">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground truncate">
+            {t('allStories.title')}
+          </h1>
+          <p className="text-[12.5px] text-muted-foreground">
+            {t('allStories.subtitle')}
+          </p>
+        </div>
+        <DensityToggle value={density} onChange={setDensity} />
+      </header>
+
+      {/* Filter row + scrollable table region.  Outer wrapper drops the
+          max-w-[1400px] cap to match Dashboard's full-bleed table. */}
+      <div className="shrink-0 px-6 pt-3 pb-2 flex flex-col gap-3">
+        {/* (filter row contents follow — wrapper preserved so the
+            existing closing markup downstream stays balanced.) */}
         {/* Filters Row — compact inline. Search bar now lives at the
             far right of the same row (ml-auto pushes it over) so the
             page header stays a single tidy strip instead of stacking. */}
@@ -468,21 +483,26 @@ export default function AllStoriesPage() {
         </div>
       </div>
 
-      {/* Scrollable region: only the rows scroll. The Table header stays
-          pinned via `sticky top-0` against the scroll container below,
-          and pagination sits at the bottom of the card (shrink-0). */}
-      <div className="flex-1 min-h-0 max-w-[1400px] mx-auto w-full px-6 lg:px-8 pb-6 lg:pb-8 pt-1">
-      <div className="bg-card border border-border rounded-lg overflow-hidden h-full flex flex-col">
+      {/* Scrollable region — flat full-width to match Dashboard. The
+          previous `max-w-[1400px] mx-auto + bg-card border rounded-lg`
+          chrome made All Stories feel like a different product than the
+          Dashboard queue; both pages now share the same flat full-bleed
+          treatment with sticky-header pinning. Pagination still sits at
+          the bottom (shrink-0). */}
+      <div className="flex min-h-0 flex-1 flex-col">
         {loading ? (
-          <div className="py-12 px-6 text-center text-muted-foreground text-sm">
-            <Loader2 size={24} className="animate-spin inline-block" />
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+            <Loader2 size={20} className="animate-spin inline-block mr-2" />
+            {t('common.loading') || 'Loading…'}
           </div>
         ) : stories.length === 0 ? (
-          <div className="py-12 px-6 text-center text-muted-foreground text-sm">
-            {t('allStories.noResults')}
+          <div className="flex h-40 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
+            <span className="text-base font-medium text-foreground">
+              {t('allStories.noResults')}
+            </span>
           </div>
         ) : (
-          <div className="flex-1 min-h-0 overflow-auto">
+          <div className="flex-1 min-h-0 overflow-auto px-6">
           {/* #54 — collapse Reporter, Location, Submission Time back into the
               title cell as a stacked metadata strip beneath the headline.
               The previous flat-grid layout (#51) made every row very wide and
@@ -492,26 +512,30 @@ export default function AllStoriesPage() {
               (Category, Status, Reviewed by, Assigned to) as their own
               columns for at-a-glance scanning across rows.
               vr-table-spaced opts out of the global dense table preset. */}
+          {/* Table chrome aligned with ReviewQueueTable's grid header:
+              translucent + backdrop-blur sticky bar so when rows scroll
+              underneath the headers stay readable on top of the
+              accent-tinted hover trail. */}
           <Table className="vr-table-spaced">
-            <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_var(--border)]">
+            <TableHeader className="sticky top-0 z-10 bg-background/95 backdrop-blur shadow-[0_1px_0_0_var(--border)]">
               <TableRow>
-                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
+                <TableHead className="px-4 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-sm:px-3">
                   {t('table.storyTitle')}
                 </TableHead>
-                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
+                <TableHead className="px-4 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-sm:px-3">
                   {t('table.category')}
                 </TableHead>
-                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
+                <TableHead className="px-4 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-sm:px-3">
                   {t('table.status')}
                 </TableHead>
-                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
+                <TableHead className="px-4 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-sm:px-3">
                   {t('stories.reviewedBy')}
                 </TableHead>
-                <TableHead className="px-4 py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] max-sm:px-3 max-sm:py-2">
+                <TableHead className="px-4 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-sm:px-3">
                   {t('assignment.assignedTo')}
                 </TableHead>
                 {isOrgAdmin && (
-                  <TableHead className="px-4 py-3 w-[50px]" aria-label="Row actions" />
+                  <TableHead className="px-4 py-2 w-[50px]" aria-label="Row actions" />
                 )}
               </TableRow>
             </TableHeader>
@@ -523,24 +547,23 @@ export default function AllStoriesPage() {
                 return (
                   <TableRow
                     key={story.id}
-                    className="cursor-pointer"
+                    className="cursor-pointer transition-colors hover:bg-accent/40"
+                    style={{ height: rowHeight }}
                     onClick={() => navigate(`/review/${story.id}`)}
                   >
                     {/* #54 — Story title with stacked metadata strip
                         underneath: reporter • location • time-ago. Whole
                         row is clickable; the headline stays a real Link
                         so cmd/middle-click still opens in a new tab.
-                        Each meta chip uses whitespace-nowrap and the
-                        wrapper allows wrap so on narrow screens they
-                        stack vertically rather than overflow.
-                        max-w-[480px] keeps long Odia headlines from
-                        squashing the editorial-signal columns to the right. */}
-                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 max-w-[480px] align-middle">
+                        Headline typography aligned with ReviewQueueTable
+                        (text-[13.5px] medium) so the two queue-style
+                        pages read as the same product. */}
+                    <TableCell className="px-4 py-2 max-sm:px-3 max-w-[480px] align-middle">
                       <div className="flex flex-col gap-1.5">
                         <Link
                           to={`/review/${story.id}`}
                           onClick={(e) => e.stopPropagation()}
-                          className="text-sm font-semibold text-foreground leading-tight line-clamp-2 hover:text-primary transition-colors no-underline"
+                          className="text-[13.5px] font-medium text-foreground leading-tight line-clamp-2 hover:text-primary transition-colors no-underline"
                         >
                           {story.headline}
                         </Link>
@@ -578,17 +601,17 @@ export default function AllStoriesPage() {
                     </TableCell>
 
                     {/* Category — dot + label */}
-                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle">
+                    <TableCell className="px-4 py-2 max-sm:px-3 align-middle">
                       <CategoryChip category={story.category} minimal />
                     </TableCell>
 
                     {/* Status — dot + label */}
-                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle">
+                    <TableCell className="px-4 py-2 max-sm:px-3 align-middle">
                       <StatusBadge status={story.status} minimal />
                     </TableCell>
 
                     {/* Reviewed by — single-line first name + date */}
-                    <TableCell className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle">
+                    <TableCell className="px-4 py-2 max-sm:px-3 align-middle">
                       {story.reviewer_name ? (
                         <div className="flex items-center gap-1.5 whitespace-nowrap">
                           <span className="text-xs text-foreground font-medium" title={story.reviewer_name}>
@@ -609,7 +632,7 @@ export default function AllStoriesPage() {
                         stopPropagation so opening the popover or picking a
                         reviewer doesn't also navigate the row. */}
                     <TableCell
-                      className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle"
+                      className="px-4 py-2 max-sm:px-3 align-middle"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <ReassignPopover
@@ -653,10 +676,12 @@ export default function AllStoriesPage() {
           </div>
         )}
 
-        {/* Pagination */}
+        {/* Pagination — lighter divider (border-border/40) to match
+            Dashboard's footer chrome. The result-range count sits left,
+            the page navigator right, both inline rather than card-fenced. */}
         {totalStories > 0 && !loading && (
-          <div className="shrink-0 flex items-center justify-between px-4 py-2 border-t border-border max-sm:flex-col max-sm:gap-3 max-sm:items-center">
-            <span className="text-xs text-muted-foreground">
+          <div className="shrink-0 flex items-center justify-between border-t border-border/40 px-6 py-2 text-xs text-muted-foreground max-sm:flex-col max-sm:gap-3 max-sm:items-center">
+            <span>
               {t('dashboard.showingResults', {
                 start: startIndex + 1,
                 end: endIndex,
@@ -670,7 +695,6 @@ export default function AllStoriesPage() {
             />
           </div>
         )}
-      </div>
       </div>
     </div>
   );
