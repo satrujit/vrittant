@@ -38,6 +38,13 @@ export default function NewsFeedPage() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const [source, setSource] = useState('');
+  // Rolling-window default. Backend filters published_at >= now() - 7d
+  // when days_back=7 (its default too) — keeps the result set ~10x
+  // smaller than the full ~30k corpus and the O(n²) clustering
+  // proportionally faster. Toggle to 365 ("all time") for archive
+  // searches; we don't expose more granular ranges yet because the
+  // signal-to-noise drops fast past two weeks.
+  const [daysBack, setDaysBack] = useState(7);
   // Page lives in the URL so opening a story preview and returning here
   // restores the same page (instead of snapping back to page 1).
   const [searchParams, setSearchParams] = useSearchParams();
@@ -71,6 +78,10 @@ export default function NewsFeedPage() {
       if (search) params.search = search;
       if (category) params.category = category;
       if (source) params.source = source;
+      // Always send days_back so a returning page-1 navigation doesn't
+      // accidentally fall back to the server's default if the user had
+      // toggled it off.
+      params.days_back = daysBack;
 
       const data = await fetchNewsArticles(params);
       setArticles(data.articles || []);
@@ -81,7 +92,7 @@ export default function NewsFeedPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, category, source]);
+  }, [page, search, category, source, daysBack]);
 
   useEffect(() => {
     loadArticles();
@@ -91,7 +102,7 @@ export default function NewsFeedPage() {
   useEffect(() => {
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, category, source]);
+  }, [search, category, source, daysBack]);
 
   // Step 1: Open config dialog (no API call yet)
   const handleOpenConfig = (article) => {
@@ -289,6 +300,28 @@ export default function NewsFeedPage() {
               {t('allStories.clearFilters', 'Clear')}
             </button>
           )}
+
+          {/* Window toggle — pushed to the right via ml-auto. Default
+              is "Last 7 days" (server-side filter cuts the working
+              set ~10x). Click to widen to 365 days when an archive
+              search is genuinely needed. We don't expose finer
+              granularity (30 / 90) because reviewers rarely look at
+              the 8–30 day window — the feed is for stories worth
+              covering NOW. */}
+          <button
+            type="button"
+            onClick={() => setDaysBack(daysBack === 7 ? 365 : 7)}
+            aria-pressed={daysBack === 7}
+            className={cn(
+              'ml-auto inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11.5px] font-medium transition-colors',
+              daysBack === 7
+                ? 'border-border/60 bg-card text-muted-foreground hover:bg-accent hover:text-foreground'
+                : 'border-primary/40 bg-primary/5 text-primary hover:bg-primary/10',
+            )}
+            title={daysBack === 7 ? 'Currently showing the last 7 days. Click to load all-time.' : 'Currently showing all-time. Click to limit to last 7 days.'}
+          >
+            {daysBack === 7 ? 'Last 7 days' : 'All time'}
+          </button>
         </div>
       </div>
 

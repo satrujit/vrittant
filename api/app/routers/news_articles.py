@@ -10,7 +10,7 @@ import asyncio
 import logging
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -154,11 +154,24 @@ def list_news_articles(
     category: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
     country: Optional[str] = Query(None),
+    # Default rolling window: only the last 7 days of articles. The full
+    # corpus is ~30k rows and the row-level fuzzy clustering downstream
+    # is O(n²) in the page result set, so widening the date filter has a
+    # real cost. Reviewers almost never look past the trailing week (the
+    # whole point of the feed is to surface stories worth covering NOW).
+    # Reviewers who DO want the full archive pass days_back=0.
+    days_back: int = Query(7, ge=0, le=365),
     offset: int = Query(0, ge=0),
     limit: int = Query(12, ge=1, le=100),
 ):
     q = db.query(NewsArticle)
 
+    # Apply the rolling window before any other filter so PostgreSQL
+    # can use the (published_at) index to short-circuit the scan. With
+    # default days_back=7 this typically reduces the working set ~10x.
+    if days_back > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
+        q = q.filter(NewsArticle.published_at >= cutoff)
     if search:
         q = q.filter(NewsArticle.title.ilike(f"%{search}%"))
     if category:

@@ -104,12 +104,14 @@ export default function NewsFeedTable({
               {timeAgo(article.published_at)}
             </div>
 
-            {/* Source — coloured chip (uses brand coral so all sources
-                read as our own ingest pipeline; differentiation by
-                article happens in the title + image). */}
+            {/* Source — neutral muted pill. Earlier this used the brand
+                coral (bg-primary/10 text-primary) but with 25 rows the
+                page read as wall-to-wall orange. The source name is
+                informational, not actionable; differentiation by
+                article happens in the title + category dot. */}
             <div className="min-w-0">
               {article.source ? (
-                <span className="inline-block max-w-full truncate rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                <span className="inline-block max-w-full truncate rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                   {article.source}
                 </span>
               ) : (
@@ -144,9 +146,14 @@ export default function NewsFeedTable({
                   {t('newsFeed.created') || 'Created'}
                 </span>
               ) : (
+                // Outline variant — orange Sparkles icon + text, no
+                // orange fill. With 25 rows the filled-orange button
+                // turned the page into a coral grid; outline keeps the
+                // CTA discoverable without dominating.
                 <Button
+                  variant="outline"
                   size="sm"
-                  className="h-7 gap-1 px-2 text-[11px]"
+                  className="h-7 gap-1 border-primary/40 px-2 text-[11px] text-primary hover:bg-primary/10 hover:text-primary"
                   onClick={() => onCreateStory?.(article)}
                 >
                   <Sparkles size={11} />
