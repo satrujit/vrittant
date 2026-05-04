@@ -627,13 +627,21 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                         // Threaded down so each text-run's copy/cut
                         // menu can substitute "<Org> Confidential"
                         // when reporters try to bulk-copy story
-                        // content. Empty when org info hasn't loaded
-                        // (offline cold-start) — better to allow
-                        // the copy than fail closed on an empty
-                        // org name.
-                        orgName: ref.watch(authProvider)
-                                .reporter?.org?.name ??
-                            '',
+                        // content. We try the nested org.name first
+                        // (set when /me returns the full OrgInfo),
+                        // then fall back to the flat `organization`
+                        // string field which is populated more
+                        // consistently across responses. Empty only
+                        // when both are missing (offline cold-start
+                        // before any /me response) — guard fails
+                        // open in that case rather than blocking
+                        // honest paste-into-research-doc.
+                        orgName: () {
+                          final r = ref.watch(authProvider).reporter;
+                          final nested = r?.org?.name?.trim() ?? '';
+                          if (nested.isNotEmpty) return nested;
+                          return r?.organization.trim() ?? '';
+                        }(),
                         onTextRunCommitted: (firstIdx, lastIdx, pieces) {
                           notifier.replaceTextRun(firstIdx, lastIdx, pieces);
                         },
