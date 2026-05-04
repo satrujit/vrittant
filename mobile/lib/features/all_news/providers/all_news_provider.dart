@@ -115,7 +115,11 @@ class AllNewsNotifier extends Notifier<AllNewsState> {
     final coldCache = state.stories.isEmpty;
     state = state.copyWith(isLoading: coldCache, clearError: true);
     try {
-      final stories = await _api.listStories(
+      // listStories returns a record (stories + nextCursor) since the
+      // cursor-pagination perf change. We don't carry the cursor through
+      // the All News provider yet — page boundaries here use offsets —
+      // but we destructure the record so the call type-checks.
+      final res = await _api.listStories(
         status: f.status,
         category: f.category,
         search: f.search,
@@ -124,6 +128,7 @@ class AllNewsNotifier extends Notifier<AllNewsState> {
         offset: 0,
         limit: _pageSize,
       );
+      final stories = res.stories;
       if (canCache) {
         await _cache.replaceAll(stories);
       }
@@ -144,7 +149,7 @@ class AllNewsNotifier extends Notifier<AllNewsState> {
     state = state.copyWith(isLoading: true);
     try {
       final f = state.filters;
-      final moreStories = await _api.listStories(
+      final res = await _api.listStories(
         status: f.status,
         category: f.category,
         search: f.search,
@@ -153,6 +158,7 @@ class AllNewsNotifier extends Notifier<AllNewsState> {
         offset: state.stories.length,
         limit: _pageSize,
       );
+      final moreStories = res.stories;
       // Write each additional row through to the cache so subsequent
       // cold launches benefit from the deeper pages we've already paid
       // to fetch.
