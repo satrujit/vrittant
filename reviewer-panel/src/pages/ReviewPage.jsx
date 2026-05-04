@@ -145,22 +145,42 @@ function ReviewPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [s.editor, s.handleRefineStory, s.refining, s.setActiveTab]);
 
-  // Esc → close the review and go back to the list. Skipped when the
-  // user is typing in any editable surface (input, textarea, TipTap's
-  // contenteditable) so it never interrupts editing.
+  // Esc behaviour — keyboard-only reviewers need a reliable path off the
+  // page even after using a TipTap shortcut (Option+B / Cmd+B etc.) that
+  // parks focus inside the editor's contenteditable.
+  //
+  //   - INPUT / TEXTAREA / SELECT (search bar, date filter, etc.): ignored.
+  //     Esc in those is the browser's native "clear / cancel" affordance
+  //     and we don't want to navigate away mid-search.
+  //   - contenteditable (the TipTap editor surface): blur it. The editor
+  //     deselects so a second Esc — now targeting <body> — will navigate.
+  //     This matches the IDE / Vim "first Esc leaves the mode, next one
+  //     leaves the file" pattern reviewers already expect.
+  //   - everything else: navigate back.
+  //
+  // Open Radix dialogs / popovers handle Esc themselves; we bail when one
+  // is open so we don't double-handle.
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key !== 'Escape') return;
+      if (document.querySelector('[data-state="open"][role="dialog"]')) return;
+
       const el = e.target;
       const tag = el?.tagName;
-      const editable = el?.isContentEditable
-        || tag === 'INPUT'
-        || tag === 'TEXTAREA'
-        || tag === 'SELECT';
-      if (editable) return;
-      // Don't fight open dialogs/popovers — they use Esc to dismiss
-      // themselves first via Radix's own handlers.
-      if (document.querySelector('[data-state="open"][role="dialog"]')) return;
+
+      // Plain text-input fields keep their native Esc behaviour.
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      // TipTap (and any other contenteditable) — first Esc blurs so the
+      // user gets a visible "I've left the editor" cue. Second Esc lands
+      // on <body> and falls through to the navigate branch below.
+      if (el?.isContentEditable) {
+        e.preventDefault();
+        try { el.blur(); } catch { /* defensive — element may have been
+          unmounted between the keydown firing and blur landing. */ }
+        return;
+      }
+
       e.preventDefault();
       navigate(-1);
     };
