@@ -1,12 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Sparkles,
-  MapPin,
-  Loader2,
   MoreHorizontal,
   Trash2,
-  Clock,
   X,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -18,19 +15,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, StatusBadge, CategoryChip, SearchBar, SearchableSelect, Pagination } from '../components/common';
-import { formatDate, formatTimeAgo } from '../utils/helpers';
+import { SearchBar, SearchableSelect, Pagination } from '../components/common';
+import { formatDate } from '../utils/helpers';
 import { assignableReviewers } from '../utils/users';
-import { useDensityPreference, DENSITIES } from '../hooks/useDensityPreference';
+import { useDensityPreference } from '../hooks/useDensityPreference';
 import DensityToggle from '../components/dashboard/DensityToggle';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import ReviewQueueTable from '../components/dashboard/ReviewQueueTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -68,8 +58,8 @@ export default function AllStoriesPage() {
   // Shared density preference with the Dashboard — flipping the toggle on
   // either page propagates via localStorage + the density-preference-changed
   // custom event, so the two pages always render at the same density.
+  // ReviewQueueTable resolves rowHeight from this internally.
   const [density, setDensity] = useDensityPreference();
-  const rowHeight = DENSITIES[density].rowHeight;
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -483,198 +473,99 @@ export default function AllStoriesPage() {
         </div>
       </div>
 
-      {/* Scrollable region — flat full-width to match Dashboard. The
-          previous `max-w-[1400px] mx-auto + bg-card border rounded-lg`
-          chrome made All Stories feel like a different product than the
-          Dashboard queue; both pages now share the same flat full-bleed
-          treatment with sticky-header pinning. Pagination still sits at
-          the bottom (shrink-0). */}
+      {/* Scrollable region — same ReviewQueueTable component the
+          Dashboard uses, so the 5 base columns (Title / Submitted /
+          Category / Reporter / Status) render pixel-identically across
+          both pages. Three extra columns (Reviewed by / Assigned to /
+          Actions) append after Status via the new extraColumns slot —
+          they're the editorial-signal columns All Stories needs that
+          the Dashboard doesn't (Dashboard filters to "submitted" only,
+          so reviewer + assignee + admin actions don't apply yet). */}
       <div className="flex min-h-0 flex-1 flex-col">
-        {loading ? (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-            <Loader2 size={20} className="animate-spin inline-block mr-2" />
-            {t('common.loading') || 'Loading…'}
-          </div>
-        ) : stories.length === 0 ? (
-          <div className="flex h-40 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
-            <span className="text-base font-medium text-foreground">
-              {t('allStories.noResults')}
-            </span>
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 overflow-auto px-6">
-          {/* #54 — collapse Reporter, Location, Submission Time back into the
-              title cell as a stacked metadata strip beneath the headline.
-              The previous flat-grid layout (#51) made every row very wide and
-              forced reviewers to scan across many narrow columns; reverting
-              the personal-metadata trio under the headline keeps each story's
-              identifying info together while leaving the editorial signals
-              (Category, Status, Reviewed by, Assigned to) as their own
-              columns for at-a-glance scanning across rows.
-              vr-table-spaced opts out of the global dense table preset. */}
-          {/* Table chrome aligned with ReviewQueueTable's grid header:
-              translucent + backdrop-blur sticky bar so when rows scroll
-              underneath the headers stay readable on top of the
-              accent-tinted hover trail. */}
-          <Table className="vr-table-spaced">
-            <TableHeader className="sticky top-0 z-10 bg-background/95 backdrop-blur shadow-[0_1px_0_0_var(--border)]">
-              <TableRow>
-                <TableHead className="px-4 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-sm:px-3">
-                  {t('table.storyTitle')}
-                </TableHead>
-                <TableHead className="px-4 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-sm:px-3">
-                  {t('table.category')}
-                </TableHead>
-                <TableHead className="px-4 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-sm:px-3">
-                  {t('table.status')}
-                </TableHead>
-                <TableHead className="px-4 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-sm:px-3">
-                  {t('stories.reviewedBy')}
-                </TableHead>
-                <TableHead className="px-4 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-sm:px-3">
-                  {t('assignment.assignedTo')}
-                </TableHead>
-                {isOrgAdmin && (
-                  <TableHead className="px-4 py-2 w-[50px]" aria-label="Row actions" />
-                )}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {stories.map((story) => {
-                const timePrimary = formatDate(story.submittedAt || story.createdAt);
-                const timeSecondary = formatTimeAgo(story.submittedAt || story.createdAt);
-
-                return (
-                  <TableRow
-                    key={story.id}
-                    className="cursor-pointer transition-colors hover:bg-accent/40"
-                    style={{ height: rowHeight }}
-                    onClick={() => navigate(`/review/${story.id}`)}
-                  >
-                    {/* #54 — Story title with stacked metadata strip
-                        underneath: reporter • location • time-ago. Whole
-                        row is clickable; the headline stays a real Link
-                        so cmd/middle-click still opens in a new tab.
-                        Headline typography aligned with ReviewQueueTable
-                        (text-[13.5px] medium) so the two queue-style
-                        pages read as the same product. */}
-                    <TableCell className="px-4 py-2 max-sm:px-3 max-w-[480px] align-middle">
-                      <div className="flex flex-col gap-1.5">
-                        <Link
-                          to={`/review/${story.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-[13.5px] font-medium text-foreground leading-tight line-clamp-2 hover:text-primary transition-colors no-underline"
-                        >
-                          {story.headline}
-                        </Link>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                          {story.displayId && (
-                            <span className="inline-flex items-center font-mono font-semibold tracking-wider text-blue-600 whitespace-nowrap">
-                              {story.displayId}
-                            </span>
-                          )}
-                          <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                            <Avatar
-                              initials={story.reporter.initials}
-                              color={story.reporter.color}
-                              size="xs"
-                            />
-                            <span className="font-medium text-foreground">
-                              {story.reporter.name}
-                            </span>
-                          </span>
-                          {story.location && (
-                            <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                              <MapPin size={11} className="shrink-0" />
-                              {story.location}
-                            </span>
-                          )}
-                          <span
-                            className="inline-flex items-center gap-1 whitespace-nowrap"
-                            title={timePrimary}
-                          >
-                            <Clock size={11} className="shrink-0" />
-                            {timeSecondary || timePrimary}
-                          </span>
-                        </div>
-                      </div>
-                    </TableCell>
-
-                    {/* Category — dot + label */}
-                    <TableCell className="px-4 py-2 max-sm:px-3 align-middle">
-                      <CategoryChip category={story.category} minimal />
-                    </TableCell>
-
-                    {/* Status — dot + label */}
-                    <TableCell className="px-4 py-2 max-sm:px-3 align-middle">
-                      <StatusBadge status={story.status} minimal />
-                    </TableCell>
-
-                    {/* Reviewed by — single-line first name + date */}
-                    <TableCell className="px-4 py-2 max-sm:px-3 align-middle">
-                      {story.reviewer_name ? (
-                        <div className="flex items-center gap-1.5 whitespace-nowrap">
-                          <span className="text-xs text-foreground font-medium" title={story.reviewer_name}>
-                            {story.reviewer_name.split(' ')[0]}
-                          </span>
-                          {story.reviewed_at && (
-                            <span className="text-[11px] text-muted-foreground">
-                              {formatDate(story.reviewed_at)}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-
-                    {/* Assigned to — inline reassign popover.
-                        stopPropagation so opening the popover or picking a
-                        reviewer doesn't also navigate the row. */}
-                    <TableCell
-                      className="px-4 py-2 max-sm:px-3 align-middle"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <ReassignPopover
-                        assigneeId={story.assignee_id}
-                        assigneeName={story.assignee_name}
-                        matchReason={story.assigned_match_reason}
-                        reviewers={reviewers}
-                        onReassign={(userId) => handleReassign(story.id, userId)}
-                      />
-                    </TableCell>
-
-                    {/* Row actions — org_admin only */}
-                    {isOrgAdmin && (
-                      <TableCell
-                        className="px-4 py-3.5 max-sm:px-3 max-sm:py-2.5 align-middle"
-                        onClick={(e) => e.stopPropagation()}
+        <div className="flex-1 min-h-0 overflow-auto px-6">
+          <ReviewQueueTable
+            stories={stories}
+            loading={loading}
+            density={density}
+            extraColumns={[
+              {
+                // Reviewed by — name on top, time stacked below (same
+                // two-line treatment Dashboard uses for Submitted, so
+                // metadata-pair columns share a vertical rhythm).
+                id: 'reviewed-by',
+                header: t('stories.reviewedBy'),
+                width: '140px',
+                render: (story) => (
+                  story.reviewer_name ? (
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <span
+                        className="text-[13px] text-foreground truncate"
+                        title={story.reviewer_name}
                       >
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => handleDeleteStory(story.id)}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              {t('stories.delete.action')}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-          </div>
-        )}
+                        {story.reviewer_name}
+                      </span>
+                      {story.reviewed_at && (
+                        <span className="text-[11px] text-muted-foreground truncate">
+                          {formatDate(story.reviewed_at)}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )
+                ),
+              },
+              {
+                // Assigned to — inline reassign popover. stopRowClick lets
+                // the popover handle its own clicks without bubbling up to
+                // the row-level navigate(`/review/${id}`) handler.
+                id: 'assigned-to',
+                header: t('assignment.assignedTo'),
+                width: '160px',
+                stopRowClick: true,
+                render: (story) => (
+                  <ReassignPopover
+                    assigneeId={story.assignee_id}
+                    assigneeName={story.assignee_name}
+                    matchReason={story.assigned_match_reason}
+                    reviewers={reviewers}
+                    onReassign={(userId) => handleReassign(story.id, userId)}
+                  />
+                ),
+              },
+              ...(isOrgAdmin
+                ? [{
+                    // Per-row admin menu (currently just Delete). Conditional
+                    // — non-admin users don't get the column at all so the
+                    // table tightens up instead of showing an empty cell.
+                    id: 'admin-actions',
+                    header: '',
+                    width: '50px',
+                    stopRowClick: true,
+                    render: (story) => (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteStory(story.id)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            {t('stories.delete.action')}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ),
+                  }]
+                : []),
+            ]}
+          />
+        </div>
+
 
         {/* Pagination — lighter divider (border-border/40) to match
             Dashboard's footer chrome. The result-range count sits left,

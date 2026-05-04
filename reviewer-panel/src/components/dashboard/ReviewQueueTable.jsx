@@ -28,17 +28,44 @@ function formatSource(source) {
 // Story gets the most space; reporter sits AFTER submitted/category so the
 // title is the first thing the eye lands on. Submitted is wide enough for a
 // time stamp on the first line and a submission-mode label below.
-const GRID_COLS =
+const BASE_GRID_COLS =
   'minmax(0,3fr) 140px 130px minmax(0,1.4fr) 130px';
 
+/**
+ * Optional appended-column definition for the queue table.
+ *
+ * Pages that need extra signals on each row (All Stories needs Reviewed by
+ * + Assigned to + per-row admin actions) can pass an array of these
+ * descriptors. Each one widens the grid by `width` and renders its header
+ * + cell content via `render(story)`. Columns appear AFTER the Status pill.
+ *
+ * extraColumn shape:
+ *   {
+ *     id:     string,            unique, used for React keys
+ *     header: ReactNode,         text shown in the sticky header bar
+ *     width:  string,            valid grid-template-columns track size
+ *                                (e.g. "140px", "minmax(0,1fr)")
+ *     render: (story) => node    cell content for one row
+ *     stopRowClick?: boolean     when true, swallows clicks inside the
+ *                                cell so they don't trigger row-nav.
+ *                                Use for popovers / menus that have
+ *                                their own click semantics.
+ *   }
+ */
 export default function ReviewQueueTable({
   stories,
   loading,
   density = 'comfortable',
+  extraColumns = [],
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
   const rowHeight = DENSITIES[density].rowHeight;
+  // Compose the grid template once per render. The base 5 tracks always
+  // come first; any extras append in the order the page supplied them.
+  const gridCols = extraColumns.length
+    ? `${BASE_GRID_COLS} ${extraColumns.map((c) => c.width).join(' ')}`
+    : BASE_GRID_COLS;
 
   if (loading && stories.length === 0) {
     return (
@@ -62,13 +89,16 @@ export default function ReviewQueueTable({
       {/* Sticky header */}
       <div
         className="sticky top-0 z-10 grid items-center gap-4 bg-background/95 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur"
-        style={{ gridTemplateColumns: GRID_COLS, height: 36 }}
+        style={{ gridTemplateColumns: gridCols, height: 36 }}
       >
         <div>{t('table.storyTitle')}</div>
         <div>{t('table.submissionTime')}</div>
         <div>{t('table.category')}</div>
         <div>{t('table.reporterSubject')}</div>
         <div>{t('table.status')}</div>
+        {extraColumns.map((col) => (
+          <div key={col.id}>{col.header}</div>
+        ))}
       </div>
 
       {stories.map((story) => {
@@ -81,7 +111,7 @@ export default function ReviewQueueTable({
               'group grid cursor-pointer items-center gap-4 px-4 transition-colors',
               'hover:bg-accent/40',
             )}
-            style={{ gridTemplateColumns: GRID_COLS, height: rowHeight }}
+            style={{ gridTemplateColumns: gridCols, height: rowHeight }}
             onClick={() => navigate(`/review/${story.id}`)}
           >
             {/* Story title — the hover-peek triggers ONLY on the headline
@@ -150,6 +180,20 @@ export default function ReviewQueueTable({
               <div>
                 <InlineStatusPill status={story.status} disabled />
               </div>
+
+              {/* Page-supplied extra columns (Reviewed by, Assigned to,
+                  per-row admin actions, etc). Cells that contain
+                  popovers / dropdown menus pass `stopRowClick: true` so
+                  their own click semantics aren't hijacked by the
+                  whole-row navigate. */}
+              {extraColumns.map((col) => (
+                <div
+                  key={col.id}
+                  onClick={col.stopRowClick ? (e) => e.stopPropagation() : undefined}
+                >
+                  {col.render(story)}
+                </div>
+              ))}
           </div>
         );
       })}
