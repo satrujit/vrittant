@@ -440,20 +440,20 @@ export default function AllStoriesPage() {
           but they share the same chrome so the two pages read as one
           product. */}
       <div className="shrink-0 px-6 pt-3 pb-2">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-1 py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-1 py-2.5">
           {/* Search — left, Search icon (matches Dashboard). Submits on
               Enter only because semantic search is metered + slow. The
               "press ↵" hint and AI spinner replace the clear-X when
               relevant; otherwise the X stays available like Dashboard. */}
           <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
               value={searchQuery}
               onChange={handleSearch}
               onKeyDown={handleSearchKeyDown}
               placeholder={t('allStories.searchPlaceholder')}
-              className="h-8 w-56 rounded-md border border-border/60 bg-card pl-8 pr-7 text-xs outline-none transition-colors focus:border-ring focus:shadow-[0_0_0_3px_rgba(250,108,56,0.08)]"
+              className="h-7 w-44 rounded-md border border-border/60 bg-card pl-7 pr-7 text-[11.5px] outline-none transition-colors focus:border-ring focus:shadow-[0_0_0_3px_rgba(250,108,56,0.08)]"
             />
             {semanticLoading ? (
               <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-primary">
@@ -482,7 +482,7 @@ export default function AllStoriesPage() {
           <select
             value={statusFilter}
             onChange={(e) => handleStatusChange(e.target.value)}
-            className="h-8 rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+            className="h-7 rounded-md border border-border/60 bg-card px-1.5 text-[11.5px] text-foreground outline-none focus:border-ring"
           >
             <option value="">{t('allStories.filterByStatus')}</option>
             {ALL_STATUSES.map((s) => (
@@ -495,7 +495,7 @@ export default function AllStoriesPage() {
           <select
             value={categoryFilter}
             onChange={(e) => handleCategoryChange(e.target.value)}
-            className="h-8 rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+            className="h-7 rounded-md border border-border/60 bg-card px-1.5 text-[11.5px] text-foreground outline-none focus:border-ring"
           >
             <option value="">{t('allStories.filterByCategory')}</option>
             {categoryList.map((c) => {
@@ -508,7 +508,7 @@ export default function AllStoriesPage() {
           <select
             value={reporterFilter}
             onChange={(e) => handleReporterChange(e.target.value)}
-            className="h-8 max-w-44 truncate rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+            className="h-7 max-w-36 truncate rounded-md border border-border/60 bg-card px-1.5 text-[11.5px] text-foreground outline-none focus:border-ring"
           >
             <option value="">{t('allStories.filterByReporter')}</option>
             {reporters.map((r) => (
@@ -522,7 +522,7 @@ export default function AllStoriesPage() {
           <select
             value={assigneeFilter}
             onChange={(e) => handleAssigneeChange(e.target.value)}
-            className="h-8 max-w-44 truncate rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+            className="h-7 max-w-36 truncate rounded-md border border-border/60 bg-card px-1.5 text-[11.5px] text-foreground outline-none focus:border-ring"
           >
             <option value="">{t('allStories.filterByAssignee', 'Assigned to')}</option>
             {reviewers.map((r) => (
@@ -533,7 +533,7 @@ export default function AllStoriesPage() {
           <select
             value={locationFilter}
             onChange={(e) => handleLocationChange(e.target.value)}
-            className="h-8 max-w-44 truncate rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+            className="h-7 max-w-36 truncate rounded-md border border-border/60 bg-card px-1.5 text-[11.5px] text-foreground outline-none focus:border-ring"
           >
             <option value="">{t('allStories.filterByLocation')}</option>
             {uniqueLocations.map((loc) => (
@@ -548,21 +548,21 @@ export default function AllStoriesPage() {
             value={dateFrom}
             onChange={handleDateFromChange}
             aria-label={t('allStories.dateFrom')}
-            className="h-8 rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+            className="h-7 rounded-md border border-border/60 bg-card px-1.5 text-[11.5px] text-foreground outline-none focus:border-ring"
           />
           <input
             type="date"
             value={dateTo}
             onChange={handleDateToChange}
             aria-label={t('allStories.dateTo')}
-            className="h-8 rounded-md border border-border/60 bg-card px-2 text-xs text-foreground outline-none focus:border-ring"
+            className="h-7 rounded-md border border-border/60 bg-card px-1.5 text-[11.5px] text-foreground outline-none focus:border-ring"
           />
 
           {hasActiveFilters && (
             <button
               type="button"
               onClick={handleClearFilters}
-              className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <X size={12} />
               {t('allStories.clearFilters')}
