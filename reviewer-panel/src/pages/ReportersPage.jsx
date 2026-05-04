@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Loader2, Flame, Trophy, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, Flame, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import {
   fetchReporters,
   transformReporter,
   fetchLeaderboard,
 } from '../services/api';
-import { Avatar, SearchBar, PageHeader } from '../components/common';
+import { Avatar } from '../components/common';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -169,51 +169,86 @@ function ReportersPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Fixed top: page header + toolbar. Only the leaderboard rows
-          scroll so reviewers keep filters in view while paging. */}
-      <div className="shrink-0 max-w-[1400px] w-full px-6 lg:px-8 pt-6 lg:pt-8 pb-3">
-      <PageHeader
-        icon={Trophy}
-        title="Reporters"
-        subtitle="Reporters ranked by score"
-      />
+      {/* Header strip — matches Dashboard / All Stories / News Feed: inline
+          title on the left, no PageHeader card. Full-bleed (drops the
+          max-w-[1400px] cap) so the leaderboard table aligns with the
+          other queue pages. */}
+      <header className="shrink-0 flex flex-wrap items-center justify-between gap-4 px-6 pt-6">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground truncate">
+            {t('reporters.title', 'Reporters')}
+          </h1>
+          <p className="text-[12.5px] text-muted-foreground">
+            {t('reporters.subtitle', 'Reporters ranked by score')}
+          </p>
+        </div>
+      </header>
 
-      {/* Toolbar — canonical: filter (period toggle) left, search right
-          (ml-auto). Mirrors AllStoriesPage / BucketsList / NewsFeed. */}
-      <div className="flex items-center gap-3 mb-0 flex-wrap">
-        {/* Segmented period toggle — kept as a deliberate "pill group"
-            (not a SearchableSelect) because it's a single-purpose binary-ish
-            switch, but sized to h-8 so it aligns vertically with the
-            adjacent SearchBar and matches the system-wide field height. */}
-        <div className="inline-flex items-center bg-muted rounded-lg p-1 h-8">
-          {PERIODS.map((p) => (
-            <Button
-              key={p.key}
-              variant={period === p.key ? 'default' : 'ghost'}
-              size="sm"
-              className={cn(
-                'h-6 px-3 rounded-md text-xs font-medium',
-                period === p.key ? '' : 'text-muted-foreground hover:text-foreground'
-              )}
-              onClick={() => setPeriod(p.key)}
+      {/* Filter strip — same compact chrome as the other queue pages
+          (h-7, text-[11.5px], gap-1.5, border-b underline). Search left,
+          period chips next to it, clear button when search is set. */}
+      <div className="shrink-0 px-6 pt-3 pb-2">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-1 py-2.5">
+          <div className="relative">
+            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('reporters.searchPlaceholder')}
+              className="h-7 w-44 rounded-md border border-border/60 bg-card pl-7 pr-7 text-[11.5px] outline-none transition-colors focus:border-ring focus:shadow-[0_0_0_3px_rgba(250,108,56,0.08)]"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent"
+                aria-label="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Period chips — segmented control matching Dashboard's status
+              filter and News Feed's quick-source strip. Kept as chips
+              (not a dropdown) because three options is the chip sweet
+              spot and "this week / month / all-time" reads at a glance. */}
+          <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-card p-0.5">
+            {PERIODS.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setPeriod(p.key)}
+                aria-pressed={period === p.key}
+                className={cn(
+                  'rounded-[5px] px-2 py-1 text-[11.5px] font-medium transition-colors',
+                  period === p.key
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
             >
-              {p.label}
-            </Button>
-          ))}
-        </div>
-
-        <div className="ml-auto w-full max-w-[280px]">
-          <SearchBar
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('reporters.searchPlaceholder')}
-          />
+              <X size={12} />
+              {t('allStories.clearFilters', 'Clear')}
+            </button>
+          )}
         </div>
       </div>
-      </div>
 
-      {/* Scrollable region — only the rows scroll; thead is sticky. */}
-      <div className="flex-1 min-h-0 max-w-[1400px] w-full px-6 lg:px-8 pb-6 lg:pb-8 pt-3">
+      {/* Scrollable region — only the rows scroll; thead is sticky.
+          Full-bleed to match Dashboard / All Stories / News Feed. */}
+      <div className="flex-1 min-h-0 w-full px-6 pb-6">
       {loading ? (
         <div className="flex items-center justify-center py-16 text-sm text-muted-foreground italic">
           <Loader2 size={24} className="animate-spin" />
