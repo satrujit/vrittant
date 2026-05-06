@@ -404,6 +404,6 @@ def test_photo_only_first_message_is_silently_dropped(
     }
     r = client.post("/webhooks/whatsapp/gupshup", json=body)
     assert r.status_code == 200
-    assert r.json().get("skipped") == "media-only-no-caption"
+    assert r.json().get("skipped") == "media-only-prompt-sent"
     assert called == []  # classifier never invoked
     assert db.query(Story).count() == 0  # no story created

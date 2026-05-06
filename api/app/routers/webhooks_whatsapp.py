@@ -431,23 +431,28 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     # 3 / 4. No open draft — maybe classify, then create new story.
     #
     # Photo/document-only forwards with NO caption and NO accompanying text
-    # are silently dropped instead of becoming "Forwarded from WhatsApp"
-    # placeholder stories. Without this filter:
-    #   - the editor queue fills with content-less rows that the LLM has
-    #     no way to title (so they all share the placeholder headline);
-    #   - re-deliveries / retries from Gupshup race past the open-draft
-    #     stitching window and produce N duplicate stories for what was
-    #     a single forward batch (observed 2026-05-06 11:17 IST: 5 photos
-    #     became 4 stories of 7 media each).
-    # Reporters who actually want their photos filed should add a caption
-    # or precede the photos with a text line — the open-draft stitching
-    # then bundles the media under that text's story. The new dispatcher
-    # path (WHATSAPP_SELF_SERVICE_ENABLED=true) handles this differently
-    # via the explicit Submit button, so this filter only fires when the
-    # legacy ingest is in charge.
+    # don't become stories; instead the reporter gets a polite Odia prompt
+    # asking them to add a caption or send text to file the photo. Without
+    # this guard:
+    #   - the editor queue fills with content-less "Forwarded from WhatsApp"
+    #     placeholder rows that the LLM has no way to title;
+    #   - Gupshup retries on the same media race past the open-draft
+    #     stitching window and produce N duplicate stories from one batch
+    #     (observed 2026-05-06: 5 photos became 4 stories of 7 media each).
+    # Reporters who actually want their photos filed must add a caption or
+    # precede the photos with a text line — the open-draft stitching then
+    # bundles the media under that text's story (existing behaviour).
+    # The new dispatcher path (WHATSAPP_SELF_SERVICE_ENABLED=true) handles
+    # this differently via the explicit Submit button; this prompt only
+    # fires when the legacy ingest is in charge.
     if media_url and not (text or "").strip():
         db.commit()
-        return {"ok": True, "skipped": "media-only-no-caption"}
+        await _send_gupshup_reply(
+            sender_raw,
+            "📸 ଫଟୋ ପାଇଲି କିନ୍ତୁ ଏକାକୀ ଖବର ଦାଖଲ ହୋଇନଥାଏ।\n"
+            "ଏହାକୁ ଖବର ଭାବେ ଦାଖଲ କରିବାକୁ ଏକ କ୍ୟାପସନ୍ ଯୋଡନ୍ତୁ କିମ୍ବା ପ୍ରଥମେ ଲେଖା ପଠାନ୍ତୁ।",
+        )
+        return {"ok": True, "skipped": "media-only-prompt-sent"}
 
     # Media-only messages skip the classifier (always news intent).
     needs_triage = False
