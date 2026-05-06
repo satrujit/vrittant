@@ -619,7 +619,16 @@ def admin_update_story(
     # so re-saves of an unchanged headline don't false-positive. The check
     # is keyed on the original Story.submitted_at — that's the day this
     # story belongs to editorially, regardless of when the edit happens.
-    if resolved_headline:
+    #
+    # WhatsApp-forwarded items skip the check (docstring on
+    # _check_headline_duplicate_today says so on the create path; same
+    # intent applies on update). Multiple photo-only forwards land with
+    # the placeholder headline "Forwarded from WhatsApp" because the LLM
+    # has no text to extract from — the per-org display_id (PNS-26-NNN)
+    # disambiguates them in the queue. Without this skip, an editor
+    # opening any such story to edit triggers the check on the
+    # placeholder and can't save until they manually rename the headline.
+    if resolved_headline and story.source != "whatsapp":
         _check_headline_duplicate_today(
             db,
             org_id=org_id,
