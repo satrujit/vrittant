@@ -23,6 +23,10 @@ class Organization(Base):
     logo_url = Column(String, nullable=True, default="")
     theme_color = Column(String, nullable=True, default="#FA6C38")
     is_active = Column(Boolean, default=True)
+    # ISO 639-1 code: 'or' = Odia (default), 'hi' = Hindi, 'en' = English.
+    # Drives WhatsApp reply locale (resolved per-reporter via their org).
+    # Org admins can change this through Settings (UI dropdown TBD).
+    default_language = Column(String(2), nullable=False, default="or")
     created_at = Column(
         DateTime, default=now_ist
     )

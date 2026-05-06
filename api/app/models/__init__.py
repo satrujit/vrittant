@@ -8,6 +8,11 @@ from .otp_send_log import OtpSendLog
 from .sarvam_usage_log import SarvamUsageLog
 from .email_intake_log import EmailIntakeLog
 from .org_story_seq import OrgStorySeq
+from .whatsapp_buffer import (
+    WhatsAppPendingMedia,
+    WhatsAppThreadState,
+    WhatsAppContentDedup,
+)
 
 __all__ = [
     "Edition", "EditionPage", "EditionPageStory",
@@ -20,4 +25,7 @@ __all__ = [
     "SarvamUsageLog",
     "EmailIntakeLog",
     "OrgStorySeq",
+    "WhatsAppPendingMedia",
+    "WhatsAppThreadState",
+    "WhatsAppContentDedup",
 ]

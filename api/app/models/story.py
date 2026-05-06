@@ -56,6 +56,11 @@ class Story(Base):
     assigned_to = Column(String, ForeignKey("users.id"), nullable=True, index=True)
     assigned_match_reason = Column(String, nullable=True)  # category | region | load_balance | manual
     whatsapp_session_open_until = Column(DateTime, nullable=True)
+    # WhatsApp interactive-reply anchor: the message_id of our outbound
+    # "✓ Story saved" confirmation. When a reporter long-presses that
+    # confirmation and replies, the inbound webhook's context.id matches
+    # this column — we use it to find the story they're adding to.
+    whatsapp_confirm_message_id = Column(String, index=True)
     needs_triage = Column(Boolean, nullable=False, default=False, server_default=sql_text("false"))
 
     # WordPress auto-publish state (see services/wordpress_publisher.py)
