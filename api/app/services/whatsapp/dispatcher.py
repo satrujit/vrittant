@@ -15,7 +15,10 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models.user import User
-from app.services.whatsapp import outbound, i18n
+from app.models.whatsapp_buffer import WhatsAppThreadState
+from app.services.whatsapp import (
+    outbound, i18n, dedup, buffer, thread_state, ingest,
+)
 from app.services.whatsapp.classifier import classify, MessageKind
 
 
@@ -79,7 +82,85 @@ async def handle_quoted_reply(*, db, sender_phone, user, payload):
 
 
 async def handle_forward(*, db, sender_phone, user, payload):
-    raise NotImplementedError("handle_forward — implemented in Task 13")
+    """Handle an inbound text/media forward.
+
+    Owns: buffer the media, accumulate text, send/edit the [Submit]
+    [Cancel] interactive message. Does NOT create stories — that's
+    handle_button(submit_thread)'s job.
+    """
+    lang = i18n.resolve_lang(user)
+
+    # 1. Unregistered phone → polite decline
+    if user is None:
+        await outbound.send_text(to=sender_phone, body=i18n.t("err.unregistered", lang))
+        return
+
+    # 2. Auto-close stale thread (60s idle) so unrelated forward groups
+    #    from the same reporter don't false-merge.
+    if thread_state.is_idle(db, sender_phone, idle_seconds=60):
+        prior = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
+        if prior is not None and (prior.pending_text_count or prior.pending_media_count):
+            thread_state.close(db, sender_phone)
+            db.commit()
+
+    inner_type = payload.get("type")
+
+    # 3. Text branch
+    if inner_type == "text":
+        raw = payload.get("text", {}).get("body", "") or ""
+        cleaned = ingest.strip_forward_boilerplate(raw)
+        if ingest.word_count(cleaned) < 20:
+            await outbound.send_text(to=sender_phone, body=i18n.t("err.tooShort", lang))
+            return
+        h = dedup.hash_text(cleaned)
+        if dedup.is_duplicate(db, sender_phone, h):
+            return  # silent skip
+        dedup.mark_seen(db, sender_phone, h)
+        thread_state.increment_text(db, sender_phone, cleaned)
+
+    # 4. Media branch
+    elif inner_type in ("image", "document", "audio", "video"):
+        media_subdict = payload.get(inner_type) or {}
+        media_url = media_subdict.get("url") or media_subdict.get("id") or ""
+        if not media_url:
+            return  # malformed payload — silent
+        h = dedup.hash_text(media_url)  # SHA256 of URL as content_hash placeholder
+        if dedup.is_duplicate(db, sender_phone, h):
+            return
+        dedup.mark_seen(db, sender_phone, h)
+        caption = media_subdict.get("caption")
+        buffer.add_to_buffer(
+            db, sender_phone=sender_phone, media_type=inner_type,
+            gupshup_url=media_url, content_hash=h, caption=caption,
+        )
+        thread_state.increment_media(db, sender_phone)
+    else:
+        return  # not a forward we handle here
+
+    # 5. Send / edit the [Submit][Cancel] interactive
+    ts = thread_state.open_or_get(db, sender_phone)
+    total = (ts.pending_text_count or 0) + (ts.pending_media_count or 0)
+    if total <= 1:
+        body = i18n.t("thread.first", lang)
+    else:
+        body = i18n.t(
+            "thread.update", lang,
+            count=total,
+            text=ts.pending_text_count,
+            media=ts.pending_media_count,
+        )
+    new_msg_id = await outbound.edit_or_send_interactive(
+        to=sender_phone,
+        existing_msg_id=ts.interactive_msg_id,
+        body=body,
+        buttons=[
+            ("submit_thread", i18n.t("btn.submit", lang)),
+            ("cancel_thread", i18n.t("btn.cancel", lang)),
+        ],
+    )
+    if new_msg_id:
+        ts.interactive_msg_id = new_msg_id
+    db.commit()
 
 
 async def handle_skip(*, db, sender_phone, user, kind):
