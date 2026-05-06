@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.models.whatsapp_buffer import WhatsAppThreadState
 from app.services.whatsapp import (
-    outbound, i18n, dedup, buffer, thread_state, ingest,
+    outbound, i18n, dedup, buffer, thread_state, ingest, finalize,
 )
 from app.services.whatsapp.classifier import classify, MessageKind
 
@@ -74,7 +74,114 @@ async def dispatch(
 
 
 async def handle_button(*, db, sender_phone, user, payload):
-    raise NotImplementedError("handle_button — implemented in Task 14")
+    """Route a button-reply payload to the right action."""
+    from app.models.story import Story
+
+    lang = i18n.resolve_lang(user)
+    button_id = (
+        payload.get("interactive", {})
+        .get("button_reply", {})
+        .get("id", "")
+    )
+
+    # cancel_thread — drop everything
+    if button_id == "cancel_thread":
+        thread_state.close(db, sender_phone)
+        buffer.drain_for_sender(db, sender_phone, story_id=None)
+        db.commit()
+        await outbound.send_text(to=sender_phone, body=i18n.t("err.cancelled", lang))
+        return
+
+    # submit_thread — finalize a story
+    if button_id == "submit_thread":
+        if user is None:
+            return
+        story = await finalize.finalize_story_from_thread(
+            db=db, sender_phone=sender_phone, user=user,
+        )
+        if story is None:
+            await outbound.send_text(to=sender_phone, body=i18n.t("err.empty", lang))
+            return
+        db.commit()
+        display_id = getattr(story, "display_id", None) or story.id
+        body = (
+            i18n.t("saved.header", lang)
+            + "\n"
+            + i18n.t("saved.id", lang, display_id=display_id)
+            + "\n"
+            + (story.headline or "")[:80]
+        )
+        msg_id = await outbound.send_interactive_buttons(
+            to=sender_phone, body=body,
+            buttons=[
+                (f"add_to_{story.id}", i18n.t("btn.add", lang)),
+                ("today_list", i18n.t("btn.today", lang)),
+                ("open_menu", i18n.t("btn.openApp", lang)),
+            ],
+        )
+        if msg_id:
+            story.whatsapp_confirm_message_id = msg_id
+            db.commit()
+        return
+
+    # add_to_<story_id> — open an "add" thread targeting that story
+    if button_id.startswith("add_to_"):
+        story_id = button_id[len("add_to_"):]
+        story = db.query(Story).filter_by(id=story_id).first()
+        if story is None or (user and story.reporter_id != user.id):
+            await outbound.send_text(to=sender_phone, body=i18n.t("err.crossReporter", lang))
+            return
+        if story.status not in ("submitted", "flagged"):
+            await outbound.send_text(
+                to=sender_phone,
+                body=i18n.t(
+                    "err.locked", lang,
+                    display_id=getattr(story, "display_id", None) or story.id,
+                ),
+            )
+            return
+        # Reset / open an add-mode thread
+        thread_state.close(db, sender_phone)
+        thread_state.open_or_get(
+            db, sender_phone, thread_kind="add", target_story_id=story_id,
+        )
+        db.commit()
+        await outbound.send_text(
+            to=sender_phone,
+            body=i18n.t(
+                "adding.header", lang,
+                display_id=getattr(story, "display_id", None) or story.id,
+            ),
+        )
+        return
+
+    # today_list — Task 15 ships the real handler. For now route minimally.
+    if button_id == "today_list":
+        try:
+            from app.services.whatsapp import today as today_mod  # type: ignore
+            await today_mod.handle_today(db=db, sender_phone=sender_phone, user=user)
+        except (ImportError, AttributeError):
+            await outbound.send_text(
+                to=sender_phone,
+                body=i18n.t("today.empty", lang),
+            )
+        return
+
+    # open_menu — render the menu list message
+    if button_id == "open_menu":
+        await outbound.send_interactive_list(
+            to=sender_phone,
+            body=i18n.t("menu.prompt", lang),
+            button_label=i18n.t("btn.menu", lang),
+            sections=[
+                ("Submit", [("just_forward", "Just forward your message", None)]),
+                ("View",   [("today",        "My stories filed today",     None)]),
+                ("Help",   [("help",         "How to use Vrittant on WhatsApp", None)]),
+            ],
+        )
+        return
+
+    # Unknown button id — silent
 
 
 async def handle_quoted_reply(*, db, sender_phone, user, payload):
