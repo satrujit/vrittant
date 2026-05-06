@@ -17,6 +17,7 @@ import NewsFeedPage from './pages/NewsFeedPage';
 import ReviewPage from './pages/ReviewPage';
 import WidgetsPage from './pages/WidgetsPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import AppRedirectPage from './pages/AppRedirectPage';
 
 const LANG_MAP = { odia: 'or', english: 'en', hindi: 'hi' };
 
@@ -47,6 +48,8 @@ function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+            <Route path="/r/today" element={<AppRedirectPage />} />
+            <Route path="/r/:id" element={<AppRedirectPage />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
                 <Route path="/" element={<DashboardPage />} />

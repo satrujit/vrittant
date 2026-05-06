@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.attentionstack.vrittant",
+      "sha256_cert_fingerprints": [
+        "C4:C1:49:44:1C:3B:7A:50:CF:71:87:4F:22:5C:4D:84:04:2B:7C:11:43:43:50:82:DD:F7:56:E4:0B:B1:F4:BB"
+      ]
+    }
+  }
+]

@@ -3,13 +3,41 @@
     {
       "target": "production",
       "public": "dist",
-      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "ignore": ["firebase.json", "**/.*", "!**/.well-known/**", "**/node_modules/**"],
+      "headers": [
+        {
+          "source": "/.well-known/apple-app-site-association",
+          "headers": [
+            { "key": "Content-Type", "value": "application/json" }
+          ]
+        },
+        {
+          "source": "/.well-known/assetlinks.json",
+          "headers": [
+            { "key": "Content-Type", "value": "application/json" }
+          ]
+        }
+      ],
       "rewrites": [{ "source": "**", "destination": "/index.html" }]
     },
     {
       "target": "uat",
       "public": "dist",
-      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "ignore": ["firebase.json", "**/.*", "!**/.well-known/**", "**/node_modules/**"],
+      "headers": [
+        {
+          "source": "/.well-known/apple-app-site-association",
+          "headers": [
+            { "key": "Content-Type", "value": "application/json" }
+          ]
+        },
+        {
+          "source": "/.well-known/assetlinks.json",
+          "headers": [
+            { "key": "Content-Type", "value": "application/json" }
+          ]
+        }
+      ],
       "rewrites": [{ "source": "**", "destination": "/index.html" }]
     }
   ]
