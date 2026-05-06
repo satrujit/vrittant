@@ -23,9 +23,11 @@ from datetime import timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import text as _sql
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..database import get_db
 from ..models.story import Story
 from ..models.user import User
@@ -293,6 +295,24 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
         return {"ok": True, "skipped": "duplicate"}
 
     sender_phone = _normalize_phone(sender_raw)
+
+    # New self-service path. Behind a flag so the legacy ingest stays the
+    # default until every handler ships (Tasks 12-16) and we've smoke-
+    # tested. Flag flip is reversible — flipping back to False routes
+    # traffic to the legacy path, no DB rollback.
+    if settings.WHATSAPP_SELF_SERVICE_ENABLED:
+        from app.services.whatsapp.dispatcher import (
+            dispatch as _new_dispatch,
+            resolve_user_for_phone as _new_resolve_user,
+        )
+        # Record dedup row so retries of this same Gupshup message_id
+        # don't re-enter the dispatcher. Mirrors the legacy behaviour.
+        db.add(WhatsappInboundDedup(message_id=msg_id, received_at=now_ist()))
+        db.commit()
+        user = _new_resolve_user(db, sender_phone)
+        await _new_dispatch(db=db, sender_phone=sender_phone, user=user, payload=payload)
+        return JSONResponse({"status": "ok"})
+
     user = (
         db.query(User)
         .filter(User.phone == sender_phone, User.is_active == True)  # noqa: E712

@@ -107,6 +107,14 @@ class Settings(BaseSettings):
         "https://play.google.com/store/apps/details?id=com.attentionstack.vrittant"
     )
 
+    # Master flag for the WhatsApp self-service path (interactive buttons,
+    # universal media buffer, today's-stories, add-to-existing-story).
+    # When False, /webhooks/whatsapp/* uses the legacy ingest. Flip to True
+    # only after the dispatcher handlers (Tasks 12-16) are all implemented
+    # and UAT smoke-tested. Reversible: setting back to False routes traffic
+    # to the legacy path again, no DB rollback needed.
+    WHATSAPP_SELF_SERVICE_ENABLED: bool = False
+
     @property
     def cors_origin_list(self) -> list[str]:
         if self.CORS_ORIGINS == "*":
