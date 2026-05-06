@@ -85,6 +85,10 @@ dependencies:
   # Sentry account configured yet) Sentry no-ops cleanly so we never
   # ship a build that crashes because crash-reporting is misconfigured.
   sentry_flutter: ^9.5.0
+  # Universal Links / App Links listener for vrittant.in/r/* deep links.
+  # Pairs with the iOS associated-domains entitlement and the Android
+  # intent-filter. See deep_link_mapper.dart for URL → route mapping.
+  app_links: ^6.3.2
 
 dev_dependencies:
   flutter_test:
