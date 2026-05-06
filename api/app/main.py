@@ -79,6 +79,22 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+
+# Transient-DB-error retry middleware, scoped to /webhooks/whatsapp/* only.
+# Webhooks are idempotent at the Gupshup boundary (whatsapp_inbound_dedup
+# keys on message_id) so a same-request replay is safe. Other routes are
+# NOT idempotent and are intentionally not wrapped — a retry on a
+# non-idempotent endpoint risks double side-effects.
+from .services.whatsapp.reliability import retry_on_transient_db_errors
+
+
+@app.middleware("http")
+async def _whatsapp_retry_wrapper(request: Request, call_next):
+    if request.url.path.startswith("/webhooks/whatsapp"):
+        return await retry_on_transient_db_errors(request, call_next)
+    return await call_next(request)
+
+
 @app.on_event("startup")
 def warm_db_pool():
     """Warm the database connection pool and ensure pg_trgm extension exists."""
