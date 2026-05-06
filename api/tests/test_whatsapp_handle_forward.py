@@ -37,7 +37,7 @@ def _run(coro):
 @patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive", new_callable=AsyncMock)
 def test_unregistered_sender_gets_polite_decline(mock_edit, mock_send, db):
     from app.services.whatsapp.dispatcher import handle_forward
-    payload = {"type": "text", "text": {"body": "Twenty word message at least to clear the threshold for the test bypass."}}
+    payload = {"type": "text", "payload": {"text": "Twenty word message at least to clear the threshold for the test bypass."}}
     _run(handle_forward(db=db, sender_phone="+91999", user=None, payload=payload))
     db.commit()
     mock_send.assert_called_once()
@@ -53,7 +53,7 @@ def test_unregistered_sender_gets_polite_decline(mock_edit, mock_send, db):
 def test_under_20_words_rejected_without_thread(mock_edit, mock_send, db):
     from app.services.whatsapp.dispatcher import handle_forward
     user = _seed_user(db, lang="en")
-    payload = {"type": "text", "text": {"body": "too short and lazy"}}
+    payload = {"type": "text", "payload": {"text": "too short and lazy"}}
     _run(handle_forward(db=db, sender_phone="+919", user=user, payload=payload))
     db.commit()
     body = mock_send.call_args.kwargs["body"]
@@ -69,7 +69,7 @@ def test_text_forward_opens_thread_and_sends_buttons(mock_edit, mock_send, db):
     from app.services.whatsapp.dispatcher import handle_forward
     user = _seed_user(db, lang="en")
     body = "Bypoll results announced today across the state. BJP won three seats and Congress won one in a closely fought contest."
-    payload = {"type": "text", "text": {"body": body}}
+    payload = {"type": "text", "payload": {"text": body}}
 
     _run(handle_forward(db=db, sender_phone="+919", user=user, payload=payload))
     db.commit()
@@ -96,7 +96,7 @@ def test_text_forward_opens_thread_and_sends_buttons(mock_edit, mock_send, db):
 def test_image_forward_buffers_media_no_story(mock_edit, db):
     from app.services.whatsapp.dispatcher import handle_forward
     user = _seed_user(db)
-    payload = {"type": "image", "image": {"id": "m1", "url": "https://gupshup/m1"}}
+    payload = {"type": "image", "payload": {"url": "https://gupshup/m1"}}
 
     _run(handle_forward(db=db, sender_phone="+919", user=user, payload=payload))
     db.commit()
@@ -124,12 +124,12 @@ def test_text_then_image_in_same_thread(mock_edit, db):
     # Text first
     text_body = "Bypoll results announced today across the state. BJP won three seats with comfortable margins everywhere in a closely fought election held this week."
     _run(handle_forward(db=db, sender_phone="+919", user=user,
-                         payload={"type": "text", "text": {"body": text_body}}))
+                         payload={"type": "text", "payload": {"text": text_body}}))
     db.commit()
 
     # Then image
     _run(handle_forward(db=db, sender_phone="+919", user=user,
-                         payload={"type": "image", "image": {"id": "m1", "url": "https://gupshup/m1"}}))
+                         payload={"type": "image", "payload": {"url": "https://gupshup/m1"}}))
     db.commit()
 
     ts = db.query(WhatsAppThreadState).filter_by(sender_phone="+919").first()
@@ -145,7 +145,7 @@ def test_duplicate_text_silently_skipped(mock_edit, db):
     from app.services.whatsapp.dispatcher import handle_forward
     user = _seed_user(db)
     text = "Bypoll results announced today across the state. BJP won three seats with margins in a closely fought election held this week across districts."
-    payload = {"type": "text", "text": {"body": text}}
+    payload = {"type": "text", "payload": {"text": text}}
 
     _run(handle_forward(db=db, sender_phone="+919", user=user, payload=payload))
     db.commit()
@@ -166,7 +166,7 @@ def test_forwarded_boilerplate_stripped(mock_edit, db):
     user = _seed_user(db)
     raw = "> Forwarded from: Pradip\n> Original sender: A\nBypoll results announced today across the state with BJP winning three seats in a closely fought election held this week across all districts."
     _run(handle_forward(db=db, sender_phone="+919", user=user,
-                         payload={"type": "text", "text": {"body": raw}}))
+                         payload={"type": "text", "payload": {"text": raw}}))
     db.commit()
     ts = db.query(WhatsAppThreadState).filter_by(sender_phone="+919").first()
     # Boilerplate must NOT be in the stored body
@@ -196,7 +196,7 @@ def test_idle_thread_force_closed_before_new_forward(mock_edit, db):
 
     text = "Fresh news arrived now across the state today with BJP winning three seats convincingly in a closely fought election held this week."
     _run(handle_forward(db=db, sender_phone="+919", user=user,
-                         payload={"type": "text", "text": {"body": text}}))
+                         payload={"type": "text", "payload": {"text": text}}))
     db.commit()
 
     ts = db.query(WhatsAppThreadState).filter_by(sender_phone="+919").first()
@@ -213,7 +213,7 @@ def test_idle_thread_force_closed_before_new_forward(mock_edit, db):
 def test_audio_forward_buffers_without_transcription(mock_edit, db):
     from app.services.whatsapp.dispatcher import handle_forward
     user = _seed_user(db)
-    payload = {"type": "audio", "audio": {"id": "a1", "url": "https://gupshup/a1"}}
+    payload = {"type": "audio", "payload": {"url": "https://gupshup/a1"}}
 
     _run(handle_forward(db=db, sender_phone="+919", user=user, payload=payload))
     db.commit()
@@ -231,9 +231,7 @@ def test_audio_forward_buffers_without_transcription(mock_edit, db):
 def test_pdf_forward_buffers_as_document(mock_edit, db):
     from app.services.whatsapp.dispatcher import handle_forward
     user = _seed_user(db)
-    payload = {"type": "document", "document": {
-        "id": "d1", "url": "https://gupshup/d1", "filename": "press-release.pdf"
-    }}
+    payload = {"type": "document", "payload": {"url": "https://gupshup/d1"}}
 
     _run(handle_forward(db=db, sender_phone="+919", user=user, payload=payload))
     db.commit()
@@ -251,7 +249,7 @@ def test_first_forward_uses_thread_first_template(mock_edit, db):
     user = _seed_user(db, lang="en")
     text = "Bypoll results announced today across the state with BJP winning three seats convincingly today in a closely fought election held this week."
     _run(handle_forward(db=db, sender_phone="+919", user=user,
-                         payload={"type": "text", "text": {"body": text}}))
+                         payload={"type": "text", "payload": {"text": text}}))
     body = mock_edit.call_args.kwargs["body"]
     assert "Got 1 message" in body
 
@@ -264,9 +262,9 @@ def test_subsequent_forward_uses_thread_update_template(mock_edit, db):
     user = _seed_user(db, lang="en")
     text = "Bypoll results announced today across the state with BJP winning three seats convincingly in a closely fought election held this week across districts."
     _run(handle_forward(db=db, sender_phone="+919", user=user,
-                         payload={"type": "text", "text": {"body": text}}))
+                         payload={"type": "text", "payload": {"text": text}}))
     _run(handle_forward(db=db, sender_phone="+919", user=user,
-                         payload={"type": "image", "image": {"url": "https://gupshup/x", "id": "m"}}))
+                         payload={"type": "image", "payload": {"url": "https://gupshup/x"}}))
     db.commit()
     body = mock_edit.call_args.kwargs["body"]
     assert "Got 2 messages" in body

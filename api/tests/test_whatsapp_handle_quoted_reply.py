@@ -28,7 +28,7 @@ def _quoted_text_payload(context_id: str, body: str) -> dict:
     return {
         "type": "text",
         "context": {"id": context_id},
-        "text": {"body": body},
+        "payload": {"text": body},
     }
 
 
@@ -138,7 +138,7 @@ def test_quoted_reply_with_image_buffers_into_add_thread(mock_edit, db):
     payload = {
         "type": "image",
         "context": {"id": "wamid.MINE"},
-        "image": {"id": "m1", "url": "https://gupshup/m1"},
+        "payload": {"url": "https://gupshup/m1"},
     }
     _run(handle_quoted_reply(db=db, sender_phone="+919", user=user, payload=payload))
     db.commit()

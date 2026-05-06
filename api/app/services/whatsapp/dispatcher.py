@@ -293,10 +293,15 @@ async def handle_forward(*, db, sender_phone, user, payload):
             db.commit()
 
     inner_type = payload.get("type")
+    # Gupshup v2 wraps the actual content under `payload.payload` —
+    # for text it's {"text": "..."}, for media it's
+    # {"url": "...", "caption": "...", "name": "...", "contentType": "..."}.
+    # Mirrors the legacy _extract_content() helper in webhooks_whatsapp.py.
+    inner = payload.get("payload") or {}
 
     # 3. Text branch
     if inner_type == "text":
-        raw = payload.get("text", {}).get("body", "") or ""
+        raw = inner.get("text") or ""
         cleaned = ingest.strip_forward_boilerplate(raw)
         if ingest.word_count(cleaned) < 20:
             await outbound.send_text(to=sender_phone, body=i18n.t("err.tooShort", lang))
@@ -309,15 +314,14 @@ async def handle_forward(*, db, sender_phone, user, payload):
 
     # 4. Media branch
     elif inner_type in ("image", "document", "audio", "video"):
-        media_subdict = payload.get(inner_type) or {}
-        media_url = media_subdict.get("url") or media_subdict.get("id") or ""
+        media_url = inner.get("url") or ""
         if not media_url:
             return  # malformed payload — silent
         h = dedup.hash_text(media_url)  # SHA256 of URL as content_hash placeholder
         if dedup.is_duplicate(db, sender_phone, h):
             return
         dedup.mark_seen(db, sender_phone, h)
-        caption = media_subdict.get("caption")
+        caption = inner.get("caption") or inner.get("name")
         buffer.add_to_buffer(
             db, sender_phone=sender_phone, media_type=inner_type,
             gupshup_url=media_url, content_hash=h, caption=caption,

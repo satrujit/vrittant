@@ -59,7 +59,7 @@ async def send_text(*, to: str, body: str) -> Optional[str]:
     except Exception as e:
         log.warning("send_text raised: %r", e)
         return None
-    if r.status_code != 200:
+    if r.status_code not in (200, 202):
         log.warning("send_text http %s: %s", r.status_code, r.text[:200])
         return None
     try:
@@ -108,7 +108,7 @@ async def send_interactive_buttons(
     except Exception as e:
         log.warning("send_interactive_buttons raised: %r", e)
         return None
-    if r.status_code != 200:
+    if r.status_code not in (200, 202):
         log.warning("send_interactive_buttons http %s: %s", r.status_code, r.text[:200])
         return None
     try:
@@ -151,7 +151,7 @@ async def send_interactive_list(
     except Exception as e:
         log.warning("send_interactive_list raised: %r", e)
         return None
-    if r.status_code != 200:
+    if r.status_code not in (200, 202):
         log.warning("send_interactive_list http %s: %s", r.status_code, r.text[:200])
         return None
     try:
@@ -184,7 +184,7 @@ async def edit_or_send_interactive(
         try:
             async with httpx.AsyncClient(timeout=10) as c:
                 r = await c.post(f"{GUPSHUP_BASE}/msg/edit", data=edit_payload, headers=_headers())
-            if r.status_code == 200:
+            if r.status_code in (200, 202):
                 return existing_msg_id
             log.info("interactive edit returned %s, falling back to fresh send", r.status_code)
         except Exception as e:
