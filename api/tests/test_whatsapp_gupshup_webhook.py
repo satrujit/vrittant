@@ -373,9 +373,19 @@ def test_unclear_first_message_creates_story_with_triage_flag(
     assert s.needs_triage is True
 
 
-def test_photo_only_first_message_skips_classifier(
+def test_photo_only_first_message_is_silently_dropped(
     client, db, gupshup_reporter, no_send, fake_persist, monkeypatch
 ):
+    """A photo with no caption and no accompanying text creates NO story.
+
+    Earlier behaviour produced a "Forwarded from WhatsApp" placeholder
+    story — but those filled the editor queue with content-less rows
+    indistinguishable by headline, and Gupshup retries on the same media
+    raced past the open-draft stitching window and produced N duplicate
+    stories per single batch. We now silently drop these forwards. The
+    new self-service dispatcher (WHATSAPP_SELF_SERVICE_ENABLED=true)
+    surfaces the same intent through its Submit-button flow instead.
+    """
     from app.routers import webhooks_whatsapp
     called = []
     async def boom(_):
@@ -392,7 +402,8 @@ def test_photo_only_first_message_skips_classifier(
             "sender": {"phone": "919876543210"},
         },
     }
-    client.post("/webhooks/whatsapp/gupshup", json=body)
+    r = client.post("/webhooks/whatsapp/gupshup", json=body)
+    assert r.status_code == 200
+    assert r.json().get("skipped") == "media-only-no-caption"
     assert called == []  # classifier never invoked
-    assert db.query(Story).count() == 1
-    assert db.query(Story).first().needs_triage is False
+    assert db.query(Story).count() == 0  # no story created

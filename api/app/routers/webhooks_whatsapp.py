@@ -429,6 +429,26 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
         return {"ok": True, "appended_to": open_draft.id}
 
     # 3 / 4. No open draft — maybe classify, then create new story.
+    #
+    # Photo/document-only forwards with NO caption and NO accompanying text
+    # are silently dropped instead of becoming "Forwarded from WhatsApp"
+    # placeholder stories. Without this filter:
+    #   - the editor queue fills with content-less rows that the LLM has
+    #     no way to title (so they all share the placeholder headline);
+    #   - re-deliveries / retries from Gupshup race past the open-draft
+    #     stitching window and produce N duplicate stories for what was
+    #     a single forward batch (observed 2026-05-06 11:17 IST: 5 photos
+    #     became 4 stories of 7 media each).
+    # Reporters who actually want their photos filed should add a caption
+    # or precede the photos with a text line — the open-draft stitching
+    # then bundles the media under that text's story. The new dispatcher
+    # path (WHATSAPP_SELF_SERVICE_ENABLED=true) handles this differently
+    # via the explicit Submit button, so this filter only fires when the
+    # legacy ingest is in charge.
+    if media_url and not (text or "").strip():
+        db.commit()
+        return {"ok": True, "skipped": "media-only-no-caption"}
+
     # Media-only messages skip the classifier (always news intent).
     needs_triage = False
     if text:
