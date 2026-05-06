@@ -59,6 +59,8 @@ def test_send_text_returns_none_on_http_error():
 
 
 def test_send_interactive_buttons_constructs_correct_payload():
+    """Asserts the Gupshup `quick_reply` proprietary shape (NOT WhatsApp
+    Cloud API's `type: "interactive"` shape)."""
     cls, instance = _mock_async_client(_mock_httpx_response(200, {"messageId": "wamid.Y"}))
     with patch.object(outbound.httpx, "AsyncClient", cls):
         msg_id = asyncio.run(outbound.send_interactive_buttons(
@@ -68,15 +70,17 @@ def test_send_interactive_buttons_constructs_correct_payload():
         ))
     assert msg_id == "wamid.Y"
     msg_payload = json.loads(instance.post.call_args.kwargs["data"]["message"])
-    assert msg_payload["type"] == "interactive"
-    assert msg_payload["interactive"]["type"] == "button"
-    assert msg_payload["interactive"]["body"]["text"] == "Got 1."
-    button_titles = [b["reply"]["title"] for b in msg_payload["interactive"]["action"]["buttons"]]
-    assert button_titles == ["Submit", "Cancel"]
+    assert msg_payload["type"] == "quick_reply"
+    assert msg_payload["content"]["type"] == "text"
+    assert msg_payload["content"]["text"] == "Got 1."
+    options = msg_payload["options"]
+    assert [(o["title"], o["postbackText"]) for o in options] == [
+        ("Submit", "submit_thread"), ("Cancel", "cancel_thread"),
+    ]
 
 
 def test_send_interactive_buttons_truncates_labels_to_20_chars():
-    """Gupshup/WhatsApp caps button labels at 20 characters."""
+    """WhatsApp caps button labels at 20 characters (UI limit)."""
     cls, instance = _mock_async_client(_mock_httpx_response(200, {"messageId": "x"}))
     with patch.object(outbound.httpx, "AsyncClient", cls):
         asyncio.run(outbound.send_interactive_buttons(
@@ -84,13 +88,14 @@ def test_send_interactive_buttons_truncates_labels_to_20_chars():
             buttons=[("id", "A" * 50)],
         ))
     msg_payload = json.loads(instance.post.call_args.kwargs["data"]["message"])
-    assert len(msg_payload["interactive"]["action"]["buttons"][0]["reply"]["title"]) == 20
+    assert len(msg_payload["options"][0]["title"]) == 20
 
 
 # ── send_interactive_list ────────────────────────────────────────
 
 
 def test_send_interactive_list_constructs_correct_payload():
+    """Asserts Gupshup's `list` proprietary shape."""
     cls, instance = _mock_async_client(_mock_httpx_response(200, {"messageId": "wamid.L"}))
     with patch.object(outbound.httpx, "AsyncClient", cls):
         msg_id = asyncio.run(outbound.send_interactive_list(
@@ -106,12 +111,13 @@ def test_send_interactive_list_constructs_correct_payload():
         ))
     assert msg_id == "wamid.L"
     msg_payload = json.loads(instance.post.call_args.kwargs["data"]["message"])
-    assert msg_payload["interactive"]["type"] == "list"
-    assert msg_payload["interactive"]["action"]["button"] == "Open menu"
-    rows = msg_payload["interactive"]["action"]["sections"][0]["rows"]
-    assert rows[0]["id"] == "today"
-    assert rows[0]["description"] == "Filed in last 24h"
-    assert "description" not in rows[1]  # None description -> field omitted
+    assert msg_payload["type"] == "list"
+    assert msg_payload["body"] == "Pick one"
+    assert msg_payload["globalButtons"][0]["title"] == "Open menu"
+    options = msg_payload["items"][0]["options"]
+    assert options[0]["postbackText"] == "today"
+    assert options[0]["description"] == "Filed in last 24h"
+    assert "description" not in options[1]
 
 
 # ── edit_or_send_interactive ─────────────────────────────────────

@@ -4,11 +4,20 @@ The dispatcher uses the result to delegate to the right handler. Keeping
 classification pure-functional + payload-shaped makes the dispatcher
 trivially testable.
 
-Note on QUOTED_REPLY: any inbound message (text OR media) whose payload
-includes a `context.id` is treated as a reply to one of our outbound
-messages. That `context.id` is the message_id of OUR earlier outbound,
-which the add-to-story handler looks up against
-stories.whatsapp_confirm_message_id.
+Gupshup partner API shapes (different from WhatsApp Cloud API native):
+- Button tap from a `quick_reply` we sent: `type` is one of
+  `button_reply`, `quick_reply`, `button` (the field name varies by
+  Gupshup tier and we accept all three).
+- List row tap: `type` is `list_reply` (sometimes also delivered as a
+  text whose body matches the row's `postbackText`).
+- Text / media forwards: `type` is `text` / `image` / etc., with content
+  under `payload.payload` (see _extract_content() in the legacy router).
+
+Defensive fallback: an inbound text whose body is exactly one of our
+known button IDs (or matches an `add_to_<uuid>` prefix) is treated as a
+button tap. Some Gupshup tiers deliver button taps as plain text
+messages whose body equals the postbackText we configured, instead of
+the typed `button_reply` shape.
 """
 from enum import Enum
 
@@ -25,11 +34,37 @@ class MessageKind(str, Enum):
 
 _FORWARD_TYPES = frozenset({"text", "image", "document", "audio", "video"})
 
+# Gupshup-native interactive types we recognise.
+_BUTTON_TYPES = frozenset({
+    "interactive",       # WhatsApp Cloud API native (just in case)
+    "button_reply",      # Gupshup variant 1
+    "list_reply",        # Gupshup list-row tap
+    "quick_reply",       # Gupshup variant 2
+    "button",            # Gupshup variant 3 (some tiers)
+})
+
+# Known button ids — used to recognise a text-shaped button tap.
+KNOWN_BUTTON_IDS = frozenset({
+    "submit_thread", "cancel_thread",
+    "today_list", "open_menu",
+    "save_additions", "discard_additions",
+    "today", "help", "just_forward",  # menu rows
+})
+KNOWN_BUTTON_PREFIXES = ("add_to_",)
+
+
+def _looks_like_button_text(body: str) -> bool:
+    body = (body or "").strip()
+    if not body:
+        return False
+    if body in KNOWN_BUTTON_IDS:
+        return True
+    return any(body.startswith(p) for p in KNOWN_BUTTON_PREFIXES)
+
 
 def classify(payload: dict) -> MessageKind:
-    """Pure function. `payload` is the inner message dict from Gupshup,
-    not the outer envelope. Caller must extract the inner payload before
-    calling.
+    """Pure function. `payload` is the Gupshup inner message dict
+    (`outer["payload"]`), not the outer webhook envelope.
 
     Order matters: BUTTON before QUOTED_REPLY (an interactive reply
     technically has a context, but we want to dispatch it as a button).
@@ -37,8 +72,14 @@ def classify(payload: dict) -> MessageKind:
     forward — it's an add-to-story).
     """
     t = payload.get("type")
-    if t == "interactive":
+    if t in _BUTTON_TYPES:
         return MessageKind.BUTTON
+    # Defensive: some Gupshup tiers send button taps as plain text whose
+    # body == the postbackText we configured.
+    if t == "text":
+        body = (payload.get("payload") or {}).get("text") or ""
+        if _looks_like_button_text(body):
+            return MessageKind.BUTTON
     if payload.get("context"):
         return MessageKind.QUOTED_REPLY
     if t in _FORWARD_TYPES:

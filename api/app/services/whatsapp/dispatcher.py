@@ -73,16 +73,47 @@ async def dispatch(
 # the flag OFF until handlers are filled is non-negotiable.
 
 
+def _extract_button_id(payload: dict) -> str:
+    """Extract the button id from any of the Gupshup or WhatsApp Cloud
+    API inbound shapes. Returns "" if no recognised shape matches.
+
+    Tries (in order):
+    - WhatsApp Cloud API native: payload.interactive.button_reply.id
+                               / payload.interactive.list_reply.id
+    - Gupshup quick_reply tap:   payload.payload.postbackText
+                               / payload.payload.reply
+                               / payload.payload.payload
+                               / payload.payload.id
+    - Defensive text fallback:   payload.payload.text == known button id
+    """
+    interactive = payload.get("interactive") or {}
+    if isinstance(interactive, dict):
+        for sub in ("button_reply", "list_reply"):
+            ref = interactive.get(sub) or {}
+            if isinstance(ref, dict) and ref.get("id"):
+                return ref["id"]
+
+    inner = payload.get("payload") or {}
+    if isinstance(inner, dict):
+        for key in ("postbackText", "reply", "payload", "id"):
+            v = inner.get(key)
+            if isinstance(v, str) and v:
+                return v
+        # Last resort: a plain text body whose value is one of our known
+        # button ids — Gupshup forwards button taps this way on some tiers.
+        text = (inner.get("text") or "").strip()
+        from app.services.whatsapp.classifier import _looks_like_button_text
+        if _looks_like_button_text(text):
+            return text
+    return ""
+
+
 async def handle_button(*, db, sender_phone, user, payload):
     """Route a button-reply payload to the right action."""
     from app.models.story import Story
 
     lang = i18n.resolve_lang(user)
-    button_id = (
-        payload.get("interactive", {})
-        .get("button_reply", {})
-        .get("id", "")
-    )
+    button_id = _extract_button_id(payload)
 
     # cancel_thread — drop everything
     if button_id == "cancel_thread":

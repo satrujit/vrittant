@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
 from typing import Optional, Sequence, Tuple
 
 import httpx
@@ -73,23 +74,44 @@ def _build_interactive_button_message(
     buttons: Sequence[Tuple[str, str]],
     header: Optional[str] = None,
 ) -> dict:
-    """Construct the WhatsApp Cloud API interactive-button payload.
-    Button labels are truncated to 20 chars per WhatsApp's spec."""
+    """Construct Gupshup's quick_reply payload for buttons.
+
+    Gupshup partner API v1 uses a proprietary format that is NOT the
+    WhatsApp Cloud API native shape — sending `type: "interactive"`
+    causes Gupshup to forward the JSON literally as a text message
+    (the user sees raw `{"type":...}` in WhatsApp).
+
+    Their format for buttons:
+
+        {
+          "type": "quick_reply",
+          "msgid": "<unique-id>",
+          "content": {"type": "text", "header": "...", "text": "..."},
+          "options": [
+            {"type": "text", "title": "Submit", "postbackText": "submit_thread"},
+            ...
+          ]
+        }
+
+    `postbackText` is what comes back in the inbound webhook when the
+    button is tapped — it replaces WhatsApp Cloud API's button id.
+    Labels still capped at 20 chars (WhatsApp UI limit, regardless of
+    API surface).
+    """
     msg = {
-        "type": "interactive",
-        "interactive": {
-            "type": "button",
-            "body": {"text": body},
-            "action": {
-                "buttons": [
-                    {"type": "reply", "reply": {"id": bid, "title": label[:20]}}
-                    for bid, label in list(buttons)[:3]
-                ],
-            },
+        "type": "quick_reply",
+        "msgid": str(uuid.uuid4())[:24],
+        "content": {
+            "type": "text",
+            "text": body,
         },
+        "options": [
+            {"type": "text", "title": label[:20], "postbackText": bid}
+            for bid, label in list(buttons)[:3]
+        ],
     }
     if header:
-        msg["interactive"]["header"] = {"type": "text", "text": header}
+        msg["content"]["header"] = header
     return msg
 
 
@@ -122,28 +144,53 @@ async def send_interactive_list(
     sections: Sequence[Tuple[str, Sequence[Tuple[str, str, Optional[str]]]]],
     header: Optional[str] = None,
 ) -> Optional[str]:
-    """Send a List Message. `sections` shape:
-    [(section_title, [(row_id, row_title, row_description_or_None), ...]), ...]
+    """Send a List Message via Gupshup's `list` proprietary format.
+
+    Gupshup's shape:
+
+        {
+          "type": "list",
+          "msgid": "<unique-id>",
+          "title": "Header",
+          "body": "Body text",
+          "globalButtons": [{"type": "text", "title": "Open menu"}],
+          "items": [
+            {
+              "title": "Section title",
+              "subtitle": "...",  // optional
+              "options": [
+                {"type": "text", "title": "Row title",
+                 "description": "Row desc", "postbackText": "row_id"}
+              ]
+            }
+          ]
+        }
+
+    `postbackText` becomes the inbound payload when a row is tapped.
     """
-    msg_sections = []
+    items = []
     for title, rows in sections:
-        out_rows = []
+        options = []
         for rid, rtitle, rdesc in list(rows)[:10]:
-            row: dict = {"id": rid, "title": rtitle[:24]}
+            opt: dict = {
+                "type": "text",
+                "title": rtitle[:24],
+                "postbackText": rid,
+            }
             if rdesc:
-                row["description"] = rdesc[:72]
-            out_rows.append(row)
-        msg_sections.append({"title": title[:24], "rows": out_rows})
+                opt["description"] = rdesc[:72]
+            options.append(opt)
+        items.append({"title": title[:24], "options": options})
+
     msg = {
-        "type": "interactive",
-        "interactive": {
-            "type": "list",
-            "body": {"text": body},
-            "action": {"button": button_label[:20], "sections": msg_sections[:10]},
-        },
+        "type": "list",
+        "msgid": str(uuid.uuid4())[:24],
+        "body": body,
+        "globalButtons": [{"type": "text", "title": button_label[:20]}],
+        "items": items[:10],
     }
     if header:
-        msg["interactive"]["header"] = {"type": "text", "text": header}
+        msg["title"] = header
     payload = {**_base_payload(to), "message": json.dumps(msg)}
     try:
         async with httpx.AsyncClient(timeout=10) as c:
