@@ -92,13 +92,23 @@ async def handle_button(*, db, sender_phone, user, payload):
         await outbound.send_text(to=sender_phone, body=i18n.t("err.cancelled", lang))
         return
 
-    # submit_thread — finalize a story
+    # submit_thread — finalize a story (or append to existing if add-mode)
     if button_id == "submit_thread":
         if user is None:
             return
-        story = await finalize.finalize_story_from_thread(
-            db=db, sender_phone=sender_phone, user=user,
+        ts_pre = (
+            db.query(WhatsAppThreadState)
+            .filter_by(sender_phone=sender_phone)
+            .first()
         )
+        if ts_pre is not None and ts_pre.thread_kind == "add":
+            story = await finalize.append_to_story(
+                db=db, sender_phone=sender_phone, user=user,
+            )
+        else:
+            story = await finalize.finalize_story_from_thread(
+                db=db, sender_phone=sender_phone, user=user,
+            )
         if story is None:
             await outbound.send_text(to=sender_phone, body=i18n.t("err.empty", lang))
             return
@@ -185,7 +195,79 @@ async def handle_button(*, db, sender_phone, user, payload):
 
 
 async def handle_quoted_reply(*, db, sender_phone, user, payload):
-    raise NotImplementedError("handle_quoted_reply — implemented in Task 16")
+    """Reporter long-pressed our saved-confirmation and replied with
+    new content → append to that story (after permission checks).
+
+    Falls through to handle_forward when:
+    - context.id doesn't match any story (treat as fresh forward)
+    - story is locked (reply with err.locked, then process as fresh)
+
+    Replies with err.crossReporter when the matched story belongs to a
+    different reporter — does NOT fall through (would create a story
+    impersonating someone else's, even though our content is theirs).
+    """
+    lang = i18n.resolve_lang(user)
+
+    # Unregistered → polite decline (same as forward path)
+    if user is None:
+        await outbound.send_text(
+            to=sender_phone, body=i18n.t("err.unregistered", lang),
+        )
+        return
+
+    context_id = (payload.get("context") or {}).get("id")
+
+    target = None
+    if context_id:
+        from app.models.story import Story
+        target = (
+            db.query(Story)
+            .filter(Story.whatsapp_confirm_message_id == context_id)
+            .first()
+        )
+
+    # No matching story → process as fresh forward, ignoring the quote
+    if target is None:
+        # Strip the context key so the forward handler doesn't re-trigger
+        # quoted-reply classification (defensive — classifier already
+        # routed us here based on this key).
+        clean_payload = {k: v for k, v in payload.items() if k != "context"}
+        await handle_forward(
+            db=db, sender_phone=sender_phone, user=user, payload=clean_payload,
+        )
+        return
+
+    # Cross-reporter — reject without processing content
+    if target.reporter_id != user.id:
+        await outbound.send_text(to=sender_phone, body=i18n.t("err.crossReporter", lang))
+        return
+
+    # Locked story — inform AND fall through as fresh forward
+    if target.status not in ("submitted", "flagged"):
+        display_id = getattr(target, "display_id", None) or target.id
+        await outbound.send_text(
+            to=sender_phone, body=i18n.t("err.locked", lang, display_id=display_id),
+        )
+        clean_payload = {k: v for k, v in payload.items() if k != "context"}
+        await handle_forward(
+            db=db, sender_phone=sender_phone, user=user, payload=clean_payload,
+        )
+        return
+
+    # Open / refresh an add-mode thread targeting this story
+    thread_state.close(db, sender_phone)
+    thread_state.open_or_get(
+        db, sender_phone, thread_kind="add", target_story_id=target.id,
+    )
+    db.commit()
+
+    # Now process the inbound content via the forward path. The thread
+    # we just opened (kind='add') means handle_button(submit_thread) will
+    # call append_to_story instead of finalize_story_from_thread.
+    clean_payload = {k: v for k, v in payload.items() if k != "context"}
+    await handle_forward(
+        db=db, sender_phone=sender_phone, user=user, payload=clean_payload,
+    )
 
 
 async def handle_forward(*, db, sender_phone, user, payload):

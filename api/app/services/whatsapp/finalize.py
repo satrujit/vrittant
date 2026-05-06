@@ -139,3 +139,73 @@ async def finalize_story_from_thread(
     # Close the thread state
     thread_state.close(db, sender_phone)
     return story
+
+
+async def append_to_story(
+    *,
+    db: Session,
+    sender_phone: str,
+    user: User,
+) -> Optional[Story]:
+    """Drain the active add-mode thread and append its text + media to
+    the existing target story.
+
+    Returns the updated Story, or None if no add-thread / no target /
+    nothing to append. Caller is responsible for the user-facing
+    confirmation message.
+    """
+    ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
+    if ts is None or ts.thread_kind != "add" or not ts.target_story_id:
+        return None
+
+    target = db.query(Story).filter_by(id=ts.target_story_id).first()
+    if target is None:
+        # Target deleted between open and submit — treat as no-op
+        thread_state.close(db, sender_phone)
+        return None
+
+    text = (ts.pending_text_concat or "").strip()
+    new_paragraphs: list[dict] = []
+    if text:
+        new_paragraphs.append({"id": str(uuid.uuid4()), "text": text})
+
+    pending = buffer.drain_for_sender(db, sender_phone, story_id=target.id)
+    for pm in pending:
+        try:
+            stored, _body, _ct, variants = await _persist_media(
+                pm.gupshup_media_url, None, None,
+            )
+        except Exception as e:
+            log.warning("media persist failed for %s: %r", pm.gupshup_media_url, e)
+            stored = pm.gupshup_media_url
+            variants = None
+        para: dict = {
+            "id": str(uuid.uuid4()),
+            "text": pm.caption or "",
+            "media_path": stored,
+            "media_type": _media_type_for(pm.media_type),
+        }
+        if variants:
+            if variants.get("media_path_web"):
+                para["media_path_web"] = variants["media_path_web"]
+            if variants.get("media_path_thumb"):
+                para["media_path_thumb"] = variants["media_path_thumb"]
+        new_paragraphs.append(para)
+        pm.storage_url = stored
+
+    if not new_paragraphs:
+        thread_state.close(db, sender_phone)
+        return None
+
+    # Append (don't replace) — order matters for the editorial review.
+    target.paragraphs = list(target.paragraphs or []) + new_paragraphs
+
+    # Refresh the search_text helper if it exists (legacy uses it elsewhere)
+    if hasattr(target, "refresh_search_text"):
+        try:
+            target.refresh_search_text()
+        except Exception:
+            pass
+
+    thread_state.close(db, sender_phone)
+    return target
