@@ -16,12 +16,17 @@ if settings.DATABASE_URL.startswith("sqlite"):
 # Cloud Run can have multiple instances, each with its own pool.
 pool_kwargs = {}
 if not settings.DATABASE_URL.startswith("sqlite"):
-    # TCP keepalive to prevent Cloud SQL proxy from dropping idle connections
+    # TCP-level keepalives so the OS detects dead Cloud SQL sockets faster
+    # than psycopg2's defaults. Without these, a connection killed at the
+    # network layer can sit in the pool unnoticed until a query mid-flight
+    # returns "PGRES_TUPLES_OK and no message from the libpq" — observed
+    # 2026-05-05 causing 503s to Gupshup. pool_pre_ping catches dead-on-
+    # checkout; keepalives catch dead-mid-query.
     connect_args.update({
         "keepalives": 1,
-        "keepalives_idle": 30,
+        "keepalives_idle": 60,
         "keepalives_interval": 10,
-        "keepalives_count": 5,
+        "keepalives_count": 3,
     })
     # Pool sizing math:
     # - Cloud SQL tier db-f1-micro caps `max_connections` at 25.
