@@ -15,6 +15,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models.user import User
+from app.services.whatsapp import outbound, i18n
 from app.services.whatsapp.classifier import classify, MessageKind
 
 
@@ -62,7 +63,7 @@ async def dispatch(
 
 
 # ── Handler stubs ───────────────────────────────────────────────
-# Replaced by real implementations in Tasks 12-16. Until those land, an
+# Replaced by real implementations in Tasks 13-16. Until those land, an
 # inbound webhook arriving while WHATSAPP_SELF_SERVICE_ENABLED=true would
 # raise NotImplementedError → the retry middleware catches it via the
 # generic 503 path → Gupshup retries → eventually gives up. So leaving
@@ -82,4 +83,11 @@ async def handle_forward(*, db, sender_phone, user, payload):
 
 
 async def handle_skip(*, db, sender_phone, user, kind):
-    raise NotImplementedError("handle_skip — implemented in Task 12")
+    """Polite decline for sticker / location / contact; silent for
+    everything else. We don't open a thread or buffer anything — these
+    are dead-end message types as far as story creation goes.
+    """
+    if kind == MessageKind.SKIP_OTHER:
+        return  # silent — unknown types shouldn't talk back
+    lang = i18n.resolve_lang(user)
+    await outbound.send_text(to=sender_phone, body=i18n.t("err.sticker", lang))
