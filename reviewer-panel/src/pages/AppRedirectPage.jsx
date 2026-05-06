@@ -14,9 +14,15 @@
  */
 import { useEffect } from 'react';
 
-const APP_STORE_URL = 'https://apps.apple.com/in/app/vrittant';
+// Google Play listing — live.
 const PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.attentionstack.vrittant';
+
+// iOS App Store listing — pending review at time of writing. Once live,
+// flip IOS_LIVE to true and replace the placeholder URL with the real one
+// (typically https://apps.apple.com/in/app/vrittant/id<numeric-id>).
+const IOS_LIVE = false;
+const APP_STORE_URL = 'https://apps.apple.com/in/app/vrittant';
 
 export default function AppRedirectPage() {
   useEffect(() => {
@@ -43,17 +49,23 @@ export default function AppRedirectPage() {
 
       <div className="flex flex-col gap-3 w-full max-w-xs">
         <a
-          href={APP_STORE_URL}
-          className="rounded-md border border-border bg-card px-4 py-3 text-center text-sm font-medium text-foreground hover:bg-accent transition-colors no-underline"
-        >
-          Download on the App Store
-        </a>
-        <a
           href={PLAY_STORE_URL}
           className="rounded-md border border-border bg-card px-4 py-3 text-center text-sm font-medium text-foreground hover:bg-accent transition-colors no-underline"
         >
           Get it on Google Play
         </a>
+        {IOS_LIVE ? (
+          <a
+            href={APP_STORE_URL}
+            className="rounded-md border border-border bg-card px-4 py-3 text-center text-sm font-medium text-foreground hover:bg-accent transition-colors no-underline"
+          >
+            Download on the App Store
+          </a>
+        ) : (
+          <div className="rounded-md border border-dashed border-border/60 bg-muted/30 px-4 py-3 text-center text-xs text-muted-foreground">
+            iOS app coming soon
+          </div>
+        )}
       </div>
 
       <p className="text-[11px] text-muted-foreground text-center max-w-xs mt-4">
