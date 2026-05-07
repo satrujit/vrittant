@@ -430,29 +430,45 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
 
     # 3 / 4. No open draft — maybe classify, then create new story.
     #
-    # Photo/document-only forwards with NO caption and NO accompanying text
-    # don't become stories; instead the reporter gets a polite Odia prompt
-    # asking them to add a caption or send text to file the photo. Without
-    # this guard:
-    #   - the editor queue fills with content-less "Forwarded from WhatsApp"
-    #     placeholder rows that the LLM has no way to title;
-    #   - Gupshup retries on the same media race past the open-draft
-    #     stitching window and produce N duplicate stories from one batch
-    #     (observed 2026-05-06: 5 photos became 4 stories of 7 media each).
-    # Reporters who actually want their photos filed must add a caption or
-    # precede the photos with a text line — the open-draft stitching then
-    # bundles the media under that text's story (existing behaviour).
-    # The new dispatcher path (WHATSAPP_SELF_SERVICE_ENABLED=true) handles
-    # this differently via the explicit Submit button; this prompt only
-    # fires when the legacy ingest is in charge.
+    # Photo/document-only forwards (no caption, no accompanying text) are
+    # BUFFERED into whatsapp_pending_media instead of immediately becoming
+    # a placeholder story. The reporter gets ONE polite Odia prompt on
+    # the first photo of the session ("send text or caption to file"); a
+    # rapid burst of N photos produces a single prompt, not N. When the
+    # reporter sends a text-bearing message within the session window,
+    # the buffered photos are drained into that new story automatically
+    # (see the drain block right before Story creation below).
+    #
+    # Without this buffer:
+    #   - photo-only forwards used to create "Forwarded from WhatsApp"
+    #     placeholder stories the LLM had no way to title;
+    #   - Gupshup retries on the same media raced past the open-draft
+    #     stitching window and produced N duplicate stories from one
+    #     batch (observed 2026-05-06: 5 photos → 4 stories of 7 media);
+    #   - the previous fix dropped photos silently with a per-photo
+    #     prompt — annoying for reporters who genuinely send photos
+    #     before the caption.
     if media_url and not (text or "").strip():
-        db.commit()
-        await _send_gupshup_reply(
-            sender_raw,
-            "📸 ଫଟୋ ପାଇଲି କିନ୍ତୁ ଏକାକୀ ଖବର ଦାଖଲ ହୋଇନଥାଏ।\n"
-            "ଏହାକୁ ଖବର ଭାବେ ଦାଖଲ କରିବାକୁ ଏକ କ୍ୟାପସନ୍ ଯୋଡନ୍ତୁ କିମ୍ବା ପ୍ରଥମେ ଲେଖା ପଠାନ୍ତୁ।",
+        from app.services.whatsapp import buffer as wa_buffer
+        from app.services.whatsapp.dedup import hash_text as wa_hash
+        already_pending = wa_buffer.count_pending(db, sender_phone)
+        wa_buffer.add_to_buffer(
+            db,
+            sender_phone=sender_phone,
+            media_type=inner_type,
+            gupshup_url=media_url,
+            content_hash=wa_hash(media_url),
+            caption=inner_payload.get("caption") or inner_payload.get("name"),
         )
-        return {"ok": True, "skipped": "media-only-prompt-sent"}
+        db.commit()
+        if already_pending == 0:
+            # First media in the session — let the reporter know.
+            await _send_gupshup_reply(
+                sender_raw,
+                "📸 ଫଟୋ ପାଇଲି। ଏହାକୁ ଖବର ଭାବେ ଦାଖଲ କରିବାକୁ ଏକ କ୍ୟାପସନ୍ ଯୋଡନ୍ତୁ କିମ୍ବା "
+                "ଲେଖା ପଠାନ୍ତୁ। ଏହି ସମୟ ଭିତରେ ପଠାଯାଇଥିବା ସମସ୍ତ ଫଟୋ ଆପଣଙ୍କ ଲେଖା ସହ ଯୋଡାଯିବ।",
+            )
+        return {"ok": True, "buffered": "pending-media"}
 
     # Media-only messages skip the classifier (always news intent).
     needs_triage = False
@@ -528,6 +544,36 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
             if not text:
                 text = extracted
 
+    # Drain any photos the reporter sent BEFORE the text. The buffer was
+    # populated by the media-only-no-text branch above (across previous
+    # webhook deliveries). Each pending row holds the Gupshup URL; we
+    # persist to GCS now and append as a media paragraph. The drained
+    # rows get story_id linked after the Story row is created (below).
+    from app.services.whatsapp import buffer as wa_buffer
+    pending_to_attach = wa_buffer.drain_for_sender(db, sender_phone, story_id=None)
+    for pm in pending_to_attach:
+        try:
+            pm_stored, _pm_body, _pm_ct, pm_variants = await _persist_media(
+                pm.gupshup_media_url, None, None,
+            )
+            pm_stored = pm_stored or pm.gupshup_media_url
+        except Exception as e:
+            logger.warning("pending-media persist failed: %r", e)
+            pm_stored, pm_variants = pm.gupshup_media_url, None
+        para = {
+            "id": str(uuid.uuid4()),
+            "text": pm.caption or "",
+            "media_path": pm_stored,
+            "media_type": _media_type_for(pm.media_type),
+        }
+        if pm_variants:
+            if pm_variants.get("media_path_web"):
+                para["media_path_web"] = pm_variants["media_path_web"]
+            if pm_variants.get("media_path_thumb"):
+                para["media_path_thumb"] = pm_variants["media_path_thumb"]
+        paragraphs.append(para)
+        pm.storage_url = pm_stored
+
     # Best-effort category tag at ingestion. We pull the org's configured
     # category keys (falls back to the platform defaults if the org has
     # no override). If Sarvam errors out the helper returns None and we
@@ -569,6 +615,11 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
             )
     story.refresh_search_text()
     db.add(story)
+    # Link any drained pending-media rows back to this new story so the
+    # buffer keeps a clean audit trail (which photo became part of which
+    # story). pending_to_attach was populated above from drain_for_sender.
+    for pm in pending_to_attach:
+        pm.drained_into_story_id = story.id
     db.commit()
 
     await _send_gupshup_reply(

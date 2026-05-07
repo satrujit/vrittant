@@ -373,20 +373,20 @@ def test_unclear_first_message_creates_story_with_triage_flag(
     assert s.needs_triage is True
 
 
-def test_photo_only_first_message_is_silently_dropped(
+def test_photo_only_first_message_buffers_and_prompts(
     client, db, gupshup_reporter, no_send, fake_persist, monkeypatch
 ):
-    """A photo with no caption and no accompanying text creates NO story.
+    """A photo without a caption is BUFFERED (not turned into a placeholder
+    story) and the reporter receives ONE polite Odia prompt asking them to
+    add a caption or send text. Subsequent photos in the same session add
+    to the buffer silently — no prompt spam.
 
-    Earlier behaviour produced a "Forwarded from WhatsApp" placeholder
-    story — but those filled the editor queue with content-less rows
-    indistinguishable by headline, and Gupshup retries on the same media
-    raced past the open-draft stitching window and produced N duplicate
-    stories per single batch. We now silently drop these forwards. The
-    new self-service dispatcher (WHATSAPP_SELF_SERVICE_ENABLED=true)
-    surfaces the same intent through its Submit-button flow instead.
+    When the reporter sends text within the session, the buffered photos
+    are auto-stitched into the new story (covered by a separate test).
     """
     from app.routers import webhooks_whatsapp
+    from app.models.whatsapp_buffer import WhatsAppPendingMedia
+
     called = []
     async def boom(_):
         called.append(True)
@@ -404,6 +404,85 @@ def test_photo_only_first_message_is_silently_dropped(
     }
     r = client.post("/webhooks/whatsapp/gupshup", json=body)
     assert r.status_code == 200
-    assert r.json().get("skipped") == "media-only-prompt-sent"
+    assert r.json().get("buffered") == "pending-media"
     assert called == []  # classifier never invoked
     assert db.query(Story).count() == 0  # no story created
+    assert db.query(WhatsAppPendingMedia).count() == 1  # photo buffered
+
+
+def test_photo_burst_prompts_only_once(
+    client, db, gupshup_reporter, no_send, fake_persist
+):
+    """5 photos in a row should produce 1 prompt + 5 buffer rows."""
+    from app.models.whatsapp_buffer import WhatsAppPendingMedia
+    for i in range(5):
+        body = {
+            "app": "Vrittant", "type": "message",
+            "payload": {
+                "id": f"wamid.b{i}", "source": "919876543210", "type": "image",
+                "payload": {"url": f"https://gupshup-media.example/p{i}.jpg",
+                            "contentType": "image/jpeg"},
+                "sender": {"phone": "919876543210"},
+            },
+        }
+        r = client.post("/webhooks/whatsapp/gupshup", json=body)
+        assert r.status_code == 200
+        assert r.json().get("buffered") == "pending-media"
+
+    assert db.query(Story).count() == 0
+    assert db.query(WhatsAppPendingMedia).filter_by(drained_at=None).count() == 5
+    # Reply count = 1 (only the first photo triggered _send_gupshup_reply)
+    assert len(no_send) == 1
+
+
+def test_text_after_buffered_photos_drains_into_new_story(
+    client, db, gupshup_reporter, no_send, fake_persist, monkeypatch
+):
+    """Photos buffered first, text arrives within session — text becomes
+    the story headline/body and all buffered photos auto-attach as media
+    paragraphs. The reporter's intuition of "send photos then explain"
+    just works."""
+    from app.routers import webhooks_whatsapp
+    from app.models.whatsapp_buffer import WhatsAppPendingMedia
+
+    async def cls(_): return "news"
+    monkeypatch.setattr(webhooks_whatsapp.classifier, "classify", cls)
+    async def cat(_t, _k): return None
+    monkeypatch.setattr(webhooks_whatsapp, "classify_category", cat)
+
+    # Three photos arrive first
+    for i in range(3):
+        client.post("/webhooks/whatsapp/gupshup", json={
+            "app": "Vrittant", "type": "message",
+            "payload": {
+                "id": f"wamid.t{i}", "source": "919876543210", "type": "image",
+                "payload": {"url": f"https://gupshup-media.example/q{i}.jpg",
+                            "contentType": "image/jpeg"},
+                "sender": {"phone": "919876543210"},
+            },
+        })
+    assert db.query(WhatsAppPendingMedia).filter_by(drained_at=None).count() == 3
+
+    # Then the text arrives
+    r = client.post("/webhooks/whatsapp/gupshup", json={
+        "app": "Vrittant", "type": "message",
+        "payload": {
+            "id": "wamid.t-text", "source": "919876543210", "type": "text",
+            "payload": {"text": "Inauguration ceremony at the Pragativadi office."},
+            "sender": {"phone": "919876543210"},
+        },
+    })
+    assert r.status_code == 200
+
+    stories = db.query(Story).all()
+    assert len(stories) == 1
+    s = stories[0]
+    # Headline = first line of the text
+    assert "Inauguration" in (s.headline or "")
+    # Paragraphs = text + 3 media (drained from buffer)
+    assert len(s.paragraphs) == 4
+    media_paragraphs = [p for p in s.paragraphs if p.get("media_path")]
+    assert len(media_paragraphs) == 3
+    # Buffer rows now linked back to this story
+    drained = db.query(WhatsAppPendingMedia).filter_by(drained_into_story_id=s.id).all()
+    assert len(drained) == 3
