@@ -129,6 +129,26 @@ async def finalize_story_from_thread(
         source="whatsapp",
         whatsapp_session_open_until=now_ist() + timedelta(minutes=STITCH_MINUTES),
     )
+
+    # Auto-assign for reporter submissions via the region/category/
+    # load-balance algorithm. The legacy ingest path does this; the
+    # dispatcher path was silently skipping it, so every WhatsApp story
+    # under the new flow landed UNASSIGNED and editors had to pick a
+    # reviewer manually. NoReviewersAvailable means the org has zero
+    # active reviewers — leave assigned_to=None so it surfaces in the
+    # unassigned queue rather than 5xx-ing the webhook.
+    if user.user_type == "reporter":
+        from app.services.assignment import pick_assignee, NoReviewersAvailable
+        try:
+            reviewer, reason = pick_assignee(story, db)
+            story.assigned_to = reviewer.id
+            story.assigned_match_reason = reason
+        except NoReviewersAvailable:
+            log.warning(
+                "WA finalize: no reviewers in org %s, story %s left unassigned",
+                user.organization_id, story.id,
+            )
+
     db.add(story)
     db.flush()
 

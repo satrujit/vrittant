@@ -194,3 +194,85 @@ def test_append_to_story_returns_none_when_thread_kind_is_new(db):
     db.add(ts); db.commit()
     appended = _run(append_to_story(db=db, sender_phone="+919", user=user))
     assert appended is None
+
+
+# ── pick_assignee integration ─────────────────────────────────
+
+
+@patch("app.services.whatsapp.finalize._persist_media", new_callable=AsyncMock,
+       return_value=("gs://bucket/x", b"", "image/png", None))
+@patch("app.services.whatsapp.finalize.classify_category", new_callable=AsyncMock,
+       return_value=None)
+def test_finalize_auto_assigns_via_pick_assignee_for_reporter(mock_cat, mock_media, db):
+    """Regression: dispatcher's finalize must call pick_assignee for
+    reporter-submitted stories. Without this, every WA story landed
+    UNASSIGNED and the editor had to manually pick a reviewer.
+    """
+    from app.services.whatsapp.finalize import finalize_story_from_thread
+
+    org = Organization(id="o", name="X", slug="x", default_language="or")
+    reporter = User(
+        id="rep1", phone="+919", name="Reporter",
+        area_name="Nayagarh",
+        organization="X", organization_id="o", user_type="reporter",
+        is_active=True,
+    )
+    # A reviewer in the same org whose `regions` contains "Nayagarh" —
+    # the region-match step in pick_assignee should pick them.
+    reviewer = User(
+        id="rev1", phone="+918", name="ReviewerA",
+        organization="X", organization_id="o", user_type="reviewer",
+        is_active=True, regions=["Nayagarh"],
+    )
+    db.add_all([org, reporter, reviewer]); db.commit()
+    db.refresh(reporter, ["org"])
+
+    ts = WhatsAppThreadState(
+        sender_phone="+919",
+        pending_text_count=1,
+        pending_text_concat="Some real news content from Nayagarh district today happening now.",
+        pending_media_count=0,
+    )
+    db.add(ts); db.commit()
+
+    story = _run(finalize_story_from_thread(db=db, sender_phone="+919", user=reporter))
+    db.commit()
+    db.refresh(story)
+
+    assert story.assigned_to == "rev1"
+    assert story.assigned_match_reason == "region"
+
+
+@patch("app.services.whatsapp.finalize._persist_media", new_callable=AsyncMock,
+       return_value=("gs://bucket/x", b"", "image/png", None))
+@patch("app.services.whatsapp.finalize.classify_category", new_callable=AsyncMock,
+       return_value=None)
+def test_finalize_leaves_unassigned_when_no_reviewers(mock_cat, mock_media, db):
+    """If the org has zero active reviewers, story still gets created
+    but assigned_to stays None — surfaces in the unassigned queue
+    rather than 5xx-ing the webhook."""
+    from app.services.whatsapp.finalize import finalize_story_from_thread
+
+    org = Organization(id="o", name="X", slug="x", default_language="or")
+    reporter = User(
+        id="rep1", phone="+919", name="Reporter",
+        organization="X", organization_id="o", user_type="reporter",
+        is_active=True,
+    )
+    db.add_all([org, reporter]); db.commit()
+    db.refresh(reporter, ["org"])
+
+    ts = WhatsAppThreadState(
+        sender_phone="+919",
+        pending_text_count=1,
+        pending_text_concat="Some real news content from this reporter today happening now here.",
+    )
+    db.add(ts); db.commit()
+
+    story = _run(finalize_story_from_thread(db=db, sender_phone="+919", user=reporter))
+    db.commit()
+    db.refresh(story)
+
+    assert story is not None  # story still created
+    assert story.assigned_to is None
+    assert story.assigned_match_reason is None
