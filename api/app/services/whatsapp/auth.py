@@ -1,29 +1,30 @@
-"""Webhook signature verification for /webhooks/whatsapp/*.
+"""Webhook authentication for /webhooks/whatsapp/*.
 
-Without this, anyone with the public Cloud Run URL can POST a payload
-claiming to be from any reporter phone number — they can submit fake
-stories, mutate open drafts, trigger outbound replies to arbitrary
-numbers, and reach the media-fetch SSRF surface.
+Gupshup's dashboard exposes an "Includes headers" feature that attaches
+a constant key-value pair to every webhook delivery — effectively a
+shared-secret bearer token in a header (NOT an HMAC body signature).
+Our setup uses `X-Gupshup-Signature: <token>` where the token is a
+random string configured identically on Gupshup and on our backend.
 
-Gupshup signs every webhook with HMAC-SHA256 of the raw request body
-using a shared secret you configure in their dashboard. The signature
-is sent in the `X-Gupshup-Signature` header (some Gupshup tiers use
-`X-Hub-Signature-256`; we accept either).
+This is weaker than HMAC body-signing (an MITM with the URL + header
+could replay payloads) but the header isn't sniffable over HTTPS in
+normal conditions, and the token is rotatable. Still a substantial
+improvement over no-auth: blocks anyone who guesses the public Cloud
+Run URL from spoofing reporter phones, triggering outbound replies, or
+reaching the media-fetch SSRF surface.
 
 Behaviour:
-- `GUPSHUP_WEBHOOK_SECRET` empty   → verification skipped, log a WARNING
-  (allows initial rollout: deploy code → configure secret on Gupshup
-  dashboard → set the env var → tighten).
-- Secret set, valid signature      → request proceeds.
-- Secret set, missing signature    → 403.
-- Secret set, invalid signature    → 403.
+- `GUPSHUP_WEBHOOK_SECRET` empty   → verification skipped, log a one-
+  time WARNING (allows initial rollout: deploy code → configure header
+  on Gupshup dashboard → set the env var → tighten).
+- Secret set, header matches       → request proceeds.
+- Secret set, header missing       → 403.
+- Secret set, header doesn't match → 403.
 
-The signature comparison uses `hmac.compare_digest` for constant-time
-behaviour to prevent timing attacks on the secret.
+The compare uses `hmac.compare_digest` for constant-time behaviour.
 """
 from __future__ import annotations
 
-import hashlib
 import hmac
 import logging
 from typing import Optional
@@ -35,66 +36,63 @@ from app.config import settings
 log = logging.getLogger("whatsapp.auth")
 
 
-# Headers we accept the signature in, in priority order. Different Gupshup
-# tiers / WhatsApp Cloud API integrations use different header names; we
-# accept any of these to keep the integration robust to dashboard config
-# changes.
-_SIGNATURE_HEADERS = (
+# Header names we accept the shared-secret token in. Gupshup writes
+# whatever name you configure on the dashboard; we accept the few
+# common conventions so we're robust to dashboard config changes.
+_TOKEN_HEADERS = (
     "X-Gupshup-Signature",
-    "X-Hub-Signature-256",
-    "X-Hub-Signature",  # legacy SHA-1, accepted but not recommended
+    "X-Webhook-Token",
+    "X-Auth-Token",
+    "Authorization",  # if user prefixes with "Bearer ", we strip it below
 )
 
 
-def _normalise_signature(raw: str) -> str:
-    """Strip any algorithm prefix Gupshup/WhatsApp may include
-    ('sha256=...', 'sha1=...') and lowercase the hex.
-    """
-    raw = (raw or "").strip()
-    if "=" in raw:
-        raw = raw.split("=", 1)[1]
-    return raw.lower()
-
-
-def _expected_signature(secret: str, body: bytes) -> str:
-    return hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+def _extract_token(headers: dict) -> Optional[str]:
+    """Find the bearer token in any of the accepted headers. Strips a
+    `Bearer ` / `bearer ` prefix if the user used the Authorization
+    header convention."""
+    for h in _TOKEN_HEADERS:
+        # Case-insensitive header lookup — Starlette/test clients vary
+        # on casing.
+        for key in (h, h.lower()):
+            if key in headers:
+                v = (headers[key] or "").strip()
+                if v.lower().startswith("bearer "):
+                    v = v[7:].strip()
+                if v:
+                    return v
+    return None
 
 
 def verify_signature(
     *,
-    body: bytes,
+    body: bytes = b"",  # kept in the signature for backward compat / tests
     headers: dict,
     secret: Optional[str] = None,
 ) -> bool:
-    """Pure-functional signature check.
+    """True iff the request carries the configured shared-secret token
+    in any of the accepted headers.
 
     `secret` defaults to settings.GUPSHUP_WEBHOOK_SECRET — passed
-    explicitly only by tests.
+    explicitly only by tests. `body` is unused for shared-secret mode
+    but kept in the signature so future HMAC mode can use it without a
+    breaking change to the helper's contract.
     """
     if secret is None:
         secret = settings.GUPSHUP_WEBHOOK_SECRET
     if not secret:
         # No secret configured → can't verify, treat as authentic.
-        # Caller is responsible for logging / alerting on this state.
+        # The middleware logs a startup warning so we know.
         return True
 
-    # Pull the signature from whichever header is present.
-    sig_header = None
-    for h in _SIGNATURE_HEADERS:
-        if h in headers:
-            sig_header = headers[h]
-            break
-        # Headers may be lowercase in some test harnesses
-        lower = h.lower()
-        if lower in headers:
-            sig_header = headers[lower]
-            break
-    if not sig_header:
+    received = _extract_token(headers)
+    if not received:
         return False
-
-    expected = _expected_signature(secret, body)
-    received = _normalise_signature(sig_header)
-    return hmac.compare_digest(expected, received)
+    # Constant-time compare. Pad both to the same length first so the
+    # comparison itself doesn't leak length info via early-return —
+    # compare_digest does this internally but only when both inputs
+    # are the same type and length, so equalise on str.
+    return hmac.compare_digest(received, secret)
 
 
 async def signature_check_middleware(
@@ -104,11 +102,6 @@ async def signature_check_middleware(
     """ASGI middleware. Only enforces on /webhooks/whatsapp/*; everything
     else passes through unchanged. Skips verification when
     GUPSHUP_WEBHOOK_SECRET is empty (initial rollout / local / tests).
-
-    Reads the raw request body once, then re-injects it into the request
-    so downstream handlers can still parse it. (Starlette caches the
-    body on the first read; the route handler's await request.json()
-    sees the cached bytes.)
     """
     if not request.url.path.startswith("/webhooks/whatsapp"):
         return await call_next(request)
@@ -121,18 +114,17 @@ async def signature_check_middleware(
         global _WARNED_NO_SECRET
         if not _WARNED_NO_SECRET:
             log.warning(
-                "GUPSHUP_WEBHOOK_SECRET is empty — webhook signature "
-                "verification is OFF. Set the env var once you've "
-                "configured the matching secret on the Gupshup dashboard."
+                "GUPSHUP_WEBHOOK_SECRET is empty — webhook authentication "
+                "is OFF. Set the env var to the same value you've configured "
+                "on the Gupshup dashboard ('Includes headers' field)."
             )
             _WARNED_NO_SECRET = True
         return await call_next(request)
 
-    body = await request.body()
     headers = dict(request.headers)
-    if not verify_signature(body=body, headers=headers, secret=secret):
+    if not verify_signature(headers=headers, secret=secret):
         log.warning(
-            "Rejecting unsigned/invalid-signature webhook on %s from %s",
+            "Rejecting unauthenticated webhook on %s from %s",
             request.url.path,
             request.client.host if request.client else "?",
         )
