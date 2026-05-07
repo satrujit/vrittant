@@ -159,3 +159,29 @@ def test_today_list_routes_to_today_handler(mock_send, db):
     user = _seed_user(db)
     _run(handle_button(db=db, sender_phone="+919", user=user, payload=_btn_payload("today_list")))
     assert mock_send.called or True
+
+
+def test_handle_button_rejects_unauthenticated_sender(db):
+    """Button payload from a phone we don't know must not probe story
+    state (add_to_<id> path) or mutate thread_state. Reply with the
+    polite 'not registered' message and return."""
+    import asyncio
+    from unittest.mock import patch, AsyncMock
+    from app.services.whatsapp.dispatcher import handle_button
+    from app.models.whatsapp_buffer import WhatsAppThreadState
+
+    payload = _btn_payload("add_to_some-story-id")
+
+    with patch("app.services.whatsapp.dispatcher.outbound.send_text",
+               new_callable=AsyncMock) as mock_send:
+        asyncio.run(handle_button(
+            db=db, sender_phone="+919999", user=None, payload=payload,
+        ))
+
+    # Polite reply
+    mock_send.assert_called_once()
+    body = mock_send.call_args.kwargs["body"]
+    assert "isn't registered" in body or "ପଞ୍ଜିକୃତ" in body or "रजिस्टर्ड" in body or "registered" in body.lower()
+
+    # No thread state row created
+    assert db.query(WhatsAppThreadState).filter_by(sender_phone="+919999").first() is None

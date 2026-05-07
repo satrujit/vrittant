@@ -109,8 +109,27 @@ def _extract_button_id(payload: dict) -> str:
 
 
 async def handle_button(*, db, sender_phone, user, payload):
-    """Route a button-reply payload to the right action."""
+    """Route a button-reply payload to the right action.
+
+    Unauthenticated senders are rejected up front: button payloads
+    can otherwise be crafted to probe story IDs (add_to_<id> branches
+    on different reply text for missing / locked / cross-reporter
+    stories) and to spawn add-mode whatsapp_thread_state rows pointed
+    at arbitrary story IDs. The signature-verification middleware
+    closes most of this surface, but we still defend in depth here in
+    case the secret is ever empty (initial rollout / test) or
+    misconfigured.
+    """
     from app.models.story import Story
+
+    if user is None:
+        # Match handle_forward's behaviour: send the polite "you're not
+        # registered" reply rather than processing the button.
+        lang = i18n.resolve_lang(user)
+        await outbound.send_text(
+            to=sender_phone, body=i18n.t("err.unregistered", lang),
+        )
+        return
 
     lang = i18n.resolve_lang(user)
     button_id = _extract_button_id(payload)

@@ -63,6 +63,17 @@ class Settings(BaseSettings):
     TWILIO_AUTH_TOKEN: str = ""
     TWILIO_VERIFY_SERVICE_SID: str = ""
 
+    # Gupshup webhook HMAC-SHA256 shared secret. When set, every inbound
+    # /webhooks/whatsapp/gupshup request must carry a matching signature
+    # header — anything else is rejected as 403 (an unauthenticated caller
+    # can't spoof reporter phone numbers, can't trigger outbound replies
+    # to arbitrary destinations, and can't reach the media-fetch SSRF
+    # surface). When EMPTY, signature verification is skipped — useful
+    # during initial rollout (deploy code → configure secret on Gupshup
+    # dashboard → set this env var) and during local/test runs. A startup
+    # log line warns loudly when verification is off in prod.
+    GUPSHUP_WEBHOOK_SECRET: str = ""
+
     # File storage — "local" or "gcs"
     STORAGE_BACKEND: str = "local"
     GCS_BUCKET: str = ""

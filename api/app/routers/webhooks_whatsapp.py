@@ -156,6 +156,66 @@ def _media_type_for(inner_type: str) -> str:
 # Office formats matter for two reasons: (a) without an extension the
 # downloaded file lands as `<hex>` and most OSes refuse to open it; (b) the
 # panel's attachment rail uses the extension to pick the right icon/label.
+# SSRF guards on _persist_media. We only fetch URLs whose hostname is
+# Gupshup-hosted media. Even with the upstream signature check rejecting
+# unauthenticated callers, this is defence in depth: a Gupshup outage
+# / breach / dashboard misconfiguration shouldn't turn the backend into
+# a generic URL fetcher pointing at internal services.
+_GUPSHUP_MEDIA_HOST_SUFFIXES = (
+    ".gupshup.io",
+    ".gupshup-media.io",
+    "gupshup.io",
+    "gupshup-media.io",
+)
+# 25 MB hard cap. Photos/PDFs we expect from reporters are well under
+# 5 MB after the mobile-app compression. The cap protects against
+# content-length spoofing + slow-stream resource exhaustion.
+_MEDIA_MAX_BYTES = 25 * 1024 * 1024
+
+
+def _is_url_safe_to_fetch(url: str) -> bool:
+    """True iff `url` is a Gupshup-hosted HTTPS URL whose resolved
+    hostname does NOT point at a private / loopback / link-local
+    address. Caller of _persist_media should drop URLs that fail this
+    check rather than fetching them.
+    """
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+    if parsed.scheme not in ("https", "http"):
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False
+    # Allowlist Gupshup's hosting domains. WhatsApp Cloud API integrations
+    # may also expose lookaside.fbsbx.com etc.; add when needed.
+    if not any(host == sfx.lstrip(".") or host.endswith(sfx) for sfx in _GUPSHUP_MEDIA_HOST_SUFFIXES):
+        return False
+    # Resolve and reject private/internal IPs. Catches dns-rebinding-style
+    # tricks where the allowlisted hostname resolves to e.g. 10.0.0.1.
+    try:
+        addrs = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    for family, _t, _p, _c, sockaddr in addrs:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return False
+        if (
+            ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_multicast or ip.is_unspecified or ip.is_reserved
+        ):
+            return False
+    return True
+
+
 _CONTENT_TYPE_EXT = {
     "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
     "image/webp": ".webp", "image/gif": ".gif", "image/heic": ".heic",
@@ -206,6 +266,15 @@ async def _persist_media(
     """Download a media file from Gupshup's transient URL and re-host it
     in our own bucket.
 
+    SSRF hardening — we only trust Gupshup-hosted URLs. The webhook
+    signature check upstream prevents unauthenticated callers from
+    reaching this path at all (when GUPSHUP_WEBHOOK_SECRET is set), but
+    we still defend in depth: domain allowlist, private-IP block on the
+    resolved address, response-size cap (25 MB), and tighter timeouts.
+    Without these, a webhook compromise (signature secret leak, Gupshup
+    upstream bug) would let attackers point us at internal services or
+    huge files.
+
     Returns ``(stored_url, body, content_type, image_variants)``.
     ``stored_url`` is None only if the upload failed (callers fall back
     to the Gupshup link). ``body`` and ``content_type`` are returned
@@ -215,13 +284,43 @@ async def _persist_media(
     ``media_path_web`` / ``media_path_thumb``) for image uploads, or
     None for non-images.
     """
+    if not _is_url_safe_to_fetch(url):
+        logger.warning("Refusing to fetch non-Gupshup or unsafe URL: %s", url)
+        return (None, None, None, None)
     try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            body = resp.content
-            # Prefer the response's Content-Type; fall back to Gupshup's hint.
-            ct = (resp.headers.get("content-type") or content_type or "").split(";")[0].strip()
+        # Smaller timeouts than before: 10s connect, 30s read, capped at
+        # 30s overall. Stream the response so we can abort if it exceeds
+        # _MEDIA_MAX_BYTES rather than buffering an attacker-sized payload
+        # entirely in memory before noticing.
+        timeout = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=False,  # don't chase redirects — Gupshup serves direct media URLs
+        ) as client:
+            async with client.stream("GET", url) as resp:
+                resp.raise_for_status()
+                # Reject early if the server advertises an oversized body.
+                cl = resp.headers.get("content-length")
+                if cl and cl.isdigit() and int(cl) > _MEDIA_MAX_BYTES:
+                    logger.warning(
+                        "Refusing oversized media (%s bytes, limit %s) from %s",
+                        cl, _MEDIA_MAX_BYTES, url,
+                    )
+                    return (None, None, None, None)
+                # Stream into a bounded buffer; abort the moment we cross
+                # the cap rather than reading the whole stream.
+                buf = bytearray()
+                async for chunk in resp.aiter_bytes():
+                    buf.extend(chunk)
+                    if len(buf) > _MEDIA_MAX_BYTES:
+                        logger.warning(
+                            "Aborting media download — exceeded %s bytes from %s",
+                            _MEDIA_MAX_BYTES, url,
+                        )
+                        return (None, None, None, None)
+                body = bytes(buf)
+                # Prefer the response's Content-Type; fall back to Gupshup's hint.
+                ct = (resp.headers.get("content-type") or content_type or "").split(";")[0].strip()
     except Exception:
         logger.exception("Failed to download Gupshup media from %s", url)
         return (None, None, None, None)

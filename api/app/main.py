@@ -86,13 +86,26 @@ app.add_middleware(SecurityHeadersMiddleware)
 # NOT idempotent and are intentionally not wrapped — a retry on a
 # non-idempotent endpoint risks double side-effects.
 from .services.whatsapp.reliability import retry_on_transient_db_errors
+from .services.whatsapp.auth import signature_check_middleware
 
 
+# IMPORTANT: middleware registration order is "last registered = innermost".
+# We register the retry wrapper FIRST (innermost) so the retry only fires
+# for requests that have already passed signature verification — otherwise
+# we'd burn retries on unauthenticated payloads.
 @app.middleware("http")
 async def _whatsapp_retry_wrapper(request: Request, call_next):
     if request.url.path.startswith("/webhooks/whatsapp"):
         return await retry_on_transient_db_errors(request, call_next)
     return await call_next(request)
+
+
+# Signature check registered SECOND (outermost). Runs first; rejects
+# unauthenticated webhook payloads with 403 before they reach the
+# router or the retry wrapper.
+@app.middleware("http")
+async def _whatsapp_signature_check(request: Request, call_next):
+    return await signature_check_middleware(request, call_next)
 
 
 @app.on_event("startup")
