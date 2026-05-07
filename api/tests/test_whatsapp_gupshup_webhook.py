@@ -486,3 +486,176 @@ def test_text_after_buffered_photos_drains_into_new_story(
     # Buffer rows now linked back to this story
     drained = db.query(WhatsAppPendingMedia).filter_by(drained_into_story_id=s.id).all()
     assert len(drained) == 3
+
+
+# ── Integration tests for the dispatcher (self-service flag ON) ──
+
+
+@pytest.fixture()
+def self_service_on(monkeypatch):
+    """Flip WHATSAPP_SELF_SERVICE_ENABLED=true for the duration of one test."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "WHATSAPP_SELF_SERVICE_ENABLED", True)
+
+
+def test_router_invokes_dispatcher_when_flag_on(
+    client, db, gupshup_reporter, no_send, self_service_on, monkeypatch
+):
+    """With the flag on, the router routes inbound to the new dispatcher
+    (not the legacy ingest). Verifies the routing handoff that was
+    previously only unit-tested in services."""
+    from app.routers import webhooks_whatsapp
+    from app.services.whatsapp import dispatcher as new_dispatcher
+
+    calls = []
+
+    async def fake_dispatch(*, db, sender_phone, user, payload):
+        calls.append({"sender": sender_phone, "user_id": getattr(user, "id", None),
+                      "payload_type": payload.get("type")})
+
+    monkeypatch.setattr(new_dispatcher, "dispatch", fake_dispatch)
+
+    body = {
+        "app": "Vrittant", "type": "message",
+        "payload": {
+            "id": "wamid.disp1", "source": "919876543210", "type": "text",
+            "payload": {"text": "Hello there"},
+            "sender": {"phone": "919876543210"},
+        },
+    }
+    r = client.post("/webhooks/whatsapp/gupshup", json=body)
+    assert r.status_code == 200
+    assert len(calls) == 1
+    assert calls[0]["sender"] == "+919876543210"
+    assert calls[0]["user_id"] == gupshup_reporter.id
+    assert calls[0]["payload_type"] == "text"
+
+
+def test_dedup_committed_when_dispatch_succeeds(
+    client, db, gupshup_reporter, no_send, self_service_on, monkeypatch
+):
+    """After a successful dispatch the dedup row exists, so a retry of
+    the same message_id from Gupshup is a no-op."""
+    from app.models.webhook_dedup import WhatsappInboundDedup
+    from app.services.whatsapp import dispatcher as new_dispatcher
+
+    async def ok_dispatch(**_): return None  # no-op
+    monkeypatch.setattr(new_dispatcher, "dispatch", ok_dispatch)
+
+    body = {
+        "app": "Vrittant", "type": "message",
+        "payload": {
+            "id": "wamid.dedup-ok", "source": "919876543210", "type": "text",
+            "payload": {"text": "Hello"}, "sender": {"phone": "919876543210"},
+        },
+    }
+    r = client.post("/webhooks/whatsapp/gupshup", json=body)
+    assert r.status_code == 200
+
+    # Dedup row exists
+    assert db.query(WhatsappInboundDedup).filter_by(message_id="wamid.dedup-ok").first() is not None
+
+    # Replay returns "duplicate" without invoking dispatcher
+    calls = []
+    async def replay_dispatch(**kwargs):
+        calls.append(kwargs)
+    monkeypatch.setattr(new_dispatcher, "dispatch", replay_dispatch)
+    r2 = client.post("/webhooks/whatsapp/gupshup", json=body)
+    assert r2.status_code == 200
+    assert r2.json().get("skipped") == "duplicate"
+    assert calls == []  # dispatcher NOT called on replay
+
+
+def test_dedup_rolled_back_when_dispatch_raises(
+    client, db, gupshup_reporter, no_send, self_service_on, monkeypatch
+):
+    """If the handler raises before committing, the dedup row must roll
+    back too — otherwise a Gupshup retry sees the message as already
+    processed and the reporter's content is lost permanently. This is
+    the data-loss bug the code review flagged."""
+    from app.models.webhook_dedup import WhatsappInboundDedup
+    from app.services.whatsapp import dispatcher as new_dispatcher
+
+    async def boom(**_):
+        raise RuntimeError("simulated handler failure before commit")
+    monkeypatch.setattr(new_dispatcher, "dispatch", boom)
+
+    body = {
+        "app": "Vrittant", "type": "message",
+        "payload": {
+            "id": "wamid.dedup-fail", "source": "919876543210", "type": "text",
+            "payload": {"text": "Hello"}, "sender": {"phone": "919876543210"},
+        },
+    }
+    # The router will raise; the test client either propagates it or returns
+    # 500 depending on TestClient config. Either way, what matters is the DB.
+    try:
+        client.post("/webhooks/whatsapp/gupshup", json=body)
+    except RuntimeError:
+        pass  # expected — bubbled out from the dispatcher
+
+    # Dedup row must NOT have been committed
+    assert db.query(WhatsappInboundDedup).filter_by(message_id="wamid.dedup-fail").first() is None
+
+
+# ── _find_open_draft must filter closed/deleted stories ──
+
+
+def test_find_open_draft_excludes_approved_story(db, gupshup_reporter):
+    """A WhatsApp story in 'approved' status must NOT be treated as
+    appendable, even if its session window is still open. Otherwise
+    a forward arriving in the same window silently mutates a story
+    the editor already signed off on."""
+    from datetime import timedelta
+    from app.models.story import Story
+    from app.routers.webhooks_whatsapp import _find_open_draft
+    from app.utils.tz import now_ist
+
+    db.add(Story(
+        id="s_approved", organization_id="o_test", reporter_id=gupshup_reporter.id,
+        seq_no=1, headline="Already approved", paragraphs=[],
+        status="approved",                # closed status
+        source="whatsapp",
+        whatsapp_session_open_until=now_ist() + timedelta(minutes=5),
+    ))
+    db.commit()
+
+    assert _find_open_draft(db, gupshup_reporter.id) is None
+
+
+def test_find_open_draft_excludes_soft_deleted_story(db, gupshup_reporter):
+    from datetime import timedelta
+    from app.models.story import Story
+    from app.routers.webhooks_whatsapp import _find_open_draft
+    from app.utils.tz import now_ist
+
+    db.add(Story(
+        id="s_deleted", organization_id="o_test", reporter_id=gupshup_reporter.id,
+        seq_no=1, headline="Tombstone", paragraphs=[],
+        status="submitted", source="whatsapp",
+        whatsapp_session_open_until=now_ist() + timedelta(minutes=5),
+        deleted_at=now_ist(),
+    ))
+    db.commit()
+
+    assert _find_open_draft(db, gupshup_reporter.id) is None
+
+
+def test_find_open_draft_includes_submitted_story(db, gupshup_reporter):
+    """Sanity: stories in OPEN statuses with active window ARE returned."""
+    from datetime import timedelta
+    from app.models.story import Story
+    from app.routers.webhooks_whatsapp import _find_open_draft
+    from app.utils.tz import now_ist
+
+    db.add(Story(
+        id="s_open", organization_id="o_test", reporter_id=gupshup_reporter.id,
+        seq_no=1, headline="Mid-thread", paragraphs=[],
+        status="submitted", source="whatsapp",
+        whatsapp_session_open_until=now_ist() + timedelta(minutes=5),
+    ))
+    db.commit()
+
+    found = _find_open_draft(db, gupshup_reporter.id)
+    assert found is not None
+    assert found.id == "s_open"

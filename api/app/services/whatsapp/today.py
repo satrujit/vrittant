@@ -15,7 +15,7 @@ from typing import List
 from sqlalchemy.orm import Session
 
 from app.models.story import Story
-from app.utils.tz import now_ist, IST
+from app.utils.tz import now_ist
 
 from app.services.whatsapp import outbound, i18n
 
@@ -28,24 +28,19 @@ _LIST_CAP = 25
 def list_for_reporter(db: Session, reporter_id: str) -> List[Story]:
     """Return today-IST stories for `reporter_id`, newest first.
 
-    submitted_at is stored as a naive UTC DateTime in Postgres. To pick
-    "today in IST", we compute the IST midnight boundaries and convert
-    them to naive UTC for the comparison. Any submitted_at value (whether
-    written naive-UTC or tz-aware via tests) compares correctly so long
-    as we strip tzinfo from the boundaries.
+    Story.submitted_at is `Column(DateTime)` (timezone-naive) but is
+    written from `now_ist()` (tz-aware IST). SQLAlchemy strips tzinfo
+    on write, so the column holds IST WALL-CLOCK time as a naive value.
+
+    Boundary math: build naive IST midnights for [today, tomorrow) and
+    compare directly. The previous implementation subtracted 5:30 from
+    the IST boundaries (treating the column as UTC) which shifted the
+    window 5:30 hours back — today's evening submissions were excluded
+    and yesterday's evening submissions were included.
     """
-    now_in_ist = now_ist()
-    today = now_in_ist.date()
-    # IST boundaries as naive UTC.
-    start_ist = datetime(today.year, today.month, today.day, tzinfo=IST)
-    end_ist = start_ist + timedelta(days=1)
-    # Convert to naive timestamps for comparison with the (typically
-    # naive) submitted_at column. We keep tzinfo on these aware datetimes
-    # because SQLAlchemy/SQLite will compare aware vs naive cleanly when
-    # both are produced from the same Python datetime arithmetic the
-    # tests use. To be safe across naive/aware mixes we drop tzinfo.
-    start_naive = start_ist.astimezone(IST).replace(tzinfo=None) - timedelta(hours=5, minutes=30)
-    end_naive = end_ist.astimezone(IST).replace(tzinfo=None) - timedelta(hours=5, minutes=30)
+    today = now_ist().date()
+    start_naive = datetime(today.year, today.month, today.day)
+    end_naive = start_naive + timedelta(days=1)
 
     rows = (
         db.query(Story)

@@ -53,12 +53,30 @@ def _is_close_keyword(text: str) -> bool:
 # services/categorizer.py. The legacy local helper used to live here.
 
 
+_OPEN_DRAFT_STATUSES = ("submitted", "flagged")
+
+
 def _find_open_draft(db, user_id: str):
+    """Find the most-recent WhatsApp story that's still appendable.
+
+    Filters:
+    - source='whatsapp' (only WhatsApp-ingested stories use the session
+      window mechanism)
+    - whatsapp_session_open_until in the future (within stitch window)
+    - deleted_at IS NULL (don't append to soft-deleted stories — they
+      may be unrecoverable from the editor side, and appending to a
+      tombstone effectively resurrects content the editor wanted gone)
+    - status in OPEN set — once the editor has approved/rejected/
+      published/marked-layout-completed, the story is locked: appending
+      content silently changes what the editor signed off on
+    """
     return (
         db.query(Story)
         .filter(
             Story.reporter_id == user_id,
             Story.source == "whatsapp",
+            Story.deleted_at.is_(None),
+            Story.status.in_(_OPEN_DRAFT_STATUSES),
             Story.whatsapp_session_open_until.isnot(None),
             Story.whatsapp_session_open_until > now_ist(),
         )
@@ -297,20 +315,44 @@ async def gupshup_inbound(request: Request, db: Session = Depends(get_db)):
     sender_phone = _normalize_phone(sender_raw)
 
     # New self-service path. Behind a flag so the legacy ingest stays the
-    # default until every handler ships (Tasks 12-16) and we've smoke-
-    # tested. Flag flip is reversible — flipping back to False routes
-    # traffic to the legacy path, no DB rollback.
+    # default until every handler ships and we've smoke-tested. Flag flip
+    # is reversible — flipping back to False routes traffic to the legacy
+    # path, no DB rollback.
     if settings.WHATSAPP_SELF_SERVICE_ENABLED:
         from app.services.whatsapp.dispatcher import (
             dispatch as _new_dispatch,
             resolve_user_for_phone as _new_resolve_user,
         )
-        # Record dedup row so retries of this same Gupshup message_id
-        # don't re-enter the dispatcher. Mirrors the legacy behaviour.
-        db.add(WhatsappInboundDedup(message_id=msg_id, received_at=now_ist()))
-        db.commit()
         user = _new_resolve_user(db, sender_phone)
+
+        # Per-sender advisory lock — must wrap the whole dispatch so
+        # concurrent webhooks for the same phone (multi-forward bursts)
+        # serialise on whatsapp_thread_state, content_dedup, and the
+        # media buffer. Without this, parallel handlers race past
+        # open_or_get / count_pending / mark_seen and produce lost
+        # counters, duplicate-PK errors on dedup, and split thread
+        # state. Key on phone (not user.id) so unregistered senders
+        # also get serialised against themselves.
+        if db.bind.dialect.name == "postgresql":
+            db.execute(
+                _sql("SELECT pg_advisory_xact_lock(:k)"),
+                {"k": _user_lock_key(sender_phone)},
+            )
+
+        # Add the dedup row to the SESSION (not committed yet). The
+        # handler's natural commit cycle commits it together with the
+        # handler work. If the handler raises before its first commit,
+        # the dedup row rolls back too → Gupshup retry can recover the
+        # message rather than the prior bug where the dedup committed
+        # alone and the message was lost.
+        db.add(WhatsappInboundDedup(message_id=msg_id, received_at=now_ist()))
+
         await _new_dispatch(db=db, sender_phone=sender_phone, user=user, payload=payload)
+
+        # Commit any handler work that didn't already commit (e.g. SKIP
+        # handlers that no-op silently) AND ensure the dedup row lands
+        # so we don't reprocess on Gupshup retry.
+        db.commit()
         return JSONResponse({"status": "ok"})
 
     user = (

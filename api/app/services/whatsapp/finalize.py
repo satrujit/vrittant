@@ -77,19 +77,36 @@ async def finalize_story_from_thread(
     if text:
         paragraphs.append({"id": str(uuid.uuid4()), "text": text})
 
-    # Drain pending media (story_id linked after we have the new story.id)
+    # Drain pending media. We pre-mark all as drained, then UNDO the
+    # drain on rows whose persist fails — those stay in the buffer
+    # for retry rather than getting attached as transient Gupshup URLs
+    # (which expire within hours, leaving the saved story with dead
+    # media_path values pointing at gupshup-media.example/...).
     pending = buffer.drain_for_sender(db, sender_phone, story_id=None)
+    successful_pm: list = []
     for pm in pending:
         try:
             stored, _body, _ct, variants = await _persist_media(
                 pm.gupshup_media_url, None, None,
             )
-            if not stored:
-                stored = pm.gupshup_media_url
         except Exception as e:
-            log.warning("media persist failed for %s: %r", pm.gupshup_media_url, e)
-            stored = pm.gupshup_media_url
-            variants = None
+            log.warning(
+                "media persist failed for buffered media %s (%s): %r — "
+                "leaving row buffered for retry, photo not attached to story",
+                pm.id, pm.gupshup_media_url, e,
+            )
+            pm.drained_at = None
+            pm.drained_into_story_id = None
+            continue
+        if not stored:
+            log.warning(
+                "media persist returned empty url for buffered media %s — "
+                "leaving row buffered for retry",
+                pm.id,
+            )
+            pm.drained_at = None
+            pm.drained_into_story_id = None
+            continue
 
         para: dict = {
             "id": str(uuid.uuid4()),
@@ -102,6 +119,7 @@ async def finalize_story_from_thread(
                 para["media_path_web"] = variants["media_path_web"]
             if variants.get("media_path_thumb"):
                 para["media_path_thumb"] = variants["media_path_thumb"]
+        successful_pm.append(pm)
         paragraphs.append(para)
         pm.storage_url = stored
 
@@ -152,8 +170,11 @@ async def finalize_story_from_thread(
     db.add(story)
     db.flush()
 
-    # Link drained media rows to the new story
-    for pm in pending:
+    # Link drained media rows to the new story. Only the rows whose
+    # persist succeeded — failed-persist rows had drained_at reset to
+    # NULL above and stay buffered for retry, so don't relink them
+    # to a story they aren't actually attached to.
+    for pm in successful_pm:
         pm.drained_into_story_id = story.id
 
     # Close the thread state
@@ -189,6 +210,10 @@ async def append_to_story(
     if text:
         new_paragraphs.append({"id": str(uuid.uuid4()), "text": text})
 
+    # Drain pending media; failed persists get un-drained so the row
+    # stays buffered for a future retry rather than attaching a
+    # transient Gupshup URL that will expire (see finalize_story_from_thread
+    # for the full rationale).
     pending = buffer.drain_for_sender(db, sender_phone, story_id=target.id)
     for pm in pending:
         try:
@@ -196,9 +221,24 @@ async def append_to_story(
                 pm.gupshup_media_url, None, None,
             )
         except Exception as e:
-            log.warning("media persist failed for %s: %r", pm.gupshup_media_url, e)
-            stored = pm.gupshup_media_url
-            variants = None
+            log.warning(
+                "append_to_story: media persist failed for buffered media %s "
+                "(%s): %r — leaving row buffered, photo not attached",
+                pm.id, pm.gupshup_media_url, e,
+            )
+            pm.drained_at = None
+            pm.drained_into_story_id = None
+            continue
+        if not stored:
+            log.warning(
+                "append_to_story: empty url for buffered media %s — "
+                "leaving row buffered for retry",
+                pm.id,
+            )
+            pm.drained_at = None
+            pm.drained_into_story_id = None
+            continue
+        pm.storage_url = stored
         para: dict = {
             "id": str(uuid.uuid4()),
             "text": pm.caption or "",
@@ -211,7 +251,6 @@ async def append_to_story(
             if variants.get("media_path_thumb"):
                 para["media_path_thumb"] = variants["media_path_thumb"]
         new_paragraphs.append(para)
-        pm.storage_url = stored
 
     if not new_paragraphs:
         thread_state.close(db, sender_phone)
