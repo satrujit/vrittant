@@ -64,6 +64,45 @@ def test_under_20_words_rejected_without_thread(mock_edit, mock_send, db):
 
 @patch("app.services.whatsapp.dispatcher.outbound.send_text", new_callable=AsyncMock)
 @patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive",
+       new_callable=AsyncMock, return_value="wamid.ADD1")
+def test_under_20_words_accepted_in_add_mode(mock_edit, mock_send, db):
+    """Add-mode appends to an existing story; the 20-word floor is for
+    first submissions. A short follow-up like 'Police arrived at 9 PM'
+    is legitimate and must NOT be rejected. Regression for prod
+    2026-05-07."""
+    from app.services.whatsapp.dispatcher import handle_forward
+    from app.services.whatsapp import thread_state
+    user = _seed_user(db, lang="en")
+
+    # Open an add-mode thread (mimics the user tapping "➕ Add more"
+    # on a saved-confirmation).
+    thread_state.open_or_get(
+        db, sender_phone="+919",
+        thread_kind="add", target_story_id="some-existing-story",
+    )
+    db.commit()
+
+    short = "Police arrived at the scene around 9 PM."
+    payload = {"type": "text", "payload": {"text": short}}
+    _run(handle_forward(db=db, sender_phone="+919", user=user, payload=payload))
+    db.commit()
+
+    # No "20+" rejection
+    if mock_send.called:
+        body = mock_send.call_args.kwargs.get("body", "")
+        assert "20+" not in body and "୨୦+" not in body and "20 शब्द" not in body
+    # Thread state still in add-mode, text count incremented
+    ts = db.query(WhatsAppThreadState).filter_by(sender_phone="+919").first()
+    assert ts is not None
+    assert ts.thread_kind == "add"
+    assert (ts.pending_text_count or 0) >= 1
+    # [Submit][Cancel] / saveAdd interactive was sent (i.e. we proceeded
+    # past the gate)
+    assert mock_edit.called
+
+
+@patch("app.services.whatsapp.dispatcher.outbound.send_text", new_callable=AsyncMock)
+@patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive",
        new_callable=AsyncMock, return_value="wamid.NEW1")
 def test_text_forward_opens_thread_and_sends_buttons(mock_edit, mock_send, db):
     from app.services.whatsapp.dispatcher import handle_forward
@@ -226,19 +265,37 @@ def test_audio_forward_buffers_without_transcription(mock_edit, db):
     assert ts.pending_media_count == 1
 
 
+@patch("app.services.whatsapp.dispatcher.outbound.send_text",
+       new_callable=AsyncMock, return_value=None)
 @patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive",
        new_callable=AsyncMock, return_value="wamid.G")
-def test_pdf_forward_buffers_as_document(mock_edit, db):
+def test_pdf_forward_is_rejected_with_explainer(mock_edit, mock_send_text, db):
+    """PDFs / DOCs are not supported on the WhatsApp self-service path —
+    the reviewer panel's media rails are designed for image/video/audio,
+    and the GCS upload path for documents is racy in prod (timeouts on
+    larger files). We send a polite explainer and bail out — no buffer
+    write, no [Submit][Cancel] interactive update.
+    """
     from app.services.whatsapp.dispatcher import handle_forward
-    user = _seed_user(db)
+    user = _seed_user(db, lang="en")
     payload = {"type": "document", "payload": {"url": "https://gupshup/d1"}}
 
     _run(handle_forward(db=db, sender_phone="+919", user=user, payload=payload))
     db.commit()
 
+    # Buffer not touched
     rows = db.query(WhatsAppPendingMedia).filter_by(sender_phone="+919").all()
-    assert len(rows) == 1
-    assert rows[0].media_type == "document"
+    assert rows == []
+    # Thread state not touched (no count bump)
+    ts = db.query(WhatsAppThreadState).filter_by(sender_phone="+919").first()
+    assert ts is None
+    # User received the polite explainer
+    assert mock_send_text.await_count == 1
+    sent_body = mock_send_text.await_args.kwargs["body"]
+    assert "PDF" in sent_body or "Files" in sent_body
+    # No [Submit][Cancel] update sent — the [Submit][Cancel] flow is for
+    # buffered content, and we didn't buffer anything.
+    assert mock_edit.await_count == 0
 
 
 @patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive",

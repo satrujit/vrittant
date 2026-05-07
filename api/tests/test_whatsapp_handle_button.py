@@ -148,6 +148,49 @@ def test_open_menu_sends_list_message(mock_list, db):
     sections = mock_list.call_args.kwargs["sections"]
     row_ids = [r[0] for s in sections for r in s[1]]
     assert "today" in row_ids
+    # All row titles must fit within WhatsApp's 24-char list-row title cap
+    # so they don't truncate (the prod 2026-05-07 "How to use Vrittant on W"
+    # bug). Long phrasing belongs in the row description.
+    for section_title, rows in sections:
+        assert len(section_title) <= 24, f"section title too long: {section_title!r}"
+        for row_id, row_title, row_desc in rows:
+            assert len(row_title) <= 24, f"row title too long: {row_title!r}"
+
+
+@patch("app.services.whatsapp.dispatcher.outbound.send_interactive_list", new_callable=AsyncMock,
+       return_value="wamid.MENU")
+def test_open_menu_uses_user_locale_for_titles(mock_list, db):
+    """Menu rows must be i18n'd — an Odia-locale user should NOT see
+    English row titles. Regression for the prod 2026-05-07 report."""
+    from app.services.whatsapp.dispatcher import handle_button
+    user = _seed_user(db, lang="or")
+
+    _run(handle_button(db=db, sender_phone="+919", user=user, payload=_btn_payload("open_menu")))
+
+    sections = mock_list.call_args.kwargs["sections"]
+    # At least one row title should contain Odia script (a Devanagari
+    # range proxy isn't right — Odia is U+0B00-0B7F).
+    all_text = " ".join(
+        s_title + " " + " ".join(r[1] for r in rows)
+        for s_title, rows in sections
+    )
+    assert any("଀" <= ch <= "୿" for ch in all_text), (
+        "expected Odia characters in localised menu, got: " + all_text
+    )
+
+
+@patch("app.services.whatsapp.dispatcher.outbound.send_text", new_callable=AsyncMock)
+def test_help_button_sends_howto_text(mock_send, db):
+    """The "help" button (menu row id) must reply with the help text,
+    not silently drop. Regression for prod 2026-05-07."""
+    from app.services.whatsapp.dispatcher import handle_button
+    user = _seed_user(db, lang="en")
+
+    _run(handle_button(db=db, sender_phone="+919", user=user, payload=_btn_payload("help")))
+
+    mock_send.assert_called_once()
+    body = mock_send.call_args.kwargs["body"]
+    assert "Vrittant" in body or "Submit" in body
 
 
 # ── today_list (placeholder until Task 15) ─────────────────────

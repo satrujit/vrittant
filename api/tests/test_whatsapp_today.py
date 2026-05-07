@@ -21,13 +21,24 @@ def _seed_user(db, lang="en"):
     return user
 
 
-def _make_story(db, *, id_, reporter_id, headline, submitted_offset_minutes=0, status="submitted"):
-    """Build a Story submitted at `now() - submitted_offset_minutes`."""
+def _make_story(db, *, id_, reporter_id, headline, submitted_offset_minutes=0,
+                updated_offset_minutes=None, status="submitted"):
+    """Build a Story submitted at `now() - submitted_offset_minutes`.
+
+    `updated_offset_minutes` defaults to `submitted_offset_minutes` so a
+    "yesterday-and-untouched" story stays out of today's list. Pass a
+    smaller value to model "submitted yesterday but appended today"
+    (the WhatsApp add-mode path).
+    """
+    if updated_offset_minutes is None:
+        updated_offset_minutes = submitted_offset_minutes
+    now = datetime.now(timezone.utc)
     s = Story(
         id=id_, organization_id="o", reporter_id=reporter_id,
         seq_no=1, headline=headline, paragraphs=[], status=status,
         source="whatsapp",
-        submitted_at=datetime.now(timezone.utc) - timedelta(minutes=submitted_offset_minutes),
+        submitted_at=now - timedelta(minutes=submitted_offset_minutes),
+        updated_at=now - timedelta(minutes=updated_offset_minutes),
     )
     db.add(s); db.commit()
     return s
@@ -96,12 +107,34 @@ def test_handle_today_lists_only_todays_stories(mock_send, db):
     user = _seed_user(db)
     _make_story(db, id_="s_today", reporter_id="u",
                 headline="Today's story", submitted_offset_minutes=10)
+    # Yesterday story with no activity today (both submitted_at AND
+    # updated_at backdated) MUST be excluded.
     _make_story(db, id_="s_yesterday", reporter_id="u",
-                headline="Yesterday", submitted_offset_minutes=60 * 30)  # 30h ago
+                headline="Yesterday", submitted_offset_minutes=60 * 30,
+                updated_offset_minutes=60 * 30)
     _run(handle_today(db=db, sender_phone="+919", user=user))
     body = mock_send.call_args.kwargs["body"]
     assert "Today's story" in body
     assert "Yesterday" not in body
+
+
+@patch("app.services.whatsapp.today.outbound.send_text", new_callable=AsyncMock)
+def test_handle_today_includes_yesterday_story_appended_today(mock_send, db):
+    """Add-mode regression (prod 2026-05-07): a story submitted yesterday
+    and added-to today via "➕ Add more" must show up in today's list,
+    otherwise the reporter sees "no stories filed today" right after
+    they got a saved-confirmation. Detection is via `updated_at`
+    falling within the today-IST window."""
+    user = _seed_user(db)
+    _make_story(
+        db, id_="s_added_today", reporter_id="u",
+        headline="Submitted yesterday, appended today",
+        submitted_offset_minutes=60 * 30,   # 30h ago
+        updated_offset_minutes=15,           # 15m ago
+    )
+    _run(handle_today(db=db, sender_phone="+919", user=user))
+    body = mock_send.call_args.kwargs["body"]
+    assert "Submitted yesterday, appended today" in body
 
 
 @patch("app.services.whatsapp.today.outbound.send_text", new_callable=AsyncMock)

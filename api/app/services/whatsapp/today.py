@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import List
 
+from sqlalchemy import and_, or_, func
 from sqlalchemy.orm import Session
 
 from app.models.story import Story
@@ -26,31 +27,56 @@ _LIST_CAP = 25
 
 
 def list_for_reporter(db: Session, reporter_id: str) -> List[Story]:
-    """Return today-IST stories for `reporter_id`, newest first.
+    """Return today-IST stories for `reporter_id`, newest activity first.
 
-    Story.submitted_at is `Column(DateTime)` (timezone-naive) but is
-    written from `now_ist()` (tz-aware IST). SQLAlchemy strips tzinfo
-    on write, so the column holds IST WALL-CLOCK time as a naive value.
+    Story.submitted_at / updated_at are `Column(DateTime)` (timezone-
+    naive) but written from `now_ist()` (tz-aware IST). SQLAlchemy
+    strips tzinfo on write, so the columns hold IST WALL-CLOCK time as
+    naive values.
 
     Boundary math: build naive IST midnights for [today, tomorrow) and
     compare directly. The previous implementation subtracted 5:30 from
     the IST boundaries (treating the column as UTC) which shifted the
     window 5:30 hours back — today's evening submissions were excluded
     and yesterday's evening submissions were included.
+
+    Inclusion rule: `submitted_at` falls in [today, tomorrow), OR the
+    story was *appended to today* via WhatsApp add-mode. Without the
+    second clause a reporter who tapped "➕ Add more" on a yesterday
+    story and forwarded a follow-up today would see "no stories filed
+    today" — confusing and the actual prod complaint we fixed in
+    response to the 2026-05-07 UAT report. We use `updated_at` as a
+    proxy; it's bumped by reviewer edits too, but reporter accounts
+    only see their own stories so the only realistic non-WhatsApp
+    bumper is the reporter editing their own draft, which we still
+    want to surface in "today's stories".
+
+    Order: most-recently-touched first (NULLs-last), so a story
+    appended-to today comes before a stale older submission.
     """
     today = now_ist().date()
     start_naive = datetime(today.year, today.month, today.day)
     end_naive = start_naive + timedelta(days=1)
 
+    submitted_today = and_(
+        Story.submitted_at >= start_naive,
+        Story.submitted_at < end_naive,
+    )
+    updated_today = and_(
+        Story.updated_at >= start_naive,
+        Story.updated_at < end_naive,
+    )
     rows = (
         db.query(Story)
         .filter(
             Story.reporter_id == reporter_id,
             Story.deleted_at.is_(None),
-            Story.submitted_at >= start_naive,
-            Story.submitted_at < end_naive,
+            Story.status == "submitted",
+            or_(submitted_today, updated_today),
         )
-        .order_by(Story.created_at.desc())
+        .order_by(
+            func.coalesce(Story.updated_at, Story.submitted_at, Story.created_at).desc(),
+        )
         .all()
     )
     return rows

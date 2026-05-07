@@ -176,7 +176,11 @@ async def handle_button(*, db, sender_phone, user, payload):
             buttons=[
                 (f"add_to_{story.id}", i18n.t("btn.add", lang)),
                 ("today_list", i18n.t("btn.today", lang)),
-                ("open_menu", i18n.t("btn.openApp", lang)),
+                # Was labelled "Open in app" but the action just opens
+                # the menu — rename to match. A real deep-link button
+                # is tracked separately (needs a URL-button shape on
+                # Gupshup that we don't currently use).
+                ("open_menu", i18n.t("btn.menuShort", lang)),
             ],
         )
         if msg_id:
@@ -234,11 +238,56 @@ async def handle_button(*, db, sender_phone, user, payload):
             body=i18n.t("menu.prompt", lang),
             button_label=i18n.t("btn.menu", lang),
             sections=[
-                ("Submit", [("just_forward", "Just forward your message", None)]),
-                ("View",   [("today",        "My stories filed today",     None)]),
-                ("Help",   [("help",         "How to use Vrittant on WhatsApp", None)]),
+                (
+                    i18n.t("menu.section.submit", lang),
+                    [(
+                        "just_forward",
+                        i18n.t("menu.row.forward.title", lang),
+                        i18n.t("menu.row.forward.desc",  lang),
+                    )],
+                ),
+                (
+                    i18n.t("menu.section.view", lang),
+                    [(
+                        "today",
+                        i18n.t("menu.row.today.title", lang),
+                        i18n.t("menu.row.today.desc",  lang),
+                    )],
+                ),
+                (
+                    i18n.t("menu.section.help", lang),
+                    [(
+                        "help",
+                        i18n.t("menu.row.help.title", lang),
+                        i18n.t("menu.row.help.desc",  lang),
+                    )],
+                ),
             ],
         )
+        return
+
+    # Help — the menu's "How to use Vrittant" row.
+    # Also reachable as a top-level button id from external links.
+    if button_id == "help":
+        await outbound.send_text(to=sender_phone, body=i18n.t("help.howto", lang))
+        return
+
+    # "just_forward" — the menu's "Submit a story" row. There's no real
+    # action here; the reporter just needs to forward a message. Send a
+    # short prompt so the row tap doesn't feel like a dead end.
+    if button_id == "just_forward":
+        await outbound.send_text(
+            to=sender_phone, body=i18n.t("menu.row.forward.desc", lang),
+        )
+        return
+
+    # "today" — same as today_list, exposed as a menu row id.
+    if button_id == "today":
+        try:
+            from app.services.whatsapp import today as today_mod  # type: ignore
+            await today_mod.handle_today(db=db, sender_phone=sender_phone, user=user)
+        except (ImportError, AttributeError):
+            await outbound.send_text(to=sender_phone, body=i18n.t("today.empty", lang))
         return
 
     # Unknown button id — silent
@@ -353,8 +402,22 @@ async def handle_forward(*, db, sender_phone, user, payload):
     if inner_type == "text":
         raw = inner.get("text") or ""
         cleaned = ingest.strip_forward_boilerplate(raw)
-        if ingest.word_count(cleaned) < 20:
+        # Skip the 20-word minimum when we're in an add-mode thread —
+        # the reporter has already written a fully-formed story; a short
+        # follow-up like "and the road is now closed" is legitimate
+        # add-content and should not be rejected.
+        existing_ts = (
+            db.query(WhatsAppThreadState)
+            .filter_by(sender_phone=sender_phone)
+            .first()
+        )
+        in_add_mode = existing_ts is not None and existing_ts.thread_kind == "add"
+        if not in_add_mode and ingest.word_count(cleaned) < 20:
             await outbound.send_text(to=sender_phone, body=i18n.t("err.tooShort", lang))
+            return
+        # Add-mode still rejects strictly empty / whitespace-only text —
+        # silently dropping zero-content text would also be confusing.
+        if in_add_mode and not cleaned.strip():
             return
         h = dedup.hash_text(cleaned)
         if dedup.is_duplicate(db, sender_phone, h):
@@ -362,8 +425,23 @@ async def handle_forward(*, db, sender_phone, user, payload):
         dedup.mark_seen(db, sender_phone, h)
         thread_state.increment_text(db, sender_phone, cleaned)
 
-    # 4. Media branch
-    elif inner_type in ("image", "document", "audio", "video"):
+    # 4. Document branch — PDFs / DOCs / XLSXs etc.
+    # WhatsApp self-service deliberately does not store these. The
+    # reviewer panel's media rails are designed for image/video/audio,
+    # and the GCS upload path for documents is racier (large MP4-style
+    # resumable transfers time out — see prod 2026-05-07 incident).
+    # Send a polite explainer so the user isn't left wondering why
+    # their PDF disappeared, and bail out before buffering. Reporters
+    # who need to attach files use the Vrittant mobile app.
+    elif inner_type == "document":
+        await outbound.send_text(
+            to=sender_phone,
+            body=i18n.t("err.documentUnsupported", lang),
+        )
+        return
+
+    # 5. Media branch (image / audio / video)
+    elif inner_type in ("image", "audio", "video"):
         media_url = inner.get("url") or ""
         if not media_url:
             return  # malformed payload — silent

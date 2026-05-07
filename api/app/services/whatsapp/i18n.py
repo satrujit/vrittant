@@ -33,10 +33,12 @@ STRINGS: dict[str, dict[str, str]] = {
     "btn.cancel":  {"or": "✕ ବାତିଲ କରନ୍ତୁ",     "hi": "✕ रद्द करें",       "en": "✕ Cancel"},
     "btn.add":     {"or": "➕ ଅଧିକ ଯୋଡ଼ନ୍ତୁ",   "hi": "➕ और जोड़ें",       "en": "➕ Add more"},
     "btn.today":   {"or": "📋 ଆଜିର ଖବର",       "hi": "📋 आज की खबरें",   "en": "📋 Today"},
-    "btn.openApp": {"or": "📱 ଆପରେ ଦେଖନ୍ତୁ",  "hi": "📱 ऐप में खोलें",   "en": "📱 Open in app"},
+    "btn.menuShort": {"or": "📂 ମେନୁ",         "hi": "📂 मेनू",          "en": "📂 Menu"},
     "btn.saveAdd": {"or": "✓ ଯୋଡ଼ାଣ ସଞ୍ଚୟ",   "hi": "✓ जोड़ सहेजें",      "en": "✓ Save additions"},
     "btn.discard": {"or": "✕ ତ୍ୟାଗ କରନ୍ତୁ",     "hi": "✕ छोड़ें",           "en": "✕ Discard"},
-    "btn.menu":    {"or": "☰ ମେନୁ ଖୋଲନ୍ତୁ",    "hi": "☰ मेनू खोलें",       "en": "☰ Open menu"},
+    # Single icon — WhatsApp's list-message global button doesn't add its
+    # own. Keep total length comfortably under the 20-char globalButton cap.
+    "btn.menu":    {"or": "ମେନୁ ଖୋଲନ୍ତୁ",       "hi": "मेनू खोलें",         "en": "Open menu"},
 
     # ── Story saved ──────────────────────────────────────────────
     "saved.header": {"or": "✓ ଖବର ସଞ୍ଚୟ ହୋଇଛି", "hi": "✓ खबर सहेजी गई",   "en": "✓ Story saved"},
@@ -118,11 +120,80 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "For Odia dictation, the Vrittant mobile app gives you live transcription.",
     },
 
-    # ── Menu prompt ──────────────────────────────────────────────
+    # ── Menu prompt + rows ───────────────────────────────────────
+    # WhatsApp list messages cap section titles and row titles at 24
+    # chars; the row description has a 72-char budget. Keep titles
+    # short and put the longer phrasing in the description.
     "menu.prompt": {
-        "or": "☰ ଆପଣ କ'ଣ କରିବାକୁ ଚାହାଁନ୍ତି?",
-        "hi": "☰ आप क्या करना चाहते हैं?",
-        "en": "☰ What would you like to do?",
+        "or": "ଆପଣ କ'ଣ କରିବାକୁ ଚାହାଁନ୍ତି?",
+        "hi": "आप क्या करना चाहते हैं?",
+        "en": "What would you like to do?",
+    },
+    "menu.section.submit": {"or": "ଖବର", "hi": "खबर", "en": "Submit"},
+    "menu.section.view":   {"or": "ଦେଖନ୍ତୁ", "hi": "देखें", "en": "View"},
+    "menu.section.help":   {"or": "ସାହାଯ୍ୟ", "hi": "मदद", "en": "Help"},
+    "menu.row.forward.title": {
+        "or": "ଖବର ଫରୱାର୍ଡ କରନ୍ତୁ",
+        "hi": "खबर भेजें",
+        "en": "Submit a story",
+    },
+    "menu.row.forward.desc": {
+        "or": "ଏକ ବାର୍ତ୍ତା ଫରୱାର୍ଡ କରି ଖବର ଦାଖଲ କରନ୍ତୁ",
+        "hi": "एक संदेश फॉरवर्ड कर खबर जमा करें",
+        "en": "Forward a message to file it as a story",
+    },
+    "menu.row.today.title": {
+        "or": "ଆଜିର ଖବର",
+        "hi": "आज की खबरें",
+        "en": "Today's stories",
+    },
+    "menu.row.today.desc": {
+        "or": "ଆପଣ ଆଜି ଦାଖଲ କରିଥିବା ଖବରଗୁଡ଼ିକ",
+        "hi": "आज आपने जो खबरें जमा कीं",
+        "en": "Stories you filed today",
+    },
+    "menu.row.help.title": {
+        "or": "ସାହାଯ୍ୟ",
+        "hi": "मदद",
+        "en": "Help",
+    },
+    "menu.row.help.desc": {
+        "or": "ୱାଟସ୍‌ଆପ୍‌ରେ ବ୍ରତ୍ତାନ୍ତ କିପରି ବ୍ୟବହାର କରିବେ",
+        "hi": "व्हाट्सऐप पर वृत्तांत कैसे इस्तेमाल करें",
+        "en": "How to use Vrittant on WhatsApp",
+    },
+
+    # ── Help text (response to the "help" menu row / button) ─────
+    "help.howto": {
+        "or": (
+            "📖 *ୱାଟସ୍‌ଆପ୍‌ରେ ବ୍ରତ୍ତାନ୍ତ*\n\n"
+            "୧. ଆପଣଙ୍କ ଖବର (ଲେଖା ୨୦+ ଶବ୍ଦ ଓ/କିମ୍ବା ଫଟୋ) ଏଠାକୁ ଫରୱାର୍ଡ କରନ୍ତୁ।\n"
+            "୨. ସବୁ ଅଂଶ ପଠାଇ ସରିଲେ *✓ ଖବର ଦାଖଲ କରନ୍ତୁ* ଟ୍ୟାପ କରନ୍ତୁ।\n"
+            "୩. ଅଧିକ ଯୋଡ଼ିବାକୁ ଚାହିଁଲେ ସଞ୍ଚୟ ବାର୍ତ୍ତାରେ *➕ ଅଧିକ ଯୋଡ଼ନ୍ତୁ* ଟ୍ୟାପ କରନ୍ତୁ।\n"
+            "୪. *📋 ଆଜିର ଖବର* ଆପଣ ଆଜି ଦାଖଲ କରିଥିବା ସବୁ ଖବର ଦେଖାଏ।"
+        ),
+        "hi": (
+            "📖 *व्हाट्सऐप पर वृत्तांत*\n\n"
+            "1. अपनी खबर (टेक्स्ट 20+ शब्द और/या फोटो) यहाँ फॉरवर्ड करें।\n"
+            "2. सब हिस्से भेज देने के बाद *✓ खबर जमा करें* टैप करें।\n"
+            "3. और जोड़ने के लिए सेव-संदेश में *➕ और जोड़ें* टैप करें।\n"
+            "4. *📋 आज की खबरें* आपकी आज की सारी खबरें दिखाता है।"
+        ),
+        "en": (
+            "📖 *Vrittant on WhatsApp*\n\n"
+            "1. Forward your story (20+ words of text and/or photos) to this number.\n"
+            "2. When done, tap *✓ Submit Story*.\n"
+            "3. To add more later, tap *➕ Add more* on the saved-confirmation.\n"
+            "4. *📋 Today* shows everything you've filed today.\n\n"
+            "Captions on photos count as text. PDFs aren't supported here — please use the Vrittant mobile app for files."
+        ),
+    },
+
+    # ── Document forwards (PDFs etc) ─────────────────────────────
+    "err.documentUnsupported": {
+        "or": "📄 ଫାଇଲ (PDF/DOC) ୱାଟସ୍‌ଆପ୍‌ରେ ସମର୍ଥିତ ନୁହେଁ। ଖବର ପାଇଁ ଲେଖା କିମ୍ବା ଫଟୋ ଫରୱାର୍ଡ କରନ୍ତୁ। ଫାଇଲ ଅପଲୋଡ ପାଇଁ ବ୍ରତ୍ତାନ୍ତ ମୋବାଇଲ ଆପ ବ୍ୟବହାର କରନ୍ତୁ।",
+        "hi": "📄 फाइल (PDF/DOC) व्हाट्सऐप पर समर्थित नहीं हैं। खबर के लिए टेक्स्ट या फोटो भेजें। फाइल अपलोड के लिए वृत्तांत मोबाइल ऐप का उपयोग करें।",
+        "en": "📄 Files (PDF/DOC) aren't supported on WhatsApp. Forward text or photos for stories. Use the Vrittant mobile app for file uploads.",
     },
 }
 
