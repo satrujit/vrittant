@@ -1,9 +1,11 @@
 import asyncio
+import base64
 import json
 import logging
 import os
 import re
 import ssl
+import struct
 import tempfile
 import time
 import zipfile
@@ -33,7 +35,7 @@ from pydantic import BaseModel, Field
 from ..config import settings
 from ..deps import get_current_user, get_current_user_lite
 from ..models.user import User
-from ..services import name_registry, sarvam_client
+from ..services import gemini_client, name_registry, sarvam_client
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +109,218 @@ def _rewrite_transcript_message(raw: str) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+# ── Gemini live-dictation handler ──────────────────────────────────
+#
+# Pseudo-streaming via periodic batch transcription:
+#
+#   - Every WS frame from the mobile app carries raw PCM 16-bit mono @
+#     16 kHz, either as raw bytes (Flutter) or wrapped in a JSON
+#     envelope `{"audio": {"data": "<base64>", ...}}` (web reviewer
+#     panel). We accumulate the decoded PCM in a server-side buffer.
+#   - Every ``_GEMINI_TICK_SECONDS`` we transcribe the ENTIRE buffer
+#     (not just the new bytes) so the partial is coherent across
+#     chunk boundaries — Gemini is not a streaming model, each call
+#     is independent. Re-transcribing-from-zero costs more than a
+#     sliding window but produces clean transcripts; for the eval
+#     window that's the right trade.
+#   - When the client disconnects we do a final transcription with
+#     ``is_final=True`` and emit a ``vad_end`` event so the panel /
+#     app commits the last window.
+#
+# Cost: a 30 s recording with 4 s ticks = ~7 calls. At
+# gemini-2.5-flash audio rates (~₹0.08 / 30 s) that's ~₹0.55 per
+# session vs Sarvam streaming's ~₹0.25 — i.e. *more* expensive in
+# pseudo-streaming mode. We accept this for the eval; if quality is
+# acceptable we move to a true sliding-window implementation that
+# only transcribes new audio (or to Gemini Live API which streams
+# natively).
+
+_GEMINI_TICK_SECONDS = 4.0
+_GEMINI_RECEIVE_TIMEOUT = 1.0
+# Cap a single dictation session's audio buffer to keep request bodies
+# under Gemini's 20 MB inline-data ceiling. 16 kHz × 16-bit × 1 ch =
+# 32 KB/s, so 4 minutes ≈ 7.7 MB — comfortably under. Beyond that we
+# force a final emit + reset; callers have to start a new session.
+_GEMINI_MAX_BUFFER_BYTES = 32_000 * 240
+
+
+def _wrap_pcm_as_wav(
+    pcm: bytes,
+    *,
+    sample_rate: int = 16000,
+    channels: int = 1,
+    bits: int = 16,
+) -> bytes:
+    """Wrap raw PCM little-endian audio in a minimal 44-byte WAV
+    container so Gemini's inline-data path recognises a valid file.
+
+    Gemini accepts WAV/MP3/AAC/OGG/FLAC; we hand it WAV because that's
+    a 0-cost transformation from the raw PCM the mobile app already
+    sends.
+    """
+    byte_rate = sample_rate * channels * bits // 8
+    block_align = channels * bits // 8
+    data_size = len(pcm)
+    fmt_chunk = struct.pack(
+        "<4sIHHIIHH",
+        b"fmt ", 16,
+        1,                 # AudioFormat = 1 (PCM)
+        channels,
+        sample_rate,
+        byte_rate,
+        block_align,
+        bits,
+    )
+    data_chunk = struct.pack("<4sI", b"data", data_size) + pcm
+    riff = struct.pack(
+        "<4sI4s",
+        b"RIFF",
+        4 + len(fmt_chunk) + len(data_chunk),
+        b"WAVE",
+    )
+    return riff + fmt_chunk + data_chunk
+
+
+async def _gemini_streaming_handler(
+    ws: WebSocket,
+    *,
+    reporter_id: str,
+    language_code: str,
+) -> None:
+    """Live-dictation path when STT_PROVIDER=gemini. See docstring above."""
+    audio_buffer = bytearray()
+    last_emitted_text = ""
+    last_transcribe_at = time.monotonic()
+    session_started = time.monotonic()
+
+    async def emit_data(text: str, is_final: bool) -> None:
+        try:
+            await ws.send_text(json.dumps({
+                "type": "data",
+                "data": {"transcript": text, "is_final": is_final},
+            }))
+        except Exception:
+            # Client gone — let the receive loop catch the disconnect.
+            pass
+
+    async def emit_event(event_name: str) -> None:
+        try:
+            await ws.send_text(json.dumps({
+                "type": "events",
+                "data": {"event": event_name},
+            }))
+        except Exception:
+            pass
+
+    async def transcribe_and_emit(*, is_final: bool) -> None:
+        nonlocal last_emitted_text
+        if not audio_buffer:
+            return
+        wav = _wrap_pcm_as_wav(bytes(audio_buffer))
+        try:
+            text = await gemini_client.stt(
+                audio_bytes=wav,
+                mime_type="audio/wav",
+                language_code=language_code,
+                model=settings.STT_GEMINI_MODEL,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Gemini stream STT failed (reporter=%s): %r",
+                reporter_id, exc,
+            )
+            return
+        text = name_registry.replace_english_names((text or "").strip())
+        if not text:
+            return
+        # Skip duplicate partials so the client's overlap-divergence
+        # logic doesn't accidentally commit a window when nothing changed.
+        if text == last_emitted_text and not is_final:
+            return
+        last_emitted_text = text
+        await emit_data(text, is_final)
+
+    try:
+        while True:
+            try:
+                msg = await asyncio.wait_for(
+                    ws.receive(), timeout=_GEMINI_RECEIVE_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                # No frame arrived during the receive window — check if
+                # the tick interval has elapsed and we have audio waiting.
+                if (
+                    audio_buffer
+                    and (time.monotonic() - last_transcribe_at) >= _GEMINI_TICK_SECONDS
+                ):
+                    await transcribe_and_emit(is_final=False)
+                    last_transcribe_at = time.monotonic()
+                continue
+
+            if msg["type"] == "websocket.disconnect":
+                break
+
+            if msg["type"] != "websocket.receive":
+                continue
+
+            payload = msg.get("text") or msg.get("bytes")
+            if not payload:
+                continue
+
+            if isinstance(payload, str):
+                # JSON envelope: {"audio": {"data": "<b64 pcm>", ...}}
+                try:
+                    env = json.loads(payload)
+                except (ValueError, TypeError):
+                    continue
+                audio_obj = env.get("audio") or {}
+                b64 = audio_obj.get("data")
+                if b64:
+                    try:
+                        audio_buffer.extend(base64.b64decode(b64))
+                    except Exception:
+                        continue
+            elif isinstance(payload, (bytes, bytearray)):
+                audio_buffer.extend(payload)
+
+            # Force a flush + reset if the buffer is approaching the
+            # Gemini inline-data ceiling.
+            if len(audio_buffer) >= _GEMINI_MAX_BUFFER_BYTES:
+                await transcribe_and_emit(is_final=True)
+                await emit_event("vad_end")
+                audio_buffer.clear()
+                last_emitted_text = ""
+                last_transcribe_at = time.monotonic()
+                continue
+
+            if (time.monotonic() - last_transcribe_at) >= _GEMINI_TICK_SECONDS:
+                await transcribe_and_emit(is_final=False)
+                last_transcribe_at = time.monotonic()
+
+        # Client disconnected — final transcribe + commit signal.
+        await transcribe_and_emit(is_final=True)
+        await emit_event("vad_end")
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        logger.error(
+            "Gemini stream STT fatal (reporter=%s): %r",
+            reporter_id, exc,
+        )
+    finally:
+        duration = time.monotonic() - session_started
+        logger.info(
+            "Gemini STT session ended (reporter=%s, duration=%.1fs, "
+            "audio_bytes=%d)",
+            reporter_id, duration, len(audio_buffer),
+        )
+        try:
+            await ws.close()
+        except Exception:
+            pass
+
+
 @router.websocket("/ws/stt")
 async def websocket_stt_proxy(
     ws: WebSocket,
@@ -130,6 +344,24 @@ async def websocket_stt_proxy(
 
     await ws.accept()
     logger.info(f"STT proxy: connected (reporter={reporter_id})")
+
+    # ── Provider dispatch ─────────────────────────────────────────────
+    # When STT_PROVIDER=gemini, route the live-dictation stream through
+    # the Gemini batch API in chunks (pseudo-streaming). Mobile app
+    # sees the same `{type: "data", data: {transcript, is_final}}`
+    # message shape, so no client change is required. UX trade-off:
+    # partials arrive every ~4s instead of Sarvam streaming's ~200ms.
+    if (settings.STT_PROVIDER or "sarvam").lower() == "gemini":
+        logger.info(
+            "STT proxy: routing to Gemini (reporter=%s, model=%s)",
+            reporter_id, settings.STT_GEMINI_MODEL,
+        )
+        await _gemini_streaming_handler(
+            ws,
+            reporter_id=reporter_id,
+            language_code=language_code,
+        )
+        return
 
     # 2. Sarvam connection details
     sarvam_url = (
