@@ -224,17 +224,144 @@ def _is_chunk_silent(
 ) -> bool:
     """True if the chunk's RMS energy is below the speech threshold.
 
-    Threshold defaults to settings.STT_SILENCE_RMS_THRESHOLD, which is
-    env-configurable for prod tuning. False positives (brief loud
-    transient in an otherwise silent chunk) leak to Gemini where the
-    hallucination filter catches the bad output. False negatives
-    (very-quiet speech below threshold) get dropped — acceptable
-    trade since quiet speech's transcript would have been wrong
-    anyway and the reporter naturally re-tries louder.
+    DEPRECATED for the streaming path — superseded by
+    ``_compress_pcm_silence`` below, which performs sub-window analysis
+    and is robust against the "1-2 s of speech inside a 4 s chunk"
+    case that the whole-chunk RMS test misses (the chunk's average
+    RMS gets pulled above threshold by the speech, leaving the silent
+    portion to Gemini for hallucination). Kept for tests + diagnostic
+    use.
     """
     if threshold is None:
         threshold = float(settings.STT_SILENCE_RMS_THRESHOLD)
     return _chunk_rms(pcm_bytes) < threshold
+
+
+# Sub-window VAD constants.
+# 200 ms windows: short enough that a single word's pause boundaries
+# don't bleed across windows, long enough that RMS averages out
+# instantaneous spikes.
+_VAD_WINDOW_MS = 200
+_VAD_PAD_WINDOWS = 1  # keep 1 window (200 ms) of context on each side of speech
+# Minimum total speech in a chunk to bother calling Gemini. Below
+# this threshold we treat the chunk as "essentially silent" and skip
+# the API call. 300 ms ≈ 1-2 short syllables — anything less rarely
+# transcribes to useful text and frequently triggers small-model
+# hallucinations.
+_VAD_MIN_SPEECH_BYTES = int(_PCM_BYTES_PER_SEC * 0.3)
+
+
+def _compress_pcm_silence(
+    pcm_bytes: bytes,
+    *,
+    sample_rate: int = 16000,
+    window_ms: int = _VAD_WINDOW_MS,
+    pad_windows: int = _VAD_PAD_WINDOWS,
+    rms_threshold: Optional[float] = None,
+) -> tuple[bytes, dict]:
+    """Strip silent sub-windows from a PCM 16-bit chunk.
+
+    Why per-window instead of whole-chunk: real dictation alternates
+    speech and silence at sub-second timescales. A 4-s chunk
+    containing "3 s silence + 1 s speech" has average RMS pulled
+    above threshold by the speech burst, so the whole-chunk gate
+    waves it through and Gemini transcribes 4 s of audio of which
+    3 s is silence — exactly where small models hallucinate. Per-
+    window analysis classifies each 200 ms slice independently and
+    drops only the silent slices, sending Gemini just the speech
+    portions.
+
+    Each 200 ms window's RMS is computed independently. Windows
+    above ``rms_threshold`` are kept; ``pad_windows`` of context are
+    also retained on each side of every speech window so word
+    boundaries (typically 50-150 ms of pause adjacent to a word)
+    are preserved — concatenation feels natural to the model and
+    we don't accidentally remove the breath before the next word.
+
+    Returns ``(compressed_pcm, stats_dict)`` where ``stats_dict``
+    contains:
+      - ``original_ms``: input audio length
+      - ``kept_ms``: output audio length (audio actually sent to Gemini)
+      - ``windows_kept`` / ``windows_total``
+    """
+    if rms_threshold is None:
+        rms_threshold = float(settings.STT_SILENCE_RMS_THRESHOLD)
+
+    empty_stats = {
+        "original_ms": 0, "kept_ms": 0,
+        "windows_kept": 0, "windows_total": 0,
+    }
+    if not pcm_bytes:
+        return b"", empty_stats
+
+    # int16 PCM requires even-length payloads.
+    if len(pcm_bytes) % 2 != 0:
+        pcm_bytes = pcm_bytes[:-1]
+    if not pcm_bytes:
+        return b"", empty_stats
+
+    samples_per_window = int(sample_rate * window_ms / 1000)
+    bytes_per_window = samples_per_window * 2
+    samples = array.array("h")
+    samples.frombytes(pcm_bytes)
+
+    n_windows = len(samples) // samples_per_window
+    if n_windows == 0:
+        # Sub-window-sized chunk — treat as one window. Decide by RMS.
+        sum_sq = sum(s * s for s in samples)
+        rms = (sum_sq / len(samples)) ** 0.5 if samples else 0.0
+        original_ms = int(len(pcm_bytes) / 2 / sample_rate * 1000)
+        if rms >= rms_threshold:
+            return pcm_bytes, {
+                "original_ms": original_ms, "kept_ms": original_ms,
+                "windows_kept": 1, "windows_total": 1,
+            }
+        return b"", {
+            "original_ms": original_ms, "kept_ms": 0,
+            "windows_kept": 0, "windows_total": 1,
+        }
+
+    # Phase 1: classify each window as speech (True) or silence (False)
+    # by its own RMS energy.
+    is_speech = [False] * n_windows
+    for w in range(n_windows):
+        start = w * samples_per_window
+        end = start + samples_per_window
+        window = samples[start:end]
+        sum_sq = sum(s * s for s in window)
+        rms = (sum_sq / samples_per_window) ** 0.5
+        is_speech[w] = rms >= rms_threshold
+
+    # Phase 2: dilate speech regions by `pad_windows` on each side so
+    # natural word-boundary pauses are preserved in the output.
+    keep = [False] * n_windows
+    for w in range(n_windows):
+        if is_speech[w]:
+            for d in range(-pad_windows, pad_windows + 1):
+                idx = w + d
+                if 0 <= idx < n_windows:
+                    keep[idx] = True
+
+    # Phase 3: emit kept windows (in order) into the output buffer.
+    output = bytearray()
+    for w in range(n_windows):
+        if keep[w]:
+            start = w * bytes_per_window
+            output.extend(pcm_bytes[start:start + bytes_per_window])
+
+    # Append any trailing partial-window bytes only if we kept the
+    # last full window — otherwise the trailing fragment is part of
+    # a silent stretch and should be dropped too.
+    remainder_start = n_windows * bytes_per_window
+    if remainder_start < len(pcm_bytes) and n_windows > 0 and keep[-1]:
+        output.extend(pcm_bytes[remainder_start:])
+
+    return bytes(output), {
+        "original_ms": int(len(pcm_bytes) / 2 / sample_rate * 1000),
+        "kept_ms": int(len(output) / 2 / sample_rate * 1000),
+        "windows_kept": sum(keep),
+        "windows_total": n_windows,
+    }
 
 
 def _wrap_pcm_as_wav(
@@ -296,6 +423,11 @@ async def _gemini_streaming_handler(
     chunk_count = 0
     silent_chunks_dropped = 0
     total_audio_bytes = 0
+    # Audio actually sent to Gemini after VAD compression. Diverges
+    # from total_audio_bytes when chunks have silent stretches that
+    # got stripped by _compress_pcm_silence — the gap is the cost
+    # saving relative to a no-VAD pipeline.
+    compressed_audio_bytes = 0
     # Mirror of every Gemini call's usage metadata. gemini_client.stt()
     # appends to this list so we can sum cost / tokens at session end
     # without DB round-trip. Each entry: {input_tokens, output_tokens,
@@ -335,7 +467,8 @@ async def _gemini_streaming_handler(
         hallucinations on small models. See ``_build_stt_prompt`` in
         gemini_client for the prompt structure.
         """
-        nonlocal cumulative_text, pending_chunk, chunk_count, silent_chunks_dropped
+        nonlocal cumulative_text, pending_chunk, chunk_count
+        nonlocal silent_chunks_dropped, compressed_audio_bytes
 
         if not pending_chunk:
             return
@@ -344,18 +477,26 @@ async def _gemini_streaming_handler(
         pending_chunk.clear()  # advance the window — these bytes are now committed
         chunk_count += 1
 
-        # Silence gate. If the user paused or the mic captured ambient
-        # noise without speech, drop the chunk before it ever reaches
-        # Gemini. This removes the silent-audio-hallucination class
-        # entirely (no API call → no chance for "this house is so
-        # beautiful" output) AND saves the API spend. On is_final we
-        # still emit the existing cumulative transcript + vad_end so
-        # the panel commits whatever was said before the silence.
-        if _is_chunk_silent(chunk_bytes):
+        # Sub-window VAD compression. Splits the chunk into 200 ms
+        # windows, keeps only the ones above the speech RMS threshold
+        # (with 200 ms padding around each speech window for natural
+        # cadence), drops the rest. For a typical "1-2 s of speech in
+        # a 4 s chunk" the compressed output is ~50% the size — sent
+        # bytes drop by half AND the silent portions that would have
+        # invited hallucinations are gone.
+        compressed_bytes, _vad_stats = _compress_pcm_silence(chunk_bytes)
+
+        # Whole-chunk silence: if the compressor returned <300 ms of
+        # audio, the chunk was essentially silent. Skip the API call
+        # entirely. On is_final we still emit the existing cumulative
+        # so the client commits.
+        if len(compressed_bytes) < _VAD_MIN_SPEECH_BYTES:
             silent_chunks_dropped += 1
             if is_final and cumulative_text:
                 await emit_data(cumulative_text, is_final=True)
             return
+
+        compressed_audio_bytes += len(compressed_bytes)
 
         # Trailing words of the cumulative transcript become this call's
         # context anchor. Six is a sweet spot — enough to bias the model
@@ -365,7 +506,7 @@ async def _gemini_streaming_handler(
         prior_words = cumulative_text.split()[-6:] if cumulative_text else []
         prior_context = " ".join(prior_words)
 
-        wav = _wrap_pcm_as_wav(chunk_bytes)
+        wav = _wrap_pcm_as_wav(compressed_bytes)
         try:
             text = await gemini_client.stt(
                 audio_bytes=wav,
@@ -483,13 +624,23 @@ async def _gemini_streaming_handler(
         total_cost = sum(float(u.get("cost_inr") or 0) for u in usage_sink)
         total_input = sum(int(u.get("input_tokens") or 0) for u in usage_sink)
         total_output = sum(int(u.get("output_tokens") or 0) for u in usage_sink)
+        # Audio retained ratio: how much of the recorded audio actually
+        # made it to Gemini after sub-window VAD. 100% = no compression
+        # (every window was speech). Lower is better — silent stretches
+        # are being correctly stripped.
+        audio_retained_pct = (
+            compressed_audio_bytes / total_audio_bytes * 100
+            if total_audio_bytes > 0 else 0.0
+        )
         logger.info(
             "Gemini STT session ended (reporter=%s, duration=%.1fs, "
-            "audio_bytes=%d, chunks=%d, silent_dropped=%d, "
-            "gemini_calls=%d, cost=₹%.4f, input_tokens=%d, output_tokens=%d)",
-            reporter_id, duration, total_audio_bytes, chunk_count,
-            silent_chunks_dropped, gemini_calls, total_cost,
-            total_input, total_output,
+            "audio_bytes=%d, audio_to_gemini=%d (%.1f%%), "
+            "chunks=%d, silent_dropped=%d, gemini_calls=%d, "
+            "cost=₹%.4f, input_tokens=%d, output_tokens=%d)",
+            reporter_id, duration, total_audio_bytes,
+            compressed_audio_bytes, audio_retained_pct,
+            chunk_count, silent_chunks_dropped, gemini_calls,
+            total_cost, total_input, total_output,
         )
         try:
             await ws.close()

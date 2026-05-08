@@ -147,3 +147,131 @@ def test_peak_amplitude_kept_for_diagnostic_logging():
     from app.routers.sarvam import _chunk_peak_amplitude
     pcm = struct.pack("<4h", 0, 5000, 0, 0)
     assert _chunk_peak_amplitude(pcm) == 5000
+
+
+# ── Sub-window VAD compression ──────────────────────────────────
+
+
+def _make_pcm(seconds: float, amplitude: int, sample_rate: int = 16000) -> bytes:
+    """Build a deterministic PCM buffer: alternating +amp/-amp samples
+    of the requested duration. Useful for setting an exact RMS."""
+    n = int(sample_rate * seconds)
+    samples = [amplitude if i % 2 == 0 else -amplitude for i in range(n)]
+    return struct.pack(f"<{n}h", *samples)
+
+
+def test_vad_strips_silent_prefix(monkeypatch):
+    """User's described scenario: 3 s of silence followed by 1 s of
+    speech in a 4 s chunk. Whole-chunk RMS gate fails because the
+    speech pulls the average above threshold; sub-window VAD strips
+    the silent 3 s and only sends ~1 s to Gemini."""
+    from app.config import settings
+    from app.routers.sarvam import _compress_pcm_silence
+
+    monkeypatch.setattr(settings, "STT_SILENCE_RMS_THRESHOLD", 200)
+
+    silent = _make_pcm(3.0, 50)        # RMS ≈ 50, well below threshold
+    speech = _make_pcm(1.0, 2000)      # RMS ≈ 2000, far above threshold
+    pcm = silent + speech
+
+    compressed, stats = _compress_pcm_silence(pcm)
+
+    # Original: 4 s = 4000 ms
+    assert stats["original_ms"] == 4000
+    # Output should be roughly the 1 s of speech + 1 padding window
+    # (200 ms) before it. Allow some slop for window-boundary effects.
+    assert 1000 <= stats["kept_ms"] <= 1500
+    # Compression ratio: kept significantly less than original
+    assert stats["kept_ms"] < stats["original_ms"] * 0.5
+
+
+def test_vad_strips_silent_suffix(monkeypatch):
+    """Mirror of the prefix case: 1 s speech then 3 s silence."""
+    from app.config import settings
+    from app.routers.sarvam import _compress_pcm_silence
+
+    monkeypatch.setattr(settings, "STT_SILENCE_RMS_THRESHOLD", 200)
+
+    speech = _make_pcm(1.0, 2000)
+    silent = _make_pcm(3.0, 50)
+    pcm = speech + silent
+
+    compressed, stats = _compress_pcm_silence(pcm)
+    assert stats["original_ms"] == 4000
+    assert 1000 <= stats["kept_ms"] <= 1500
+
+
+def test_vad_keeps_short_pause_between_words(monkeypatch):
+    """A typical word-pause is 100-200 ms. The 200 ms padding around
+    each speech window means short inter-word pauses are preserved
+    in the compressed output (natural cadence for the model)."""
+    from app.config import settings
+    from app.routers.sarvam import _compress_pcm_silence
+
+    monkeypatch.setattr(settings, "STT_SILENCE_RMS_THRESHOLD", 200)
+
+    word = _make_pcm(0.4, 2000)        # 400 ms of speech
+    pause = _make_pcm(0.2, 50)          # 200 ms of pause
+    pcm = word + pause + word + pause + word  # 3 words separated by pauses
+
+    compressed, stats = _compress_pcm_silence(pcm)
+    # All speech kept; short inter-word pauses kept too because they
+    # fall within the dilation window of adjacent speech.
+    assert stats["kept_ms"] >= stats["original_ms"] * 0.85
+
+
+def test_vad_full_silence_collapses_to_empty(monkeypatch):
+    """A chunk that is silent throughout produces an empty output —
+    handler treats this as silent_dropped and skips the API call."""
+    from app.config import settings
+    from app.routers.sarvam import _compress_pcm_silence
+
+    monkeypatch.setattr(settings, "STT_SILENCE_RMS_THRESHOLD", 200)
+
+    pcm = _make_pcm(4.0, 50)  # 4 s of low-amplitude noise
+
+    compressed, stats = _compress_pcm_silence(pcm)
+    assert compressed == b""
+    assert stats["kept_ms"] == 0
+    assert stats["windows_kept"] == 0
+
+
+def test_vad_full_speech_passes_through(monkeypatch):
+    """A chunk that's speech throughout passes through almost unchanged
+    (every window is kept; padding doesn't change the output because
+    everything is already speech)."""
+    from app.config import settings
+    from app.routers.sarvam import _compress_pcm_silence
+
+    monkeypatch.setattr(settings, "STT_SILENCE_RMS_THRESHOLD", 200)
+
+    pcm = _make_pcm(4.0, 2000)
+
+    compressed, stats = _compress_pcm_silence(pcm)
+    # Allow tiny boundary loss but expect ~100% retention
+    assert stats["kept_ms"] >= stats["original_ms"] * 0.95
+
+
+def test_vad_handles_empty_input(monkeypatch):
+    from app.routers.sarvam import _compress_pcm_silence
+    compressed, stats = _compress_pcm_silence(b"")
+    assert compressed == b""
+    assert stats["original_ms"] == 0
+    assert stats["kept_ms"] == 0
+
+
+def test_vad_threshold_reads_from_settings(monkeypatch):
+    """Threshold defaults to settings.STT_SILENCE_RMS_THRESHOLD,
+    overridable via env var without redeploy."""
+    from app.config import settings
+    from app.routers.sarvam import _compress_pcm_silence
+
+    pcm = _make_pcm(2.0, 150)  # RMS ≈ 150
+
+    monkeypatch.setattr(settings, "STT_SILENCE_RMS_THRESHOLD", 200)
+    _, stats_strict = _compress_pcm_silence(pcm)
+    assert stats_strict["kept_ms"] == 0  # 150 < 200, all silent
+
+    monkeypatch.setattr(settings, "STT_SILENCE_RMS_THRESHOLD", 100)
+    _, stats_loose = _compress_pcm_silence(pcm)
+    assert stats_loose["kept_ms"] > 0  # 150 > 100, all speech
