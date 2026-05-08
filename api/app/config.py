@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     # Default Gemini STT model when STT_PROVIDER=gemini. Override per
     # call site if needed; "gemini-2.5-flash-lite" is cheaper but
     # weaker on Indic audio.
-    STT_GEMINI_MODEL: str = "gemini-2.5-flash"
+    STT_GEMINI_MODEL: str = "gemini-2.5-flash-lite"
     # Live-dictation silence gate. RMS (root-mean-square) is computed
     # per audio chunk; chunks below this energy threshold are dropped
     # before reaching Gemini — saves API spend AND structurally
