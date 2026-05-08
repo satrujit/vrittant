@@ -428,18 +428,119 @@ _LANG_NAMES = {
 }
 
 
-def _build_stt_prompt(language_code: str) -> str:
+def _build_stt_prompt(language_code: str, prior_context: str = "") -> str:
     """Prompt that tells Gemini to act as a transcriber. Output ONLY
-    the transcript — no preamble, no language label, no translation."""
+    the transcript — no preamble, no language label, no translation.
+
+    When ``prior_context`` is supplied (the tail of the cumulative
+    transcript built so far on the streaming path), it's included as
+    an explicit "the audio continues from..." anchor. Two side benefits
+    over a context-free prompt:
+
+    1. **Language anchor.** A few Odia words at the tail biases the
+       model toward continuing in Odia even when a chunk has weak
+       acoustic signal. Cures the Bengali-drift we saw on Flash-Lite
+       at long-buffer ticks.
+    2. **Hallucination floor.** When the audio is silent / unclear,
+       a conversation-style continuation makes "this house is so
+       beautiful" / "one two three..." obviously wrong context-wise,
+       so the model is much more likely to honor the empty-output
+       instruction instead of falling back to memorized boilerplate.
+    """
     lang = _LANG_NAMES.get(language_code, "the audio's original language")
-    return (
+    base = (
         f"You are a speech-to-text transcriber. Transcribe the following "
         f"audio in {lang}. Output ONLY the transcript text in the script "
         f"native to that language (Devanagari for Hindi, Odia script for "
         f"Odia, etc.). Do not translate. Do not add explanations, prefixes, "
-        f"timestamps, speaker labels, or any commentary. If the audio "
-        f"contains no speech, output an empty string."
+        f"timestamps, speaker labels, or any commentary."
     )
+    anti_hallucination = (
+        "If the audio is silent, unclear, or contains no recognisable "
+        "speech, output an EMPTY STRING. Do NOT output filler text. "
+        "Do NOT count numbers. Do NOT output phrases like \"this house "
+        "is so beautiful\". Do NOT guess. An empty response is better "
+        "than a wrong one."
+    )
+    if not prior_context:
+        return f"{base}\n\n{anti_hallucination}"
+    return (
+        f"{base}\n\n"
+        f"This audio chunk continues a longer recording. The transcript "
+        f"so far ends with these words:\n"
+        f"\"...{prior_context}\"\n\n"
+        f"Output ONLY what is said NEW in this audio chunk. DO NOT "
+        f"repeat or paraphrase the words above — they are context, "
+        f"not content. If the new audio adds nothing intelligible "
+        f"to the transcript, output an empty string.\n\n"
+        f"{anti_hallucination}"
+    )
+
+
+# Phrases small Gemini variants emit when fed silent / unclear audio.
+# Maintained as a list so operators can extend it from logs without
+# recompiling. Substring match is case-insensitive against the lower-
+# cased model output. Hits are squashed to "" so they don't pollute
+# the cumulative transcript on the streaming path.
+_KNOWN_HALLUCINATIONS_LOWER = (
+    "this house is so beautiful",
+    "thank you for watching",
+    "thanks for watching",
+    "subscribe to my channel",
+)
+
+
+def _looks_like_pure_digit_count(text: str) -> bool:
+    """True if `text` is just a sequence of digits / spelled-out
+    numbers ('one two three', '1 2 3'). Another small-model fallback
+    pattern when audio is unclear."""
+    cleaned = text.strip().lower()
+    if not cleaned:
+        return False
+    # All chars are digits or whitespace?
+    if all(c.isdigit() or c.isspace() for c in cleaned):
+        return True
+    # Spelled-out: ≥3 number-words in a row, almost nothing else.
+    number_words = {
+        "zero", "one", "two", "three", "four", "five", "six",
+        "seven", "eight", "nine", "ten",
+    }
+    tokens = cleaned.split()
+    if len(tokens) >= 3 and sum(1 for t in tokens if t in number_words) >= len(tokens) * 0.7:
+        return True
+    return False
+
+
+def _filter_hallucination(text: str) -> str:
+    """Return ``""`` if the model output looks like a known-bad small-
+    model fallback ("this house is so beautiful", counted numbers)."""
+    if not text:
+        return text
+    lowered = text.lower()
+    for h in _KNOWN_HALLUCINATIONS_LOWER:
+        if h in lowered:
+            return ""
+    if _looks_like_pure_digit_count(text):
+        return ""
+    return text
+
+
+def _strip_echoed_prior(new_text: str, prior_context: str) -> str:
+    """If the model echoed the prior_context (despite our instruction
+    not to), strip the duplicated prefix. Tolerates partial overlap —
+    e.g. prior is "...ramesh was injured" and new starts with "was
+    injured today" → return "today" (the genuinely new content)."""
+    if not new_text or not prior_context:
+        return new_text
+    new_words = new_text.split()
+    prior_words = prior_context.split()
+    # Try matching successively shorter suffixes of prior_words against
+    # the prefix of new_words.
+    for k in range(len(prior_words), 0, -1):
+        suffix = prior_words[-k:]
+        if len(new_words) >= len(suffix) and new_words[:len(suffix)] == suffix:
+            return " ".join(new_words[len(suffix):])
+    return new_text
 
 
 async def stt(
@@ -447,6 +548,7 @@ async def stt(
     audio_bytes: bytes,
     mime_type: str,
     language_code: str = "od-IN",
+    prior_context: str = "",
     model: Optional[str] = None,
     max_tokens: int = 2000,
     timeout: float = 60.0,
@@ -484,7 +586,7 @@ async def stt(
                             "data": base64.b64encode(audio_bytes).decode("ascii"),
                         }
                     },
-                    {"text": _build_stt_prompt(language_code)},
+                    {"text": _build_stt_prompt(language_code, prior_context)},
                 ],
             },
         ],
@@ -541,7 +643,21 @@ async def stt(
         duration_ms=int((time.monotonic() - started) * 1000),
         status_code=status_code,
     )
-    return _extract_text(data)
+    text = _extract_text(data)
+    # If the model echoed the prior context despite our instruction,
+    # strip the duplicated prefix before returning (the streaming
+    # handler appends our return value to the cumulative transcript;
+    # if we left the echoed prefix in, the user would see "...ramesh
+    # was injured ramesh was injured today" — the exact duplication
+    # bug we're trying to fix). Safe no-op when prior_context is empty.
+    if prior_context:
+        text = _strip_echoed_prior(text, prior_context)
+    # Reject known small-model fallback phrases (silent-audio
+    # hallucinations like "this house is so beautiful" / "one two
+    # three..."). Returning empty here means nothing gets appended
+    # to the cumulative transcript on the streaming path.
+    text = _filter_hallucination(text)
+    return text
 
 
 async def translate(

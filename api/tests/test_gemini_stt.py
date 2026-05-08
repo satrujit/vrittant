@@ -162,3 +162,132 @@ def test_gemini_stt_applies_name_registry(monkeypatch):
         out = _run(gemini_stt.transcribe_audio(b"\x00", filename="a.m4a"))
     assert out == "fixed-up transcript"
     mock_fixup.assert_called_once_with("raw transcript")
+
+
+# ── Hallucination filter ────────────────────────────────────────
+
+
+def test_filter_hallucination_strips_known_phrase():
+    from app.services.gemini_client import _filter_hallucination
+    assert _filter_hallucination("This house is so beautiful") == ""
+    # case-insensitive
+    assert _filter_hallucination("THIS HOUSE IS SO BEAUTIFUL.") == ""
+    # substring match
+    assert _filter_hallucination("Well, this house is so beautiful actually.") == ""
+
+
+def test_filter_hallucination_strips_pure_digits():
+    from app.services.gemini_client import _filter_hallucination
+    assert _filter_hallucination("1 2 3 4 5") == ""
+    assert _filter_hallucination("one two three four") == ""
+    # but a real transcript with a number stays
+    assert _filter_hallucination(
+        "ଆଜି ୨୦ ଜଣ ଲୋକ ଆସିଲେ"
+    ) == "ଆଜି ୨୦ ଜଣ ଲୋକ ଆସିଲେ"
+
+
+def test_filter_hallucination_passes_real_transcript():
+    from app.services.gemini_client import _filter_hallucination
+    odia = "ଆଜି ଗ୍ରାମରେ ଏକ ଦୁର୍ଘଟଣା ଘଟିଲା"
+    assert _filter_hallucination(odia) == odia
+
+
+# ── Echo stripping ──────────────────────────────────────────────
+
+
+def test_strip_echoed_prior_removes_full_overlap():
+    from app.services.gemini_client import _strip_echoed_prior
+    out = _strip_echoed_prior(
+        "ramesh was injured today the police arrived",
+        "ramesh was injured",
+    )
+    assert out == "today the police arrived"
+
+
+def test_strip_echoed_prior_partial_suffix_overlap():
+    """Model may echo only the LAST few words of the prior context.
+    Detect and strip just those."""
+    from app.services.gemini_client import _strip_echoed_prior
+    out = _strip_echoed_prior(
+        "was injured today the police arrived",
+        "the man was injured",
+    )
+    assert out == "today the police arrived"
+
+
+def test_strip_echoed_prior_no_overlap_returns_unchanged():
+    from app.services.gemini_client import _strip_echoed_prior
+    out = _strip_echoed_prior(
+        "completely fresh content here",
+        "earlier unrelated words",
+    )
+    assert out == "completely fresh content here"
+
+
+def test_strip_echoed_prior_empty_inputs_pass_through():
+    from app.services.gemini_client import _strip_echoed_prior
+    assert _strip_echoed_prior("", "anything") == ""
+    assert _strip_echoed_prior("anything", "") == "anything"
+
+
+# ── Prompt building ─────────────────────────────────────────────
+
+
+def test_build_stt_prompt_without_prior_context():
+    from app.services.gemini_client import _build_stt_prompt
+    p = _build_stt_prompt("od-IN")
+    assert "Odia" in p
+    assert "EMPTY STRING" in p  # anti-hallucination instruction present
+    assert "this house" in p.lower()  # call-out the specific bad phrase
+    # No prior-context block when none supplied
+    assert "continues a longer recording" not in p
+
+
+def test_build_stt_prompt_with_prior_context():
+    from app.services.gemini_client import _build_stt_prompt
+    p = _build_stt_prompt("od-IN", prior_context="ରମେଶ ଆହତ ହେଲେ")
+    assert "Odia" in p
+    assert "ରମେଶ ଆହତ ହେଲେ" in p
+    assert "DO NOT repeat" in p
+
+
+# ── End-to-end: stt() forwards prior_context into the prompt ────
+
+
+def test_gemini_stt_forwards_prior_context_to_prompt(monkeypatch):
+    from app.config import settings
+    from app.services import gemini_client
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-key")
+
+    captured = {}
+
+    class _FakeResp:
+        status_code = 200
+        text = ""
+        def json(self):
+            return {
+                "candidates": [{"content": {"parts": [{"text": "new content here"}]}}],
+                "usageMetadata": {"promptTokenCount": 200, "candidatesTokenCount": 4},
+            }
+
+    class _FakeClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, url, *, json=None, headers=None, timeout=None):
+            captured["json"] = json
+            return _FakeResp()
+
+    with patch("app.services.gemini_client.httpx.AsyncClient",
+               return_value=_FakeClient()), \
+         patch("app.services.gemini_client._write_log_row"):
+        out = _run(gemini_client.stt(
+            audio_bytes=b"PCM",
+            mime_type="audio/wav",
+            language_code="od-IN",
+            prior_context="ରମେଶ ଆହତ ହେଲେ",
+        ))
+
+    assert out == "new content here"
+    prompt_text = captured["json"]["contents"][0]["parts"][1]["text"]
+    assert "ରମେଶ ଆହତ ହେଲେ" in prompt_text
+    assert "DO NOT repeat" in prompt_text

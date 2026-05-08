@@ -43,6 +43,7 @@ async def transcribe_audio(
     *,
     filename: str = "audio.m4a",
     language_code: str = "od-IN",
+    prior_context: str = "",
     model: str = _DEFAULT_MODEL,
     timeout_seconds: float = 60.0,
 ) -> str:
@@ -50,6 +51,12 @@ async def transcribe_audio(
 
     Same return / exception shape as ``stt.transcribe_audio`` so the
     dispatcher can swap providers without callers noticing.
+
+    ``prior_context`` is the tail of the cumulative transcript from
+    the streaming path — when supplied, gemini_client.stt embeds it
+    in the prompt to anchor the language and reduce hallucinations.
+    Empty by default (batch use cases like WhatsApp voice notes
+    have no prior context to provide).
     """
     if not audio_bytes:
         return ""
@@ -61,6 +68,7 @@ async def transcribe_audio(
             audio_bytes=audio_bytes,
             mime_type=mime_type,
             language_code=language_code,
+            prior_context=prior_context,
             model=model,
             timeout=timeout_seconds,
         )

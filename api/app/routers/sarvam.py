@@ -243,7 +243,14 @@ async def _gemini_streaming_handler(
         whenever the tick interval has elapsed AND we have ≥
         ``_GEMINI_MIN_CHUNK_SECONDS`` of new audio waiting (or on
         ``is_final=True`` regardless of chunk size, so trailing audio
-        at session end is captured)."""
+        at session end is captured).
+
+        Passes the last few words of the cumulative transcript as
+        ``prior_context`` so Gemini sees the conversational anchor —
+        substantially reduces language-drift and silent-audio
+        hallucinations on small models. See ``_build_stt_prompt`` in
+        gemini_client for the prompt structure.
+        """
         nonlocal cumulative_text, pending_chunk, chunk_count
 
         if not pending_chunk:
@@ -253,12 +260,21 @@ async def _gemini_streaming_handler(
         pending_chunk.clear()  # advance the window — these bytes are now committed
         chunk_count += 1
 
+        # Trailing words of the cumulative transcript become this call's
+        # context anchor. Six is a sweet spot — enough to bias the model
+        # toward the right language and continuation, short enough that
+        # the prompt stays cheap (~30 text tokens at $0.25/M = effectively
+        # free).
+        prior_words = cumulative_text.split()[-6:] if cumulative_text else []
+        prior_context = " ".join(prior_words)
+
         wav = _wrap_pcm_as_wav(chunk_bytes)
         try:
             text = await gemini_client.stt(
                 audio_bytes=wav,
                 mime_type="audio/wav",
                 language_code=language_code,
+                prior_context=prior_context,
                 model=settings.STT_GEMINI_MODEL,
             )
         except Exception as exc:
