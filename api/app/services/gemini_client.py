@@ -60,6 +60,7 @@ rely on implicit caching where Google decides to apply it.
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import time
@@ -82,14 +83,20 @@ _PRICING = {
     "gemini-2.5-flash-lite": {
         "input_per_m": Decimal("0.10"),
         "output_per_m": Decimal("0.40"),
+        # Audio-input is billed at a different SKU on the Studio tier —
+        # 32 audio tokens per second of audio. Used by stt() / not by
+        # plain chat(). Source: ai.google.dev/gemini-api/docs/pricing
+        "audio_input_per_m": Decimal("0.30"),
     },
     "gemini-2.5-flash": {
         "input_per_m": Decimal("0.30"),
         "output_per_m": Decimal("2.50"),
+        "audio_input_per_m": Decimal("1.00"),
     },
     "gemini-2.5-pro": {
         "input_per_m": Decimal("1.25"),
         "output_per_m": Decimal("10.00"),
+        "audio_input_per_m": Decimal("3.00"),
     },
 }
 
@@ -359,6 +366,170 @@ async def chat_with_cached_system(
     return _extract_text(data)
 
 
+# ---------------------------------------------------------------------------
+# Speech-to-text via Gemini's audio-input mode
+# ---------------------------------------------------------------------------
+#
+# Gemini 2.5 Flash and Flash-Lite accept audio as a `parts[].inlineData`
+# blob (base64-encoded) alongside a text prompt. We use this as a cheaper
+# alternative to Sarvam's /speech-to-text — see services/gemini_stt.py
+# for the drop-in wrapper that mirrors services/stt.py's interface.
+#
+# Pricing comparison for a 30 s Odia voice note (≈960 audio tokens):
+#   - Sarvam saaras:        ~₹0.25
+#   - Gemini 2.5 Flash:     ~₹0.08   (3× cheaper)
+#   - Gemini 2.5 Flash-Lite ~₹0.025  (10× cheaper, lower-quality audio)
+#
+# Quality on Odia is the open question — Sarvam is Indic-specialized.
+# Recommended rollout: feature-flag both providers, dual-log for a few
+# days to compare transcripts side-by-side, then commit.
+
+# Default model for STT. 2.5 Flash-Lite is cheapest but its multilingual
+# audio understanding is weaker than Flash on Indic languages — start
+# on Flash and only flip to Flash-Lite after offline eval shows it's
+# acceptable for Odia.
+_STT_DEFAULT_MODEL = "gemini-2.5-flash"
+
+# Mapping IETF / RFC 5646 codes used by the existing Sarvam path to
+# language names Gemini will recognise in the prompt. Falls back to
+# "the audio's original language" if a code we don't know shows up.
+_LANG_NAMES = {
+    "od-IN": "Odia (Oriya)",
+    "or-IN": "Odia (Oriya)",
+    "od":    "Odia (Oriya)",
+    "or":    "Odia (Oriya)",
+    "hi-IN": "Hindi",
+    "hi":    "Hindi",
+    "en-IN": "Indian English",
+    "en-US": "English",
+    "en":    "English",
+    "bn-IN": "Bengali",
+    "ta-IN": "Tamil",
+    "te-IN": "Telugu",
+    "mr-IN": "Marathi",
+    "gu-IN": "Gujarati",
+    "kn-IN": "Kannada",
+    "ml-IN": "Malayalam",
+    "pa-IN": "Punjabi",
+}
+
+
+def _build_stt_prompt(language_code: str) -> str:
+    """Prompt that tells Gemini to act as a transcriber. Output ONLY
+    the transcript — no preamble, no language label, no translation."""
+    lang = _LANG_NAMES.get(language_code, "the audio's original language")
+    return (
+        f"You are a speech-to-text transcriber. Transcribe the following "
+        f"audio in {lang}. Output ONLY the transcript text in the script "
+        f"native to that language (Devanagari for Hindi, Odia script for "
+        f"Odia, etc.). Do not translate. Do not add explanations, prefixes, "
+        f"timestamps, speaker labels, or any commentary. If the audio "
+        f"contains no speech, output an empty string."
+    )
+
+
+async def stt(
+    *,
+    audio_bytes: bytes,
+    mime_type: str,
+    language_code: str = "od-IN",
+    model: Optional[str] = None,
+    max_tokens: int = 2000,
+    timeout: float = 60.0,
+    client: Optional[httpx.AsyncClient] = None,
+) -> str:
+    """Transcribe ``audio_bytes`` via Gemini audio-in. Returns the transcript.
+
+    ``mime_type`` should match the audio container (audio/mp4, audio/ogg,
+    audio/mpeg, audio/wav, audio/aac, audio/webm, audio/flac). Gemini
+    documents support for these; an unknown MIME results in a 400 from
+    Gemini which we surface as a GeminiError so callers can decide
+    whether to retry the Sarvam path or give up.
+
+    Inline upload is capped by Google at ~20 MB request body. WhatsApp
+    voice notes are typically <1 MB so this is fine; longer recordings
+    from the live-dictation path may need the Files API which we don't
+    plumb here yet — guard with a size check upstream if relevant.
+    """
+    if not audio_bytes:
+        return ""
+    if not _api_key():
+        raise GeminiError("GEMINI_API_KEY is not configured", status_code=None)
+
+    resolved_model = model or _STT_DEFAULT_MODEL
+    url = f"{_base_url()}/v1beta/models/{resolved_model}:generateContent"
+
+    payload: dict = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": base64.b64encode(audio_bytes).decode("ascii"),
+                        }
+                    },
+                    {"text": _build_stt_prompt(language_code)},
+                ],
+            },
+        ],
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
+            # Transcription is a deterministic-leaning task; lock
+            # temperature low so the model doesn't paraphrase.
+            "temperature": 0.0,
+        },
+    }
+
+    started = time.monotonic()
+    status_code: Optional[int] = None
+
+    try:
+        async with _maybe_client(client, timeout) as c:
+            resp = await c.post(url, json=payload, headers=_headers(), timeout=timeout)
+            status_code = resp.status_code
+            if resp.status_code >= 400:
+                body_preview = resp.text[:500]
+                _log_failed_call(
+                    model=resolved_model,
+                    started=started,
+                    status_code=status_code,
+                    error=f"http_{status_code}",
+                )
+                raise GeminiError(
+                    f"gemini stt {status_code}: {body_preview}",
+                    status_code=status_code,
+                )
+            data = resp.json()
+    except (httpx.RequestError, ValueError) as exc:
+        _log_failed_call(
+            model=resolved_model,
+            started=started,
+            status_code=status_code,
+            error=type(exc).__name__,
+        )
+        raise GeminiError(f"gemini stt request failed: {exc}") from exc
+
+    usage = (data.get("usageMetadata") or {}) if isinstance(data, dict) else {}
+    input_tokens = int(usage.get("promptTokenCount") or 0)
+    output_tokens = int(usage.get("candidatesTokenCount") or 0)
+
+    cost = _cost_stt(resolved_model, input_tokens, output_tokens)
+    _write_log_row(
+        service="gemini_stt",
+        model=resolved_model,
+        endpoint="/v1beta/generateContent[audio]",
+        input_tokens=input_tokens,
+        cached_tokens=0,
+        output_tokens=output_tokens,
+        cost_inr=cost,
+        duration_ms=int((time.monotonic() - started) * 1000),
+        status_code=status_code,
+    )
+    return _extract_text(data)
+
+
 async def translate(
     *,
     text: str,
@@ -434,6 +605,26 @@ def _cost_chat(model: str, input_tokens: int, cached_tokens: int, output_tokens:
     cost_usd = (
         (Decimal(fresh_in) * p["input_per_m"] / Decimal(1_000_000))
         + (Decimal(cached_tokens) * p["input_per_m"] * Decimal("0.25") / Decimal(1_000_000))
+        + (Decimal(output_tokens) * p["output_per_m"] / Decimal(1_000_000))
+    )
+    return (cost_usd * _USD_TO_INR).quantize(Decimal("0.0001"))
+
+
+def _cost_stt(model: str, audio_input_tokens: int, output_tokens: int) -> Decimal:
+    """Cost for an STT call. Input is billed at the audio rate, not the
+    text-input rate — Google reports them in the same `promptTokenCount`
+    field but the SKU is different. We bill the entire prompt at the
+    audio rate; the small overhead of the system-instruction text in
+    the prompt is rounded into it (a few hundred audio-equivalent
+    tokens of slop is cheaper to ignore than to split apart).
+    """
+    p = _PRICING.get(_normalize_model(model))
+    if not p:
+        logger.warning("gemini_client: no PRICING for %r — stt cost will be 0", model)
+        return Decimal("0")
+    audio_rate = p.get("audio_input_per_m") or p["input_per_m"]
+    cost_usd = (
+        (Decimal(audio_input_tokens) * audio_rate / Decimal(1_000_000))
         + (Decimal(output_tokens) * p["output_per_m"] / Decimal(1_000_000))
     )
     return (cost_usd * _USD_TO_INR).quantize(Decimal("0.0001"))

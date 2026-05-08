@@ -49,6 +49,26 @@ class Settings(BaseSettings):
     # model) when needed.
     GEMINI_DEFAULT_MODEL: str = "gemini-2.5-flash-lite"
 
+    # Speech-to-text provider — "sarvam" (default) or "gemini". Switching
+    # to "gemini" routes services/stt.py.transcribe_audio to the Gemini
+    # 2.5 Flash audio-input path (see services/gemini_stt.py). Sarvam
+    # remains the default until offline eval shows Gemini's Odia
+    # accuracy is acceptable. Cost ratio at current rates: Sarvam saaras
+    # ~₹0.25 / 30s vs Gemini Flash ~₹0.08 / 30s — 3× cheaper, larger if
+    # we move to Flash-Lite.
+    STT_PROVIDER: str = "sarvam"
+    # Default Gemini STT model when STT_PROVIDER=gemini. Override per
+    # call site if needed; "gemini-2.5-flash-lite" is cheaper but
+    # weaker on Indic audio.
+    STT_GEMINI_MODEL: str = "gemini-2.5-flash"
+    # Dual-run mode: when True, every STT call invokes BOTH providers
+    # in parallel, returns the primary (per STT_PROVIDER), and writes
+    # the secondary's transcript + duration + cost into
+    # sarvam_usage_log under service="stt_shadow_<other>". Use during
+    # the rollout window to compare quality side-by-side. Doubles the
+    # spend per call — turn off once you've decided.
+    STT_DUAL_LOG: bool = False
+
     # OTP provider — "twilio" (default) or "msg91". Switch via env without code changes.
     OTP_PROVIDER: str = "twilio"
 
