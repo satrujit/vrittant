@@ -35,7 +35,7 @@ jobs:
             --region asia-south1 \
             --project vrittant-f5ef2 \
             --allow-unauthenticated \
-            --cpu-throttling \
+            --no-cpu-throttling \
             --min-instances=1 \
             --max-instances=3 \
             --memory=512Mi \
