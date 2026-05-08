@@ -7,6 +7,7 @@ from app.models.user import User
 from app.models.organization import Organization
 from app.models.story import Story
 from app.services.whatsapp.today import handle_today, render_today_message
+from app.utils.tz import now_ist
 
 
 def _seed_user(db, lang="en"):
@@ -32,7 +33,14 @@ def _make_story(db, *, id_, reporter_id, headline, submitted_offset_minutes=0,
     """
     if updated_offset_minutes is None:
         updated_offset_minutes = submitted_offset_minutes
-    now = datetime.now(timezone.utc)
+    # Seed in IST wall-clock to match the handler's filter convention.
+    # The Story.submitted_at / updated_at columns are tz-naive but
+    # populated from now_ist() in prod; the handler builds its today-
+    # window from IST midnights. Seeding via datetime.now(timezone.utc)
+    # produces UTC wall-clock values that, when CI runs after 18:30 UTC,
+    # land in IST-yesterday and get filtered out — the failure mode
+    # observed in the 2026-05-08 prod pipeline run.
+    now = now_ist()
     s = Story(
         id=id_, organization_id="o", reporter_id=reporter_id,
         seq_no=1, headline=headline, paragraphs=[], status=status,
