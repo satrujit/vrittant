@@ -245,10 +245,53 @@ _VAD_WINDOW_MS = 200
 _VAD_PAD_WINDOWS = 1  # keep 1 window (200 ms) of context on each side of speech
 # Minimum total speech in a chunk to bother calling Gemini. Below
 # this threshold we treat the chunk as "essentially silent" and skip
-# the API call. 300 ms ≈ 1-2 short syllables — anything less rarely
-# transcribes to useful text and frequently triggers small-model
-# hallucinations.
-_VAD_MIN_SPEECH_BYTES = int(_PCM_BYTES_PER_SEC * 0.3)
+# the API call. Bumped from 300 ms to 600 ms on 2026-05-09 after the
+# Flash-Lite migration: ambient noise (fan, breath, distant voices)
+# was passing the per-window RMS gate with ~300-500 ms of audio, and
+# Flash-Lite was hallucinating "ଏହି ଘରଟି ବହୁତ ସୁନ୍ଦର" into the gap.
+# 600 ms ≈ one Odia syllable + tail; below that, nothing useful
+# transcribes anyway, so the false-negative cost is zero.
+_VAD_MIN_SPEECH_BYTES = int(_PCM_BYTES_PER_SEC * 0.6)
+
+
+# Known small-model hallucination phrases. Gemini-Flash-Lite has high-
+# prior fallback sentences it emits when the input is too short or
+# too ambient-noise-y to transcribe; they're constant across sessions
+# and never appear in real reporter dictation. Strip them post-hoc so
+# they don't bleed into the cumulative transcript. Append phrases as
+# we observe them — a small, targeted denylist is preferred over
+# trying to RMS-tune our way out of the problem (we'd reject quiet
+# real speech alongside the noise).
+_STT_HALLUCINATION_PHRASES = (
+    "ଏହି ଘରଟି ବହୁତ ସୁନ୍ଦର",  # "this house is very beautiful" — Flash-Lite Odia
+    "ଏହି ଘରଟି ବହୁତ ସୁନ୍ଦର।",
+    "this house is very beautiful",
+    "this house is so beautiful",
+)
+
+
+def _filter_hallucinations(text: str) -> tuple[str, bool]:
+    """Return (cleaned_text, was_filtered).
+
+    If the entire transcript matches a known hallucination phrase
+    (modulo trailing punctuation / whitespace / case), returns ("", True).
+    If the transcript merely contains the phrase as a prefix, strips it
+    and returns the remainder. Otherwise returns the original text
+    unchanged.
+    """
+    if not text:
+        return text, False
+    stripped = text.strip()
+    bare = stripped.rstrip("।.,!? ").lower()
+    for phrase in _STT_HALLUCINATION_PHRASES:
+        p = phrase.rstrip("।.,!? ").lower()
+        if bare == p:
+            return "", True
+        if bare.startswith(p):
+            # Strip the phrase prefix and the punctuation that followed it.
+            cut = stripped[len(phrase):].lstrip(" ।.,!?")
+            return cut, True
+    return text, False
 
 
 def _compress_pcm_silence(
@@ -422,6 +465,7 @@ async def _gemini_streaming_handler(
     # Per-session telemetry for debug
     chunk_count = 0
     silent_chunks_dropped = 0
+    hallucinations_filtered = 0
     total_audio_bytes = 0
     # Audio actually sent to Gemini after VAD compression. Diverges
     # from total_audio_bytes when chunks have silent stretches that
@@ -469,6 +513,7 @@ async def _gemini_streaming_handler(
         """
         nonlocal cumulative_text, pending_chunk, chunk_count
         nonlocal silent_chunks_dropped, compressed_audio_bytes
+        nonlocal hallucinations_filtered
 
         if not pending_chunk:
             return
@@ -522,10 +567,24 @@ async def _gemini_streaming_handler(
             return
 
         text = name_registry.replace_english_names((text or "").strip())
+
+        # Strip known small-model hallucinations (e.g. "ଏହି ଘରଟି ବହୁତ ସୁନ୍ଦର"
+        # — Flash-Lite's high-prior fallback on near-silent / ambient-
+        # noise audio). The VAD gate catches most of it; this is the
+        # belt-and-braces line of defence for what slips through.
+        text, was_hallucinated = _filter_hallucinations(text)
+        if was_hallucinated:
+            hallucinations_filtered += 1
+            logger.info(
+                "Gemini STT: filtered hallucination "
+                "(reporter=%s, chunk=%d, model=%s)",
+                reporter_id, chunk_count, settings.STT_GEMINI_MODEL,
+            )
+
         if not text:
             # Empty transcript for this chunk (silence / model returned
-            # nothing). Don't append; if final, still emit the existing
-            # cumulative so the client commits.
+            # nothing / hallucination filtered). Don't append; if final,
+            # still emit the existing cumulative so the client commits.
             if is_final and cumulative_text:
                 await emit_data(cumulative_text, is_final=True)
             return
@@ -633,12 +692,12 @@ async def _gemini_streaming_handler(
         logger.info(
             "Gemini STT session ended (reporter=%s, duration=%.1fs, "
             "audio_bytes=%d, audio_to_gemini=%d (%.1f%%), "
-            "chunks=%d, silent_dropped=%d, gemini_calls=%d, "
-            "cost=₹%.4f, input_tokens=%d, output_tokens=%d)",
+            "chunks=%d, silent_dropped=%d, hallucinations_filtered=%d, "
+            "gemini_calls=%d, cost=₹%.4f, input_tokens=%d, output_tokens=%d)",
             reporter_id, duration, total_audio_bytes,
             compressed_audio_bytes, audio_retained_pct,
-            chunk_count, silent_chunks_dropped, gemini_calls,
-            total_cost, total_input, total_output,
+            chunk_count, silent_chunks_dropped, hallucinations_filtered,
+            gemini_calls, total_cost, total_input, total_output,
         )
         try:
             await ws.close()
