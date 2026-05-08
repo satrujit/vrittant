@@ -98,6 +98,20 @@ _PRICING = {
         "output_per_m": Decimal("10.00"),
         "audio_input_per_m": Decimal("3.00"),
     },
+    # Gemini 3.x family. Pricing taken from the Standard-tier table
+    # shown on ai.google.dev/gemini-api/docs/pricing (paid tier).
+    # Update if Google revises rates — _cost_chat / _cost_stt log a
+    # WARNING when no PRICING entry matches.
+    "gemini-3.1-flash-lite": {
+        "input_per_m": Decimal("0.25"),
+        "output_per_m": Decimal("1.50"),
+        "audio_input_per_m": Decimal("0.50"),
+    },
+    "gemini-3-flash": {
+        "input_per_m": Decimal("0.25"),
+        "output_per_m": Decimal("1.50"),
+        "audio_input_per_m": Decimal("0.50"),
+    },
 }
 
 
