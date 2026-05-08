@@ -111,37 +111,52 @@ def _rewrite_transcript_message(raw: str) -> str:
 
 # ── Gemini live-dictation handler ──────────────────────────────────
 #
-# Pseudo-streaming via periodic batch transcription:
+# Sliding-window pseudo-streaming via periodic batch transcription:
 #
 #   - Every WS frame from the mobile app carries raw PCM 16-bit mono @
 #     16 kHz, either as raw bytes (Flutter) or wrapped in a JSON
 #     envelope `{"audio": {"data": "<base64>", ...}}` (web reviewer
-#     panel). We accumulate the decoded PCM in a server-side buffer.
-#   - Every ``_GEMINI_TICK_SECONDS`` we transcribe the ENTIRE buffer
-#     (not just the new bytes) so the partial is coherent across
-#     chunk boundaries — Gemini is not a streaming model, each call
-#     is independent. Re-transcribing-from-zero costs more than a
-#     sliding window but produces clean transcripts; for the eval
-#     window that's the right trade.
-#   - When the client disconnects we do a final transcription with
-#     ``is_final=True`` and emit a ``vad_end`` event so the panel /
-#     app commits the last window.
+#     panel). We append the decoded PCM to a server-side buffer.
+#   - Every ``_GEMINI_TICK_SECONDS`` we transcribe ONLY the NEW bytes
+#     since the previous successful transcription (the "chunk"), and
+#     append the result to a running cumulative transcript. The full
+#     cumulative text is emitted to the client each tick as a partial.
+#     This is the key difference from the original implementation,
+#     which re-transcribed the entire growing buffer every tick —
+#     that was 5–12× more expensive AND produced duplications because
+#     each call's output drifted slightly from the prior call, which
+#     fired the client's commit-on-divergence logic and double-wrote
+#     content. With a sliding window each chunk is independent and
+#     short (≈4 s), so the model stays anchored and outputs only the
+#     new audio's transcript.
+#   - When the client disconnects we transcribe whatever's left in
+#     the buffer with ``is_final=True`` and emit a ``vad_end`` event
+#     so the panel / app commits the last window.
 #
-# Cost: a 30 s recording with 4 s ticks = ~7 calls. At
-# gemini-2.5-flash audio rates (~₹0.08 / 30 s) that's ~₹0.55 per
-# session vs Sarvam streaming's ~₹0.25 — i.e. *more* expensive in
-# pseudo-streaming mode. We accept this for the eval; if quality is
-# acceptable we move to a true sliding-window implementation that
-# only transcribes new audio (or to Gemini Live API which streams
-# natively).
+# Trade-off: a word straddling a chunk boundary may be cut. With a
+# 4 s tick this is rare; we mitigate by using a slightly looser tick
+# (≥ ``_GEMINI_MIN_CHUNK_SECONDS`` of new audio required) so most
+# chunks naturally end on a pause.
+#
+# Cost: a 30 s recording at 4 s ticks ≈ 7 chunks × ~130 audio tokens
+# each = ~900 input tokens total. At gemini-2.5-flash-lite audio
+# rates that's ~₹0.025 per 30 s session — comfortably below Sarvam
+# streaming's ~₹0.25.
 
 _GEMINI_TICK_SECONDS = 4.0
 _GEMINI_RECEIVE_TIMEOUT = 1.0
-# Cap a single dictation session's audio buffer to keep request bodies
-# under Gemini's 20 MB inline-data ceiling. 16 kHz × 16-bit × 1 ch =
-# 32 KB/s, so 4 minutes ≈ 7.7 MB — comfortably under. Beyond that we
-# force a final emit + reset; callers have to start a new session.
-_GEMINI_MAX_BUFFER_BYTES = 32_000 * 240
+# Don't fire a transcription unless we have at least this many seconds
+# of NEW audio waiting — too-short chunks are noisy (Gemini sometimes
+# returns empty for sub-second audio) and the inter-chunk boundary
+# becomes more disruptive than the extra wait.
+_GEMINI_MIN_CHUNK_SECONDS = 2.0
+# 16 kHz × 16-bit × 1 ch = 32_000 bytes/sec.
+_PCM_BYTES_PER_SEC = 32_000
+# Cap a single chunk's audio at 60 s to keep each Gemini request well
+# under the inline-data ceiling (~20 MB) and to keep model attention
+# fresh. If the client somehow accumulates >60 s without us getting
+# a chance to transcribe, we force a chunk-flush.
+_GEMINI_MAX_CHUNK_BYTES = _PCM_BYTES_PER_SEC * 60
 
 
 def _wrap_pcm_as_wav(
@@ -187,11 +202,21 @@ async def _gemini_streaming_handler(
     reporter_id: str,
     language_code: str,
 ) -> None:
-    """Live-dictation path when STT_PROVIDER=gemini. See docstring above."""
-    audio_buffer = bytearray()
-    last_emitted_text = ""
-    last_transcribe_at = time.monotonic()
+    """Live-dictation path when STT_PROVIDER=gemini. See docstring above.
+
+    Sliding-window state:
+      - ``pending_chunk``: bytes of new audio not yet transcribed.
+      - ``cumulative_text``: running transcript built by appending each
+        chunk's transcription. This is what we ship to the client as
+        the partial each tick.
+    """
+    pending_chunk = bytearray()
+    cumulative_text = ""
+    last_tick_at = time.monotonic()
     session_started = time.monotonic()
+    # Per-session telemetry for debug
+    chunk_count = 0
+    total_audio_bytes = 0
 
     async def emit_data(text: str, is_final: bool) -> None:
         try:
@@ -212,11 +237,23 @@ async def _gemini_streaming_handler(
         except Exception:
             pass
 
-    async def transcribe_and_emit(*, is_final: bool) -> None:
-        nonlocal last_emitted_text
-        if not audio_buffer:
+    async def flush_chunk(*, is_final: bool) -> None:
+        """Transcribe ``pending_chunk`` (only the new audio), append to
+        ``cumulative_text``, emit the cumulative transcript. Called
+        whenever the tick interval has elapsed AND we have ≥
+        ``_GEMINI_MIN_CHUNK_SECONDS`` of new audio waiting (or on
+        ``is_final=True`` regardless of chunk size, so trailing audio
+        at session end is captured)."""
+        nonlocal cumulative_text, pending_chunk, chunk_count
+
+        if not pending_chunk:
             return
-        wav = _wrap_pcm_as_wav(bytes(audio_buffer))
+
+        chunk_bytes = bytes(pending_chunk)
+        pending_chunk.clear()  # advance the window — these bytes are now committed
+        chunk_count += 1
+
+        wav = _wrap_pcm_as_wav(chunk_bytes)
         try:
             text = await gemini_client.stt(
                 audio_bytes=wav,
@@ -226,19 +263,26 @@ async def _gemini_streaming_handler(
             )
         except Exception as exc:
             logger.warning(
-                "Gemini stream STT failed (reporter=%s): %r",
-                reporter_id, exc,
+                "Gemini stream STT failed (reporter=%s, chunk=%d, bytes=%d): %r",
+                reporter_id, chunk_count, len(chunk_bytes), exc,
             )
             return
+
         text = name_registry.replace_english_names((text or "").strip())
         if not text:
+            # Empty transcript for this chunk (silence / model returned
+            # nothing). Don't append; if final, still emit the existing
+            # cumulative so the client commits.
+            if is_final and cumulative_text:
+                await emit_data(cumulative_text, is_final=True)
             return
-        # Skip duplicate partials so the client's overlap-divergence
-        # logic doesn't accidentally commit a window when nothing changed.
-        if text == last_emitted_text and not is_final:
-            return
-        last_emitted_text = text
-        await emit_data(text, is_final)
+
+        cumulative_text = (
+            (cumulative_text + " " + text).strip()
+            if cumulative_text
+            else text
+        )
+        await emit_data(cumulative_text, is_final=is_final)
 
     try:
         while True:
@@ -247,14 +291,15 @@ async def _gemini_streaming_handler(
                     ws.receive(), timeout=_GEMINI_RECEIVE_TIMEOUT,
                 )
             except asyncio.TimeoutError:
-                # No frame arrived during the receive window — check if
-                # the tick interval has elapsed and we have audio waiting.
-                if (
-                    audio_buffer
-                    and (time.monotonic() - last_transcribe_at) >= _GEMINI_TICK_SECONDS
-                ):
-                    await transcribe_and_emit(is_final=False)
-                    last_transcribe_at = time.monotonic()
+                # No frame in the receive window — check the tick.
+                now = time.monotonic()
+                ready = len(pending_chunk) >= int(
+                    _PCM_BYTES_PER_SEC * _GEMINI_MIN_CHUNK_SECONDS
+                )
+                tick_elapsed = (now - last_tick_at) >= _GEMINI_TICK_SECONDS
+                if ready and tick_elapsed:
+                    await flush_chunk(is_final=False)
+                    last_tick_at = now
                 continue
 
             if msg["type"] == "websocket.disconnect":
@@ -275,31 +320,41 @@ async def _gemini_streaming_handler(
                     continue
                 audio_obj = env.get("audio") or {}
                 b64 = audio_obj.get("data")
-                if b64:
-                    try:
-                        audio_buffer.extend(base64.b64decode(b64))
-                    except Exception:
-                        continue
+                if not b64:
+                    continue
+                try:
+                    decoded = base64.b64decode(b64)
+                except Exception:
+                    continue
+                pending_chunk.extend(decoded)
+                total_audio_bytes += len(decoded)
             elif isinstance(payload, (bytes, bytearray)):
-                audio_buffer.extend(payload)
+                pending_chunk.extend(payload)
+                total_audio_bytes += len(payload)
 
-            # Force a flush + reset if the buffer is approaching the
-            # Gemini inline-data ceiling.
-            if len(audio_buffer) >= _GEMINI_MAX_BUFFER_BYTES:
-                await transcribe_and_emit(is_final=True)
-                await emit_event("vad_end")
-                audio_buffer.clear()
-                last_emitted_text = ""
-                last_transcribe_at = time.monotonic()
+            # Hard cap: if a chunk somehow grows past _GEMINI_MAX_CHUNK_BYTES
+            # (60 s of audio without a tick firing — shouldn't happen
+            # with the timeout-based loop, but guard regardless), force
+            # a flush.
+            if len(pending_chunk) >= _GEMINI_MAX_CHUNK_BYTES:
+                await flush_chunk(is_final=False)
+                last_tick_at = time.monotonic()
                 continue
 
-            if (time.monotonic() - last_transcribe_at) >= _GEMINI_TICK_SECONDS:
-                await transcribe_and_emit(is_final=False)
-                last_transcribe_at = time.monotonic()
+            now = time.monotonic()
+            ready = len(pending_chunk) >= int(
+                _PCM_BYTES_PER_SEC * _GEMINI_MIN_CHUNK_SECONDS
+            )
+            if ready and (now - last_tick_at) >= _GEMINI_TICK_SECONDS:
+                await flush_chunk(is_final=False)
+                last_tick_at = now
 
-        # Client disconnected — final transcribe + commit signal.
-        await transcribe_and_emit(is_final=True)
-        await emit_event("vad_end")
+        # Client disconnected — flush any trailing audio (regardless
+        # of length — we want to capture the last 0.5 s if that's all
+        # they said) and commit.
+        await flush_chunk(is_final=True)
+        if cumulative_text:
+            await emit_event("vad_end")
 
     except WebSocketDisconnect:
         pass
@@ -312,8 +367,8 @@ async def _gemini_streaming_handler(
         duration = time.monotonic() - session_started
         logger.info(
             "Gemini STT session ended (reporter=%s, duration=%.1fs, "
-            "audio_bytes=%d)",
-            reporter_id, duration, len(audio_buffer),
+            "audio_bytes=%d, chunks=%d)",
+            reporter_id, duration, total_audio_bytes, chunk_count,
         )
         try:
             await ws.close()
