@@ -158,26 +158,29 @@ _PCM_BYTES_PER_SEC = 32_000
 # fresh. If the client somehow accumulates >60 s without us getting
 # a chance to transcribe, we force a chunk-flush.
 _GEMINI_MAX_CHUNK_BYTES = _PCM_BYTES_PER_SEC * 60
-# Silence threshold for the pre-API gate. PCM 16-bit signed has range
-# [-32768, 32767]; sustained background noise / true silence rarely
-# exceeds ±500 in absolute amplitude, while even quiet speech
-# regularly hits >2000. Chunks whose peak amplitude is below this
-# threshold are treated as silent and dropped before they reach
-# Gemini — saves the API call AND eliminates the silent-audio
-# hallucination class entirely (no input → no output → no boilerplate).
-_GEMINI_SILENCE_PEAK_THRESHOLD = 500
+# Silence gate: RMS (root-mean-square energy) of each chunk is
+# computed in pure Python; chunks below the configured threshold are
+# dropped before reaching Gemini. RMS captures sustained energy across
+# the whole chunk — it's far more robust than a peak-amplitude check,
+# which a single transient spike (mic bump, distant noise) could fool
+# into letting a silent chunk through. We tried peak-only first and
+# it never fired in real reporter audio (silent_dropped=0 across all
+# sessions on 2026-05-08) because phone mics with auto-gain produce
+# enough ambient floor that peak>500 always.
+#
+# Threshold is read from settings.STT_SILENCE_RMS_THRESHOLD so we can
+# tune in prod via env var without redeploying code.
 
 
 def _chunk_peak_amplitude(pcm_bytes: bytes) -> int:
     """Maximum absolute sample value in a 16-bit signed PCM buffer.
 
-    Uses ``array.array('h')`` for a single C-level pass — for a 4-second
-    chunk at 16 kHz (≈64 K samples) this runs in well under 1 ms.
-    Returns 0 for an empty/odd-length buffer (treated as silent).
+    Kept around for diagnostic logging — RMS is the gating signal,
+    but logging both peak and RMS during the eval helps us calibrate
+    the threshold to real reporter audio.
     """
     if not pcm_bytes:
         return 0
-    # array.array.frombytes requires len % 2 == 0 for 'h' (16-bit).
     if len(pcm_bytes) % 2 != 0:
         pcm_bytes = pcm_bytes[: len(pcm_bytes) - (len(pcm_bytes) % 2)]
         if not pcm_bytes:
@@ -186,31 +189,52 @@ def _chunk_peak_amplitude(pcm_bytes: bytes) -> int:
     samples.frombytes(pcm_bytes)
     if not samples:
         return 0
-    # max() and min() on an array.array drop into C — much faster than
-    # a Python-level abs(...) generator over 64 K samples.
     hi = max(samples)
     lo = min(samples)
-    # 16-bit signed minimum is -32768 whose magnitude doesn't fit in
-    # int16 — Python handles this fine via auto-promotion to int.
     return hi if hi >= -lo else -lo
+
+
+def _chunk_rms(pcm_bytes: bytes) -> float:
+    """Root-mean-square energy of a 16-bit signed PCM buffer.
+
+    Pure Python computation — for a 4-second 16 kHz chunk (≈64 K
+    samples) this takes ~30-50 ms. Adds <2% to per-chunk latency
+    because Gemini's audio API call dominates at 2-4 s. We could
+    accelerate with audioop-lts as a third-party dep but the
+    overhead isn't worth a new dependency.
+    """
+    if not pcm_bytes:
+        return 0.0
+    if len(pcm_bytes) % 2 != 0:
+        pcm_bytes = pcm_bytes[: len(pcm_bytes) - (len(pcm_bytes) % 2)]
+        if not pcm_bytes:
+            return 0.0
+    samples = array.array("h")
+    samples.frombytes(pcm_bytes)
+    if not samples:
+        return 0.0
+    sum_sq = sum(s * s for s in samples)
+    return (sum_sq / len(samples)) ** 0.5
 
 
 def _is_chunk_silent(
     pcm_bytes: bytes,
     *,
-    threshold: int = _GEMINI_SILENCE_PEAK_THRESHOLD,
+    threshold: Optional[float] = None,
 ) -> bool:
-    """True if the chunk's peak amplitude is below the speech threshold.
+    """True if the chunk's RMS energy is below the speech threshold.
 
-    Single-pass peak detection. False positives (a brief loud
-    transient inside an otherwise silent chunk — e.g. mic-bump)
-    leak through to Gemini, where the hallucination filter is the
-    second line of defence. False negatives (very-quiet speech below
-    the threshold) get dropped — acceptable trade because the
-    transcript would have been wrong anyway, and the reporter
-    naturally re-tries louder.
+    Threshold defaults to settings.STT_SILENCE_RMS_THRESHOLD, which is
+    env-configurable for prod tuning. False positives (brief loud
+    transient in an otherwise silent chunk) leak to Gemini where the
+    hallucination filter catches the bad output. False negatives
+    (very-quiet speech below threshold) get dropped — acceptable
+    trade since quiet speech's transcript would have been wrong
+    anyway and the reporter naturally re-tries louder.
     """
-    return _chunk_peak_amplitude(pcm_bytes) < threshold
+    if threshold is None:
+        threshold = float(settings.STT_SILENCE_RMS_THRESHOLD)
+    return _chunk_rms(pcm_bytes) < threshold
 
 
 def _wrap_pcm_as_wav(
@@ -272,6 +296,11 @@ async def _gemini_streaming_handler(
     chunk_count = 0
     silent_chunks_dropped = 0
     total_audio_bytes = 0
+    # Mirror of every Gemini call's usage metadata. gemini_client.stt()
+    # appends to this list so we can sum cost / tokens at session end
+    # without DB round-trip. Each entry: {input_tokens, output_tokens,
+    # cost_inr, duration_ms}.
+    usage_sink: list[dict] = []
 
     async def emit_data(text: str, is_final: bool) -> None:
         try:
@@ -344,6 +373,7 @@ async def _gemini_streaming_handler(
                 language_code=language_code,
                 prior_context=prior_context,
                 model=settings.STT_GEMINI_MODEL,
+                usage_sink=usage_sink,
             )
         except Exception as exc:
             logger.warning(
@@ -449,11 +479,17 @@ async def _gemini_streaming_handler(
         )
     finally:
         duration = time.monotonic() - session_started
+        gemini_calls = len(usage_sink)
+        total_cost = sum(float(u.get("cost_inr") or 0) for u in usage_sink)
+        total_input = sum(int(u.get("input_tokens") or 0) for u in usage_sink)
+        total_output = sum(int(u.get("output_tokens") or 0) for u in usage_sink)
         logger.info(
             "Gemini STT session ended (reporter=%s, duration=%.1fs, "
-            "audio_bytes=%d, chunks=%d, silent_dropped=%d)",
+            "audio_bytes=%d, chunks=%d, silent_dropped=%d, "
+            "gemini_calls=%d, cost=₹%.4f, input_tokens=%d, output_tokens=%d)",
             reporter_id, duration, total_audio_bytes, chunk_count,
-            silent_chunks_dropped,
+            silent_chunks_dropped, gemini_calls, total_cost,
+            total_input, total_output,
         )
         try:
             await ws.close()

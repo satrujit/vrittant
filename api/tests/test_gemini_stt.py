@@ -300,3 +300,84 @@ def test_gemini_stt_forwards_prior_context_to_prompt(monkeypatch):
     # Minimal-prompt era: no "DO NOT repeat" boilerplate. Echo-strip
     # in stt() handles accidental repetition server-side instead.
     assert prompt_text.endswith("Stay true to audio. Don't add anything.")
+
+
+# ── usage_sink (per-session cost accumulation) ──────────────────
+
+
+def test_gemini_stt_appends_to_usage_sink(monkeypatch):
+    """Streaming handler passes a list as usage_sink and we append one
+    entry per successful call (input_tokens, output_tokens, cost_inr,
+    duration_ms). Lets the WS handler sum cost across the session
+    without DB round-trips."""
+    from app.config import settings
+    from app.services import gemini_client
+    from decimal import Decimal
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-key")
+
+    class _FakeResp:
+        status_code = 200
+        text = ""
+        def json(self):
+            return {
+                "candidates": [{"content": {"parts": [{"text": "ok"}]}}],
+                "usageMetadata": {"promptTokenCount": 130, "candidatesTokenCount": 8},
+            }
+
+    class _FakeClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, *a, **kw):
+            return _FakeResp()
+
+    sink: list = []
+    with patch("app.services.gemini_client.httpx.AsyncClient",
+               return_value=_FakeClient()), \
+         patch("app.services.gemini_client._write_log_row"):
+        _run(gemini_client.stt(
+            audio_bytes=b"PCM",
+            mime_type="audio/wav",
+            usage_sink=sink,
+        ))
+        _run(gemini_client.stt(
+            audio_bytes=b"PCM",
+            mime_type="audio/wav",
+            usage_sink=sink,
+        ))
+
+    assert len(sink) == 2
+    for entry in sink:
+        assert entry["input_tokens"] == 130
+        assert entry["output_tokens"] == 8
+        assert isinstance(entry["cost_inr"], Decimal)
+        assert entry["cost_inr"] > 0
+        assert entry["duration_ms"] >= 0
+
+
+def test_gemini_stt_works_without_usage_sink(monkeypatch):
+    """Backward-compat: existing callers (e.g. the batch path via
+    services/gemini_stt.py) don't pass usage_sink and must still work."""
+    from app.config import settings
+    from app.services import gemini_client
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-key")
+
+    class _FakeResp:
+        status_code = 200
+        text = ""
+        def json(self):
+            return {
+                "candidates": [{"content": {"parts": [{"text": "ok"}]}}],
+                "usageMetadata": {"promptTokenCount": 130, "candidatesTokenCount": 8},
+            }
+
+    class _FakeClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, *a, **kw):
+            return _FakeResp()
+
+    with patch("app.services.gemini_client.httpx.AsyncClient",
+               return_value=_FakeClient()), \
+         patch("app.services.gemini_client._write_log_row"):
+        out = _run(gemini_client.stt(audio_bytes=b"PCM", mime_type="audio/wav"))
+    assert out == "ok"

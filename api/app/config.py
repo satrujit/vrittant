@@ -61,6 +61,20 @@ class Settings(BaseSettings):
     # call site if needed; "gemini-2.5-flash-lite" is cheaper but
     # weaker on Indic audio.
     STT_GEMINI_MODEL: str = "gemini-2.5-flash"
+    # Live-dictation silence gate. RMS (root-mean-square) is computed
+    # per audio chunk; chunks below this energy threshold are dropped
+    # before reaching Gemini — saves API spend AND structurally
+    # prevents silent-audio hallucinations. Typical real-world values:
+    #   true silence (mic muted)   : RMS ~0-10
+    #   quiet room ambient noise   : RMS ~30-100
+    #   AC/fan hum                 : RMS ~80-200
+    #   quiet speech               : RMS ~300-800
+    #   normal speech              : RMS ~500-3000
+    # Default 200 catches most ambient noise while leaving even fairly
+    # quiet speech comfortably above the bar. Tune with care — too high
+    # drops real speech, too low lets noise hallucinate. Override per
+    # deployment via env var.
+    STT_SILENCE_RMS_THRESHOLD: int = 200
     # Dual-run mode: when True, every STT call invokes BOTH providers
     # in parallel, returns the primary (per STT_PROVIDER), and writes
     # the secondary's transcript + duration + cost into

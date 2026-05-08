@@ -62,58 +62,88 @@ def test_gemini_streaming_handler_is_callable():
     assert {"reporter_id", "language_code"} <= set(sig.parameters)
 
 
-# ── Silence detection ───────────────────────────────────────────
+# ── Silence detection (RMS) ─────────────────────────────────────
 
 
-def test_peak_amplitude_zero_buffer_is_silent():
-    from app.routers.sarvam import _chunk_peak_amplitude, _is_chunk_silent
-    pcm = b"\x00\x00" * 16000  # 1 s of true silence at 16 kHz
-    assert _chunk_peak_amplitude(pcm) == 0
-    assert _is_chunk_silent(pcm) is True
+def test_rms_zero_buffer_is_silent():
+    from app.routers.sarvam import _chunk_rms, _is_chunk_silent
+    pcm = b"\x00\x00" * 16000  # 1 s of true silence
+    assert _chunk_rms(pcm) == 0.0
+    assert _is_chunk_silent(pcm, threshold=200) is True
 
 
-def test_peak_amplitude_low_noise_is_silent():
-    """Background noise at peak ≈±200 (well below the 500 threshold)
-    is treated as silence and the chunk is gated out."""
+def test_rms_low_noise_is_silent():
+    """Background noise at sustained ±100 has RMS ≈ 100 < 200 threshold
+    → chunk is gated out (no Gemini call, no hallucination risk)."""
+    from app.routers.sarvam import _chunk_rms, _is_chunk_silent
+    samples = [100, -100] * 8000
+    pcm = struct.pack(f"<{len(samples)}h", *samples)
+    rms = _chunk_rms(pcm)
+    assert 99 < rms < 101  # exact-ish 100
+    assert _is_chunk_silent(pcm, threshold=200) is True
+
+
+def test_rms_normal_speech_is_not_silent():
+    """Sustained ±3000 has RMS ≈ 3000 ≫ 200 — chunk goes through to
+    Gemini."""
+    from app.routers.sarvam import _chunk_rms, _is_chunk_silent
+    samples = [3000, -3000] * 8000
+    pcm = struct.pack(f"<{len(samples)}h", *samples)
+    assert _chunk_rms(pcm) > 2900
+    assert _is_chunk_silent(pcm, threshold=200) is False
+
+
+def test_rms_robust_against_single_spike():
+    """RMS averages over the whole buffer, so one transient sample of
+    ±20000 in an otherwise-silent chunk doesn't fool the gate.
+    This is the key advantage over peak-only detection."""
+    from app.routers.sarvam import _chunk_rms, _is_chunk_silent
+    # 64000 samples of zero + 1 spike
+    samples = [0] * 64000
+    samples[0] = 20000
+    pcm = struct.pack(f"<{len(samples)}h", *samples)
+    rms = _chunk_rms(pcm)
+    # √(20000² / 64000) ≈ 79 — well below threshold despite the spike.
+    assert rms < 100
+    assert _is_chunk_silent(pcm, threshold=200) is True
+
+
+def test_rms_handles_empty_buffer():
+    from app.routers.sarvam import _chunk_rms, _is_chunk_silent
+    assert _chunk_rms(b"") == 0.0
+    assert _is_chunk_silent(b"", threshold=200) is True
+
+
+def test_rms_tolerates_odd_byte_length():
+    """Odd-byte payloads from a malformed client envelope shouldn't
+    crash — trailing byte is dropped and what's left is analysed."""
+    from app.routers.sarvam import _chunk_rms
+    pcm = struct.pack("<4h", 0, 0, 0, 0) + b"\xff"
+    assert _chunk_rms(pcm) == 0.0
+
+
+def test_silence_gate_reads_threshold_from_settings(monkeypatch):
+    """Default threshold comes from settings.STT_SILENCE_RMS_THRESHOLD
+    so we can tune in prod via env var without redeploying."""
+    from app.config import settings
     from app.routers.sarvam import _is_chunk_silent
-    # Build PCM where every sample is +/- 200 — peak amplitude 200
-    # < 500 threshold. Use struct to avoid endian surprises.
-    samples = [200, -200] * 8000  # 1 s of low-noise oscillation
+    # Build a chunk with RMS = 150
+    samples = [150, -150] * 8000
     pcm = struct.pack(f"<{len(samples)}h", *samples)
+
+    # With threshold=200 (default) → silent
+    monkeypatch.setattr(settings, "STT_SILENCE_RMS_THRESHOLD", 200)
     assert _is_chunk_silent(pcm) is True
 
-
-def test_peak_amplitude_normal_speech_is_not_silent():
-    """Normal speech regularly hits peak amplitudes >2000 — these
-    chunks must NOT be gated out."""
-    from app.routers.sarvam import _is_chunk_silent, _chunk_peak_amplitude
-    samples = [3000, -3000] * 8000  # speech-volume oscillation
-    pcm = struct.pack(f"<{len(samples)}h", *samples)
-    assert _chunk_peak_amplitude(pcm) >= 3000
+    # With threshold=100 → not silent
+    monkeypatch.setattr(settings, "STT_SILENCE_RMS_THRESHOLD", 100)
     assert _is_chunk_silent(pcm) is False
 
 
-def test_peak_amplitude_handles_empty_buffer():
-    from app.routers.sarvam import _chunk_peak_amplitude, _is_chunk_silent
-    assert _chunk_peak_amplitude(b"") == 0
-    assert _is_chunk_silent(b"") is True
-
-
-def test_peak_amplitude_tolerates_odd_byte_length():
-    """A buffer with an odd byte count (incomplete sample at the end)
-    shouldn't crash — drop the trailing byte and check what's left.
-    Real-world cause: a JSON envelope's base64 decoded to an odd
-    number of bytes (which shouldn't happen with PCM 16-bit, but
-    defending the boundary is cheap insurance)."""
+def test_peak_amplitude_kept_for_diagnostic_logging():
+    """Peak amplitude helper still exists (for diagnostic log lines
+    during eval — the gating signal moved to RMS but operators may
+    want both numbers when calibrating)."""
     from app.routers.sarvam import _chunk_peak_amplitude
-    # 4 valid samples (peak 0) + 1 trailing byte
-    pcm = struct.pack("<4h", 0, 0, 0, 0) + b"\xff"
-    assert _chunk_peak_amplitude(pcm) == 0
-
-
-def test_peak_amplitude_detects_min_int16():
-    """The sample value -32768 has |x|=32768 which doesn't fit in
-    int16 — peak detection must handle this without overflow."""
-    from app.routers.sarvam import _chunk_peak_amplitude
-    pcm = struct.pack("<4h", -32768, -32768, -32768, -32768)
-    assert _chunk_peak_amplitude(pcm) == 32768
+    pcm = struct.pack("<4h", 0, 5000, 0, 0)
+    assert _chunk_peak_amplitude(pcm) == 5000

@@ -534,6 +534,7 @@ async def stt(
     max_tokens: int = 2000,
     timeout: float = 60.0,
     client: Optional[httpx.AsyncClient] = None,
+    usage_sink: Optional[list] = None,
 ) -> str:
     """Transcribe ``audio_bytes`` via Gemini audio-in. Returns the transcript.
 
@@ -613,6 +614,7 @@ async def stt(
     output_tokens = int(usage.get("candidatesTokenCount") or 0)
 
     cost = _cost_stt(resolved_model, input_tokens, output_tokens)
+    duration_ms = int((time.monotonic() - started) * 1000)
     _write_log_row(
         service="gemini_stt",
         model=resolved_model,
@@ -621,9 +623,20 @@ async def stt(
         cached_tokens=0,
         output_tokens=output_tokens,
         cost_inr=cost,
-        duration_ms=int((time.monotonic() - started) * 1000),
+        duration_ms=duration_ms,
         status_code=status_code,
     )
+    # Optional caller-supplied accumulator for per-session cost
+    # reporting on the streaming path. The cost row is already in
+    # sarvam_usage_log; this is just an in-memory mirror so the WS
+    # handler can sum across calls without round-tripping the DB.
+    if usage_sink is not None:
+        usage_sink.append({
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cost_inr": cost,
+            "duration_ms": duration_ms,
+        })
     text = _extract_text(data)
     # If the model echoed the prior context despite our instruction,
     # strip the duplicated prefix before returning (the streaming
