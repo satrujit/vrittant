@@ -498,13 +498,12 @@ async def _gemini_streaming_handler(
 
         compressed_audio_bytes += len(compressed_bytes)
 
-        # Trailing words of the cumulative transcript become this call's
-        # context anchor. Six is a sweet spot — enough to bias the model
-        # toward the right language and continuation, short enough that
-        # the prompt stays cheap (~30 text tokens at $0.25/M = effectively
-        # free).
-        prior_words = cumulative_text.split()[-6:] if cumulative_text else []
-        prior_context = " ".join(prior_words)
+        # No text-based prior_context. The systemInstruction in
+        # gemini_client.stt anchors language, the VAD's 200 ms padding
+        # preserves word-boundary continuity, and dropping the text
+        # anchor eliminates the echo-loop failure mode we hit on
+        # small models (sliding-window + prior_context = the model
+        # latches onto the text and re-emits it across chunks).
 
         wav = _wrap_pcm_as_wav(compressed_bytes)
         try:
@@ -512,7 +511,6 @@ async def _gemini_streaming_handler(
                 audio_bytes=wav,
                 mime_type="audio/wav",
                 language_code=language_code,
-                prior_context=prior_context,
                 model=settings.STT_GEMINI_MODEL,
                 usage_sink=usage_sink,
             )

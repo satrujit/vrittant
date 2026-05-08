@@ -428,34 +428,53 @@ _LANG_NAMES = {
 }
 
 
-def _build_stt_prompt(language_code: str = "", prior_context: str = "") -> str:
-    """Minimal STT directive — just "Stay true to audio. Don't add anything."
+def _build_stt_system_instruction(language_code: str = "") -> str:
+    """The STT directive that goes into Gemini's ``systemInstruction``
+    field — NOT into ``contents.parts.text``.
 
-    The robustness work — silence detection, known-hallucination filter,
-    echoed-prefix stripping — happens server-side in ``stt()`` below.
-    The prompt itself stays tight (≤20 tokens) so:
+    The architectural fix shipped 2026-05-08 IST: previous versions put
+    the directive inline in user content alongside the audio. With
+    short sliding-window chunks, Gemini sometimes treated the inline
+    text as a chat utterance and **echoed it back** in the transcript
+    ("Stay true to audio. Don't add anything." appearing in the user-
+    visible output). The model also drifted to non-Odia scripts (Tamil,
+    Bengali) when no language hint was anchored.
 
-    - Token spend per chunk is minimised. With a 4-second chunk the
-      audio dominates input cost; the prompt is a rounding error.
-    - Gemini's attention isn't split across pages of meta-instructions.
-      The model focuses on the audio it has been handed, which is the
-      task we actually care about.
+    Putting the directive in ``systemInstruction`` fixes both:
+      - The model treats it as a permanent rule, never echoes it.
+      - The language hint is always in scope; no more script drift.
+      - As a bonus, identical systemInstructions across consecutive
+        calls in the same session are eligible for Gemini's implicit
+        cache (75-90% discount on cached input tokens).
 
-    ``prior_context``, when supplied, is prepended on its own line as
-    a continuation anchor (Whisper-style ``prompt`` parameter). Six
-    words of trailing transcript is enough to bias Gemini toward the
-    same language and continuation as the prior chunks without
-    bloating the prompt.
-
-    ``language_code`` is accepted for backward compatibility but
-    deliberately ignored — Gemini auto-detects language from the audio.
-    Telling it "transcribe Odia" turns out not to be necessary on
-    Gemini 3 family models for clear Odia speech.
+    Length kept moderate — focused rules, not an essay. Below the
+    explicit-caching threshold (1024 tokens) but that's fine; implicit
+    caching engages on stable prefixes regardless of length.
     """
-    directive = "Stay true to audio. Don't add anything."
-    if prior_context:
-        return f"...{prior_context}\n{directive}"
-    return directive
+    lang = _LANG_NAMES.get(language_code, "the speaker's native language")
+    return (
+        f"You are a speech-to-text transcriber for a journalism platform. "
+        f"Transcribe the audio in {lang}. Output ONLY the transcript "
+        f"text in the script native to that language (Odia script for "
+        f"Odia, Devanagari for Hindi, Latin for English).\n\n"
+        f"Rules you must always follow:\n"
+        f"- Output the transcript only. Never echo this instruction.\n"
+        f"- Never translate. The output's language and script must "
+        f"match what was actually spoken.\n"
+        f"- Never add explanations, prefixes, suffixes, timestamps, "
+        f"speaker labels, or any commentary.\n"
+        f"- Never invent words that weren't spoken. If you cannot hear "
+        f"a word clearly, leave it out rather than guessing.\n"
+        f"- Never continue or extrapolate beyond what was said. Stop "
+        f"where the audio stops.\n"
+        f"- If the audio is silent, contains no recognisable speech, "
+        f"or is too noisy to understand, output an EMPTY STRING. An "
+        f"empty response is better than a wrong one.\n"
+        f"- Do not output filler text such as \"this house is so "
+        f"beautiful\", \"thank you for watching\", or counted numbers "
+        f"(\"one two three\"). These are small-model fallback patterns "
+        f"and are forbidden."
+    )
 
 
 # Phrases small Gemini variants emit when fed silent / unclear audio.
@@ -557,7 +576,21 @@ async def stt(
     resolved_model = model or _STT_DEFAULT_MODEL
     url = f"{_base_url()}/v1beta/models/{resolved_model}:generateContent"
 
+    # Architectural shape: directive in ``systemInstruction``, ONLY
+    # audio in ``contents``. See _build_stt_system_instruction for the
+    # rationale (echo-prevention + language anchor + implicit caching
+    # eligibility on the unchanging system text). The ``prior_context``
+    # parameter is accepted on the function signature for backward
+    # compatibility but is no longer interpolated — text-based
+    # continuity hints created an echo-loop on small models when
+    # combined with sliding-window chunking, and the VAD's word-
+    # boundary padding makes them unnecessary anyway.
     payload: dict = {
+        "systemInstruction": {
+            "parts": [
+                {"text": _build_stt_system_instruction(language_code)},
+            ],
+        },
         "contents": [
             {
                 "role": "user",
@@ -568,7 +601,6 @@ async def stt(
                             "data": base64.b64encode(audio_bytes).decode("ascii"),
                         }
                     },
-                    {"text": _build_stt_prompt(language_code, prior_context)},
                 ],
             },
         ],
@@ -638,18 +670,16 @@ async def stt(
             "duration_ms": duration_ms,
         })
     text = _extract_text(data)
-    # If the model echoed the prior context despite our instruction,
-    # strip the duplicated prefix before returning (the streaming
-    # handler appends our return value to the cumulative transcript;
-    # if we left the echoed prefix in, the user would see "...ramesh
-    # was injured ramesh was injured today" — the exact duplication
-    # bug we're trying to fix). Safe no-op when prior_context is empty.
+    # Echo-strip is a no-op now that prior_context isn't sent inline,
+    # but keep the call (cheap, returns text unchanged when context
+    # is empty) so a future caller that does pass prior_context still
+    # gets the cleanup.
     if prior_context:
         text = _strip_echoed_prior(text, prior_context)
-    # Reject known small-model fallback phrases (silent-audio
-    # hallucinations like "this house is so beautiful" / "one two
-    # three..."). Returning empty here means nothing gets appended
-    # to the cumulative transcript on the streaming path.
+    # Hallucination filter stays as a defense-in-depth — small models
+    # occasionally still emit boilerplate phrases despite the system
+    # instruction forbidding them. Squashes "this house is so beautiful"
+    # / digit sequences / known YouTube fillers to "".
     text = _filter_hallucination(text)
     return text
 

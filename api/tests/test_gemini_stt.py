@@ -22,11 +22,11 @@ def _run(coro):
 # ── gemini_client.stt — payload + parsing ───────────────────────
 
 
-def test_gemini_stt_builds_correct_payload_and_returns_text(monkeypatch):
-    """Verify the request body has audio inlineData + the (minimal)
-    transcription prompt, and that the response's candidate text is
-    returned. The legacy chat path uses the same response shape so
-    we only test the audio-specific bits here."""
+def test_gemini_stt_builds_systeminstruction_payload(monkeypatch):
+    """Architectural shape verification: directive lives in
+    ``systemInstruction``, audio is the ONLY content. Ensures the
+    transcription instruction can never be echoed back as part of the
+    transcript (Gemini doesn't repeat systemInstruction text)."""
     from app.config import settings
     from app.services import gemini_client
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-key")
@@ -62,17 +62,22 @@ def test_gemini_stt_builds_correct_payload_and_returns_text(monkeypatch):
     assert out == "hello world"
     # URL contains the model
     assert "gemini-2.5-flash" in captured["url"]
-    # Body has TWO parts: audio inlineData + (short) text prompt
-    parts = captured["json"]["contents"][0]["parts"]
-    assert len(parts) == 2
+    body = captured["json"]
+
+    # The directive is in systemInstruction (not in user content).
+    sys_text = body["systemInstruction"]["parts"][0]["text"]
+    assert "Odia" in sys_text
+    assert "transcrib" in sys_text.lower()
+    assert "Never echo this instruction" in sys_text
+
+    # User content has ONLY the audio — no inline text alongside it.
+    parts = body["contents"][0]["parts"]
+    assert len(parts) == 1
     inline = parts[0]["inlineData"]
     assert inline["mimeType"] == "audio/mp4"
     assert base64.b64decode(inline["data"]) == b"RAW_AUDIO_BYTES"
-    # Minimal directive — no language hint, no rule list. Server-side
-    # filters provide robustness; the prompt stays tight.
-    prompt = parts[1]["text"]
-    assert prompt == "Stay true to audio. Don't add anything."
-    # Cost row was logged with service="gemini_stt"
+
+    # Cost row logged
     mock_log.assert_called_once()
     kwargs = mock_log.call_args.kwargs
     assert kwargs["service"] == "gemini_stt"
@@ -231,37 +236,58 @@ def test_strip_echoed_prior_empty_inputs_pass_through():
 # ── Prompt building ─────────────────────────────────────────────
 
 
-def test_build_stt_prompt_without_prior_context_is_minimal():
-    """Minimal directive only — no rule list, no language hint, no
-    anti-hallucination wall. Server-side filters provide robustness."""
-    from app.services.gemini_client import _build_stt_prompt
-    p = _build_stt_prompt("od-IN")
-    assert p == "Stay true to audio. Don't add anything."
+def test_build_system_instruction_includes_language_hint():
+    """The system instruction must name the actual spoken language
+    so Gemini stays anchored to the right script (the missing-language-
+    hint failure mode produced Tamil transcripts of Odia speech)."""
+    from app.services.gemini_client import _build_stt_system_instruction
+    p = _build_stt_system_instruction("od-IN")
+    assert "Odia" in p
 
 
-def test_build_stt_prompt_with_prior_context_prepends_anchor():
-    """Prior context appears as a leading "...<words>\\n" anchor before
-    the directive — Whisper-style continuation hint."""
-    from app.services.gemini_client import _build_stt_prompt
-    p = _build_stt_prompt("od-IN", prior_context="ରମେଶ ଆହତ ହେଲେ")
-    assert p == "...ରମେଶ ଆହତ ହେଲେ\nStay true to audio. Don't add anything."
+def test_build_system_instruction_forbids_echoing():
+    """The instruction itself must explicitly forbid echoing — the
+    "Stay true to audio. Don't add anything." appearing in user-visible
+    transcripts was caused by an inline-prompt setup that didn't have
+    this clause."""
+    from app.services.gemini_client import _build_stt_system_instruction
+    p = _build_stt_system_instruction("od-IN")
+    assert "Never echo this instruction" in p
 
 
-def test_build_stt_prompt_short_token_footprint():
-    """Sanity: the minimal prompt should be well under 30 tokens even
-    with prior_context included. Caller relies on this for the per-
-    chunk cost model in stt.py / sarvam.py."""
-    from app.services.gemini_client import _build_stt_prompt
-    long_context = "one two three four five six"
-    p = _build_stt_prompt("od-IN", prior_context=long_context)
-    # Rough word count proxy for tokens; real tokenisation may vary
-    assert len(p.split()) < 25
+def test_build_system_instruction_forbids_known_hallucinations():
+    """Belt-and-suspenders with the post-call _filter_hallucination —
+    the instruction should explicitly call out the worst-offender
+    boilerplate phrases so the model is less likely to emit them in
+    the first place."""
+    from app.services.gemini_client import _build_stt_system_instruction
+    p = _build_stt_system_instruction("od-IN")
+    assert "this house is so beautiful" in p.lower()
+    assert "one two three" in p.lower() or "counted numbers" in p.lower()
+
+
+def test_build_system_instruction_handles_unknown_language():
+    """Falls back to a neutral phrase when the language code isn't in
+    the lookup table — no crash, no garbled prompt."""
+    from app.services.gemini_client import _build_stt_system_instruction
+    p = _build_stt_system_instruction("xx-YY")
+    assert "speaker's native language" in p
 
 
 # ── End-to-end: stt() forwards prior_context into the prompt ────
 
 
-def test_gemini_stt_forwards_prior_context_to_prompt(monkeypatch):
+def test_gemini_stt_does_not_send_prior_context_to_model(monkeypatch):
+    """Architectural shape: even when callers pass prior_context, it
+    is NOT interpolated into the request payload anymore. The
+    parameter is accepted for backward-compat but text-based
+    continuity hints are no longer sent (they created the echo-loop
+    failure mode on small models). User content stays audio-only;
+    systemInstruction stays unchanging across calls.
+
+    Echo-strip is still applied to the model's RESPONSE if a caller
+    passes prior_context (defense in depth) — but the model never
+    sees the prior_context in its prompt, so it can't echo it."""
     from app.config import settings
     from app.services import gemini_client
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-key")
@@ -295,11 +321,17 @@ def test_gemini_stt_forwards_prior_context_to_prompt(monkeypatch):
         ))
 
     assert out == "new content here"
-    prompt_text = captured["json"]["contents"][0]["parts"][1]["text"]
-    assert "ରମେଶ ଆହତ ହେଲେ" in prompt_text
-    # Minimal-prompt era: no "DO NOT repeat" boilerplate. Echo-strip
-    # in stt() handles accidental repetition server-side instead.
-    assert prompt_text.endswith("Stay true to audio. Don't add anything.")
+
+    # Walk every text part anywhere in the request and confirm the
+    # prior-context string is not present. The directive in
+    # systemInstruction must NOT include the prior-context phrase;
+    # the audio-only user content can't include text at all.
+    body = captured["json"]
+    sys_text = body["systemInstruction"]["parts"][0]["text"]
+    assert "ରମେଶ ଆହତ ହେଲେ" not in sys_text
+    for part in body["contents"][0]["parts"]:
+        # parts in user content are inlineData (audio) only — no text
+        assert "text" not in part
 
 
 # ── usage_sink (per-session cost accumulation) ──────────────────
