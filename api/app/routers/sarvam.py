@@ -1,3 +1,4 @@
+import array
 import asyncio
 import base64
 import json
@@ -157,6 +158,59 @@ _PCM_BYTES_PER_SEC = 32_000
 # fresh. If the client somehow accumulates >60 s without us getting
 # a chance to transcribe, we force a chunk-flush.
 _GEMINI_MAX_CHUNK_BYTES = _PCM_BYTES_PER_SEC * 60
+# Silence threshold for the pre-API gate. PCM 16-bit signed has range
+# [-32768, 32767]; sustained background noise / true silence rarely
+# exceeds ±500 in absolute amplitude, while even quiet speech
+# regularly hits >2000. Chunks whose peak amplitude is below this
+# threshold are treated as silent and dropped before they reach
+# Gemini — saves the API call AND eliminates the silent-audio
+# hallucination class entirely (no input → no output → no boilerplate).
+_GEMINI_SILENCE_PEAK_THRESHOLD = 500
+
+
+def _chunk_peak_amplitude(pcm_bytes: bytes) -> int:
+    """Maximum absolute sample value in a 16-bit signed PCM buffer.
+
+    Uses ``array.array('h')`` for a single C-level pass — for a 4-second
+    chunk at 16 kHz (≈64 K samples) this runs in well under 1 ms.
+    Returns 0 for an empty/odd-length buffer (treated as silent).
+    """
+    if not pcm_bytes:
+        return 0
+    # array.array.frombytes requires len % 2 == 0 for 'h' (16-bit).
+    if len(pcm_bytes) % 2 != 0:
+        pcm_bytes = pcm_bytes[: len(pcm_bytes) - (len(pcm_bytes) % 2)]
+        if not pcm_bytes:
+            return 0
+    samples = array.array("h")
+    samples.frombytes(pcm_bytes)
+    if not samples:
+        return 0
+    # max() and min() on an array.array drop into C — much faster than
+    # a Python-level abs(...) generator over 64 K samples.
+    hi = max(samples)
+    lo = min(samples)
+    # 16-bit signed minimum is -32768 whose magnitude doesn't fit in
+    # int16 — Python handles this fine via auto-promotion to int.
+    return hi if hi >= -lo else -lo
+
+
+def _is_chunk_silent(
+    pcm_bytes: bytes,
+    *,
+    threshold: int = _GEMINI_SILENCE_PEAK_THRESHOLD,
+) -> bool:
+    """True if the chunk's peak amplitude is below the speech threshold.
+
+    Single-pass peak detection. False positives (a brief loud
+    transient inside an otherwise silent chunk — e.g. mic-bump)
+    leak through to Gemini, where the hallucination filter is the
+    second line of defence. False negatives (very-quiet speech below
+    the threshold) get dropped — acceptable trade because the
+    transcript would have been wrong anyway, and the reporter
+    naturally re-tries louder.
+    """
+    return _chunk_peak_amplitude(pcm_bytes) < threshold
 
 
 def _wrap_pcm_as_wav(
@@ -216,6 +270,7 @@ async def _gemini_streaming_handler(
     session_started = time.monotonic()
     # Per-session telemetry for debug
     chunk_count = 0
+    silent_chunks_dropped = 0
     total_audio_bytes = 0
 
     async def emit_data(text: str, is_final: bool) -> None:
@@ -251,7 +306,7 @@ async def _gemini_streaming_handler(
         hallucinations on small models. See ``_build_stt_prompt`` in
         gemini_client for the prompt structure.
         """
-        nonlocal cumulative_text, pending_chunk, chunk_count
+        nonlocal cumulative_text, pending_chunk, chunk_count, silent_chunks_dropped
 
         if not pending_chunk:
             return
@@ -259,6 +314,19 @@ async def _gemini_streaming_handler(
         chunk_bytes = bytes(pending_chunk)
         pending_chunk.clear()  # advance the window — these bytes are now committed
         chunk_count += 1
+
+        # Silence gate. If the user paused or the mic captured ambient
+        # noise without speech, drop the chunk before it ever reaches
+        # Gemini. This removes the silent-audio-hallucination class
+        # entirely (no API call → no chance for "this house is so
+        # beautiful" output) AND saves the API spend. On is_final we
+        # still emit the existing cumulative transcript + vad_end so
+        # the panel commits whatever was said before the silence.
+        if _is_chunk_silent(chunk_bytes):
+            silent_chunks_dropped += 1
+            if is_final and cumulative_text:
+                await emit_data(cumulative_text, is_final=True)
+            return
 
         # Trailing words of the cumulative transcript become this call's
         # context anchor. Six is a sweet spot — enough to bias the model
@@ -383,8 +451,9 @@ async def _gemini_streaming_handler(
         duration = time.monotonic() - session_started
         logger.info(
             "Gemini STT session ended (reporter=%s, duration=%.1fs, "
-            "audio_bytes=%d, chunks=%d)",
+            "audio_bytes=%d, chunks=%d, silent_dropped=%d)",
             reporter_id, duration, total_audio_bytes, chunk_count,
+            silent_chunks_dropped,
         )
         try:
             await ws.close()

@@ -60,3 +60,60 @@ def test_gemini_streaming_handler_is_callable():
     import inspect
     sig = inspect.signature(_gemini_streaming_handler)
     assert {"reporter_id", "language_code"} <= set(sig.parameters)
+
+
+# ── Silence detection ───────────────────────────────────────────
+
+
+def test_peak_amplitude_zero_buffer_is_silent():
+    from app.routers.sarvam import _chunk_peak_amplitude, _is_chunk_silent
+    pcm = b"\x00\x00" * 16000  # 1 s of true silence at 16 kHz
+    assert _chunk_peak_amplitude(pcm) == 0
+    assert _is_chunk_silent(pcm) is True
+
+
+def test_peak_amplitude_low_noise_is_silent():
+    """Background noise at peak ≈±200 (well below the 500 threshold)
+    is treated as silence and the chunk is gated out."""
+    from app.routers.sarvam import _is_chunk_silent
+    # Build PCM where every sample is +/- 200 — peak amplitude 200
+    # < 500 threshold. Use struct to avoid endian surprises.
+    samples = [200, -200] * 8000  # 1 s of low-noise oscillation
+    pcm = struct.pack(f"<{len(samples)}h", *samples)
+    assert _is_chunk_silent(pcm) is True
+
+
+def test_peak_amplitude_normal_speech_is_not_silent():
+    """Normal speech regularly hits peak amplitudes >2000 — these
+    chunks must NOT be gated out."""
+    from app.routers.sarvam import _is_chunk_silent, _chunk_peak_amplitude
+    samples = [3000, -3000] * 8000  # speech-volume oscillation
+    pcm = struct.pack(f"<{len(samples)}h", *samples)
+    assert _chunk_peak_amplitude(pcm) >= 3000
+    assert _is_chunk_silent(pcm) is False
+
+
+def test_peak_amplitude_handles_empty_buffer():
+    from app.routers.sarvam import _chunk_peak_amplitude, _is_chunk_silent
+    assert _chunk_peak_amplitude(b"") == 0
+    assert _is_chunk_silent(b"") is True
+
+
+def test_peak_amplitude_tolerates_odd_byte_length():
+    """A buffer with an odd byte count (incomplete sample at the end)
+    shouldn't crash — drop the trailing byte and check what's left.
+    Real-world cause: a JSON envelope's base64 decoded to an odd
+    number of bytes (which shouldn't happen with PCM 16-bit, but
+    defending the boundary is cheap insurance)."""
+    from app.routers.sarvam import _chunk_peak_amplitude
+    # 4 valid samples (peak 0) + 1 trailing byte
+    pcm = struct.pack("<4h", 0, 0, 0, 0) + b"\xff"
+    assert _chunk_peak_amplitude(pcm) == 0
+
+
+def test_peak_amplitude_detects_min_int16():
+    """The sample value -32768 has |x|=32768 which doesn't fit in
+    int16 — peak detection must handle this without overflow."""
+    from app.routers.sarvam import _chunk_peak_amplitude
+    pcm = struct.pack("<4h", -32768, -32768, -32768, -32768)
+    assert _chunk_peak_amplitude(pcm) == 32768
