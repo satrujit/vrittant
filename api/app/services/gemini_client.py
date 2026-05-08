@@ -428,53 +428,34 @@ _LANG_NAMES = {
 }
 
 
-def _build_stt_prompt(language_code: str, prior_context: str = "") -> str:
-    """Prompt that tells Gemini to act as a transcriber. Output ONLY
-    the transcript — no preamble, no language label, no translation.
+def _build_stt_prompt(language_code: str = "", prior_context: str = "") -> str:
+    """Minimal STT directive — just "Stay true to audio. Don't add anything."
 
-    When ``prior_context`` is supplied (the tail of the cumulative
-    transcript built so far on the streaming path), it's included as
-    an explicit "the audio continues from..." anchor. Two side benefits
-    over a context-free prompt:
+    The robustness work — silence detection, known-hallucination filter,
+    echoed-prefix stripping — happens server-side in ``stt()`` below.
+    The prompt itself stays tight (≤20 tokens) so:
 
-    1. **Language anchor.** A few Odia words at the tail biases the
-       model toward continuing in Odia even when a chunk has weak
-       acoustic signal. Cures the Bengali-drift we saw on Flash-Lite
-       at long-buffer ticks.
-    2. **Hallucination floor.** When the audio is silent / unclear,
-       a conversation-style continuation makes "this house is so
-       beautiful" / "one two three..." obviously wrong context-wise,
-       so the model is much more likely to honor the empty-output
-       instruction instead of falling back to memorized boilerplate.
+    - Token spend per chunk is minimised. With a 4-second chunk the
+      audio dominates input cost; the prompt is a rounding error.
+    - Gemini's attention isn't split across pages of meta-instructions.
+      The model focuses on the audio it has been handed, which is the
+      task we actually care about.
+
+    ``prior_context``, when supplied, is prepended on its own line as
+    a continuation anchor (Whisper-style ``prompt`` parameter). Six
+    words of trailing transcript is enough to bias Gemini toward the
+    same language and continuation as the prior chunks without
+    bloating the prompt.
+
+    ``language_code`` is accepted for backward compatibility but
+    deliberately ignored — Gemini auto-detects language from the audio.
+    Telling it "transcribe Odia" turns out not to be necessary on
+    Gemini 3 family models for clear Odia speech.
     """
-    lang = _LANG_NAMES.get(language_code, "the audio's original language")
-    base = (
-        f"You are a speech-to-text transcriber. Transcribe the following "
-        f"audio in {lang}. Output ONLY the transcript text in the script "
-        f"native to that language (Devanagari for Hindi, Odia script for "
-        f"Odia, etc.). Do not translate. Do not add explanations, prefixes, "
-        f"timestamps, speaker labels, or any commentary."
-    )
-    anti_hallucination = (
-        "If the audio is silent, unclear, or contains no recognisable "
-        "speech, output an EMPTY STRING. Do NOT output filler text. "
-        "Do NOT count numbers. Do NOT output phrases like \"this house "
-        "is so beautiful\". Do NOT guess. An empty response is better "
-        "than a wrong one."
-    )
-    if not prior_context:
-        return f"{base}\n\n{anti_hallucination}"
-    return (
-        f"{base}\n\n"
-        f"This audio chunk continues a longer recording. The transcript "
-        f"so far ends with these words:\n"
-        f"\"...{prior_context}\"\n\n"
-        f"Output ONLY what is said NEW in this audio chunk. DO NOT "
-        f"repeat or paraphrase the words above — they are context, "
-        f"not content. If the new audio adds nothing intelligible "
-        f"to the transcript, output an empty string.\n\n"
-        f"{anti_hallucination}"
-    )
+    directive = "Stay true to audio. Don't add anything."
+    if prior_context:
+        return f"...{prior_context}\n{directive}"
+    return directive
 
 
 # Phrases small Gemini variants emit when fed silent / unclear audio.

@@ -23,10 +23,10 @@ def _run(coro):
 
 
 def test_gemini_stt_builds_correct_payload_and_returns_text(monkeypatch):
-    """Verify the request body has audio inlineData + the transcription
-    prompt, and that the response's candidate text is returned.
-    The legacy chat path uses the same response shape so we only test
-    the audio-specific bits here."""
+    """Verify the request body has audio inlineData + the (minimal)
+    transcription prompt, and that the response's candidate text is
+    returned. The legacy chat path uses the same response shape so
+    we only test the audio-specific bits here."""
     from app.config import settings
     from app.services import gemini_client
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-key")
@@ -62,18 +62,16 @@ def test_gemini_stt_builds_correct_payload_and_returns_text(monkeypatch):
     assert out == "hello world"
     # URL contains the model
     assert "gemini-2.5-flash" in captured["url"]
-    # Body has TWO parts: audio inlineData + text prompt
+    # Body has TWO parts: audio inlineData + (short) text prompt
     parts = captured["json"]["contents"][0]["parts"]
     assert len(parts) == 2
     inline = parts[0]["inlineData"]
     assert inline["mimeType"] == "audio/mp4"
     assert base64.b64decode(inline["data"]) == b"RAW_AUDIO_BYTES"
-    # Prompt mentions Odia (the language for od-IN) and tells Gemini
-    # to transcribe (not translate)
+    # Minimal directive — no language hint, no rule list. Server-side
+    # filters provide robustness; the prompt stays tight.
     prompt = parts[1]["text"]
-    assert "Odia" in prompt
-    assert "transcribe" in prompt.lower()
-    assert "translate" in prompt.lower()  # "Do not translate"
+    assert prompt == "Stay true to audio. Don't add anything."
     # Cost row was logged with service="gemini_stt"
     mock_log.assert_called_once()
     kwargs = mock_log.call_args.kwargs
@@ -233,22 +231,31 @@ def test_strip_echoed_prior_empty_inputs_pass_through():
 # ── Prompt building ─────────────────────────────────────────────
 
 
-def test_build_stt_prompt_without_prior_context():
+def test_build_stt_prompt_without_prior_context_is_minimal():
+    """Minimal directive only — no rule list, no language hint, no
+    anti-hallucination wall. Server-side filters provide robustness."""
     from app.services.gemini_client import _build_stt_prompt
     p = _build_stt_prompt("od-IN")
-    assert "Odia" in p
-    assert "EMPTY STRING" in p  # anti-hallucination instruction present
-    assert "this house" in p.lower()  # call-out the specific bad phrase
-    # No prior-context block when none supplied
-    assert "continues a longer recording" not in p
+    assert p == "Stay true to audio. Don't add anything."
 
 
-def test_build_stt_prompt_with_prior_context():
+def test_build_stt_prompt_with_prior_context_prepends_anchor():
+    """Prior context appears as a leading "...<words>\\n" anchor before
+    the directive — Whisper-style continuation hint."""
     from app.services.gemini_client import _build_stt_prompt
     p = _build_stt_prompt("od-IN", prior_context="ରମେଶ ଆହତ ହେଲେ")
-    assert "Odia" in p
-    assert "ରମେଶ ଆହତ ହେଲେ" in p
-    assert "DO NOT repeat" in p
+    assert p == "...ରମେଶ ଆହତ ହେଲେ\nStay true to audio. Don't add anything."
+
+
+def test_build_stt_prompt_short_token_footprint():
+    """Sanity: the minimal prompt should be well under 30 tokens even
+    with prior_context included. Caller relies on this for the per-
+    chunk cost model in stt.py / sarvam.py."""
+    from app.services.gemini_client import _build_stt_prompt
+    long_context = "one two three four five six"
+    p = _build_stt_prompt("od-IN", prior_context=long_context)
+    # Rough word count proxy for tokens; real tokenisation may vary
+    assert len(p.split()) < 25
 
 
 # ── End-to-end: stt() forwards prior_context into the prompt ────
@@ -290,4 +297,6 @@ def test_gemini_stt_forwards_prior_context_to_prompt(monkeypatch):
     assert out == "new content here"
     prompt_text = captured["json"]["contents"][0]["parts"][1]["text"]
     assert "ରମେଶ ଆହତ ହେଲେ" in prompt_text
-    assert "DO NOT repeat" in prompt_text
+    # Minimal-prompt era: no "DO NOT repeat" boilerplate. Echo-strip
+    # in stt() handles accidental repetition server-side instead.
+    assert prompt_text.endswith("Stay true to audio. Don't add anything.")
