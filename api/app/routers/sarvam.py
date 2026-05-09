@@ -270,6 +270,42 @@ _STT_HALLUCINATION_PHRASES = (
 )
 
 
+# Maximum output tokens for a single streaming chunk. A 4-5 s chunk
+# of real Odia speech transcribes to roughly 50-80 tokens; 200 is
+# plenty of headroom for slower / denser speech without leaving runway
+# for the model's degenerate-repetition failure mode (observed
+# 2026-05-09: a single chunk emitted "୩୦" 50+ times = ~1500 tokens).
+# Acts as a structural ceiling — if the model hits the cap mid-runaway
+# we still get a truncated, much-cheaper response, and the trigram-
+# collapse below scrubs whatever did slip through.
+_STT_STREAMING_MAX_TOKENS = 200
+
+
+# Pattern that catches a token (any non-whitespace run) repeated 3+
+# times consecutively — e.g. "୩୦ ୩୦ ୩୦ ୩୦ ୩୦". The capture group is
+# the token and the back-reference matches subsequent identical
+# occurrences separated by single whitespace runs. We collapse the
+# match to a single occurrence; pairs ("ତିରିଶ ତିରିଶ") are left alone
+# because Odia (and Indic languages generally) use word-doubling for
+# emphasis, but no natural speech repeats the same token 3+ times.
+_REPETITION_PATTERN = re.compile(r"(\S+)(?:\s+\1){2,}")
+
+
+def _collapse_runaway_repetition(text: str) -> tuple[str, int]:
+    """Collapse runs of 3+ identical consecutive tokens to a single
+    occurrence. Returns (cleaned_text, num_runs_collapsed).
+    """
+    if not text:
+        return text, 0
+    runs_collapsed = 0
+    def _sub(m):
+        nonlocal runs_collapsed
+        runs_collapsed += 1
+        return m.group(1)
+    cleaned = _REPETITION_PATTERN.sub(_sub, text)
+    return cleaned, runs_collapsed
+
+
 def _filter_hallucinations(text: str) -> tuple[str, bool]:
     """Return (cleaned_text, was_filtered).
 
@@ -466,6 +502,7 @@ async def _gemini_streaming_handler(
     chunk_count = 0
     silent_chunks_dropped = 0
     hallucinations_filtered = 0
+    repetition_runs_collapsed = 0
     total_audio_bytes = 0
     # Audio actually sent to Gemini after VAD compression. Diverges
     # from total_audio_bytes when chunks have silent stretches that
@@ -513,7 +550,7 @@ async def _gemini_streaming_handler(
         """
         nonlocal cumulative_text, pending_chunk, chunk_count
         nonlocal silent_chunks_dropped, compressed_audio_bytes
-        nonlocal hallucinations_filtered
+        nonlocal hallucinations_filtered, repetition_runs_collapsed
 
         if not pending_chunk:
             return
@@ -557,6 +594,7 @@ async def _gemini_streaming_handler(
                 mime_type="audio/wav",
                 language_code=language_code,
                 model=settings.STT_GEMINI_MODEL,
+                max_tokens=_STT_STREAMING_MAX_TOKENS,
                 usage_sink=usage_sink,
             )
         except Exception as exc:
@@ -567,6 +605,22 @@ async def _gemini_streaming_handler(
             return
 
         text = name_registry.replace_english_names((text or "").strip())
+
+        # Collapse runaway repetition before any other filtering so the
+        # hallucination matcher sees normalised text. Flash-Lite has a
+        # degenerate-repetition failure mode where a token (typically a
+        # number like "୩୦") gets emitted dozens of times in a row;
+        # observed 2026-05-09 with output_tokens=2029 on an 18 s session.
+        # The 200-token output cap above prevents catastrophic cost; this
+        # collapse cleans the truncated runaway out of the transcript.
+        text, runs_collapsed = _collapse_runaway_repetition(text)
+        if runs_collapsed:
+            repetition_runs_collapsed += 1
+            logger.info(
+                "Gemini STT: collapsed %d runaway repetition run(s) "
+                "(reporter=%s, chunk=%d, model=%s)",
+                runs_collapsed, reporter_id, chunk_count, settings.STT_GEMINI_MODEL,
+            )
 
         # Strip known small-model hallucinations (e.g. "ଏହି ଘରଟି ବହୁତ ସୁନ୍ଦର"
         # — Flash-Lite's high-prior fallback on near-silent / ambient-
@@ -693,11 +747,13 @@ async def _gemini_streaming_handler(
             "Gemini STT session ended (reporter=%s, duration=%.1fs, "
             "audio_bytes=%d, audio_to_gemini=%d (%.1f%%), "
             "chunks=%d, silent_dropped=%d, hallucinations_filtered=%d, "
-            "gemini_calls=%d, cost=₹%.4f, input_tokens=%d, output_tokens=%d)",
+            "repetitions_collapsed=%d, gemini_calls=%d, "
+            "cost=₹%.4f, input_tokens=%d, output_tokens=%d)",
             reporter_id, duration, total_audio_bytes,
             compressed_audio_bytes, audio_retained_pct,
             chunk_count, silent_chunks_dropped, hallucinations_filtered,
-            gemini_calls, total_cost, total_input, total_output,
+            repetition_runs_collapsed, gemini_calls,
+            total_cost, total_input, total_output,
         )
         try:
             await ws.close()
