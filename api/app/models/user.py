@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import relationship
 
 from ..database import Base
@@ -29,6 +29,16 @@ class User(Base):
         onupdate=now_ist,
     )
     deleted_at = Column(DateTime, nullable=True, default=None)
+
+    # Per-reporter monthly STT quota (live dictation /ws/stt). Cap is in
+    # HOURS for human-readability; usage counter is in SECONDS for
+    # precision. Counter resets atomically when usage_month rolls over —
+    # see app.services.transcription_quota.add_usage. Configurable via
+    # raw SQL only — intentionally NOT exposed in the admin UI to keep
+    # the cap a quiet cost control rather than a per-org policy lever.
+    monthly_transcription_limit = Column(Integer, nullable=False, default=3)
+    transcription_seconds_used = Column(BigInteger, nullable=False, default=0)
+    transcription_usage_month = Column(String(7), nullable=True)
 
     org = relationship("Organization")
     stories = relationship("Story", foreign_keys="Story.reporter_id", back_populates="reporter")

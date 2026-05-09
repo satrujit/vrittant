@@ -18,8 +18,10 @@ import websockets.exceptions
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile, File as FastAPIFile, WebSocket, WebSocketDisconnect, status as http_status
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from ..deps import get_current_org_id
+from ..models.user import User
+from ..services import transcription_quota
 from ..models.story import Story
 from ..services import stt as stt_service
 from ..services.storage import save_file
@@ -899,6 +901,24 @@ async def _gemini_streaming_handler(
             repetition_runs_collapsed, flash_fallbacks,
             gemini_calls, total_cost, total_input, total_output,
         )
+
+        # ── Record monthly transcription usage ────────────────────────
+        # Counted in mic-on seconds (total_audio_bytes / pcm_rate),
+        # NOT in audio-sent-to-Gemini seconds. Reporters perceive
+        # their dictation by wall-clock; if we counted only post-VAD
+        # audio the on-screen "X minutes left" badge would diverge
+        # from their lived experience. Failure is swallowed inside
+        # add_usage — quota tracking must never block session close.
+        used_seconds = int(round(total_audio_bytes / _PCM_BYTES_PER_SEC))
+        if used_seconds > 0:
+            usage_db = SessionLocal()
+            try:
+                transcription_quota.add_usage(
+                    usage_db, user_id=reporter_id, seconds=used_seconds,
+                )
+            finally:
+                usage_db.close()
+
         try:
             await ws.close()
         except Exception:
@@ -928,6 +948,38 @@ async def websocket_stt_proxy(
 
     await ws.accept()
     logger.info(f"STT proxy: connected (reporter={reporter_id})")
+
+    # ── Per-reporter monthly STT quota gate ───────────────────────────
+    # Refuse the session up-front if the reporter has exhausted their
+    # monthly transcription budget (default 3h, configurable via
+    # users.monthly_transcription_limit). The mobile client also caches
+    # this state and disables the mic button locally — this server-
+    # side check is the source of truth and cannot be bypassed by a
+    # stale or tampered client.
+    quota_db = SessionLocal()
+    try:
+        reporter = quota_db.query(User).filter(User.id == reporter_id).one_or_none()
+        if reporter is not None and transcription_quota.is_over_quota(quota_db, reporter):
+            status = transcription_quota.get_status(quota_db, reporter)
+            logger.info(
+                "STT proxy: quota exhausted (reporter=%s, used=%ds, limit=%ds)",
+                reporter_id, status["used_seconds"], status["limit_seconds"],
+            )
+            try:
+                await ws.send_text(json.dumps({
+                    "type": "error",
+                    "data": {
+                        "code": "monthly_quota_exhausted",
+                        "limit_seconds": status["limit_seconds"],
+                        "used_seconds": status["used_seconds"],
+                    },
+                }))
+            except Exception:
+                pass
+            await ws.close(code=4002, reason="Monthly transcription quota exhausted")
+            return
+    finally:
+        quota_db.close()
 
     # ── Provider dispatch ─────────────────────────────────────────────
     # When STT_PROVIDER=gemini, route the live-dictation stream through
