@@ -86,14 +86,17 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
     final quota = ref.read(transcriptionQuotaProvider);
     final s = AppStrings.of(ref);
     if (quota.isOverQuota) {
+      // Use the editor's neutral surface (not the error-red palette) —
+      // this isn't an error, just an informational note that one of
+      // many input modes is paused. Submit / attach / refine / typing
+      // all still work, and the snackbar copy says so.
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
-            content: Text(s.quotaExhausted),
+            content: Text(s.quotaExhaustedExplain),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 4),
+            duration: const Duration(seconds: 5),
           ),
         );
       return false;
@@ -3279,12 +3282,15 @@ class _IdleBottomBar extends ConsumerWidget {
                 // When isQuotaExhausted, the button still calls onRecord
                 // (which short-circuits to a snackbar) so the disabled
                 // state communicates "tap me to learn why" rather than
-                // being a dead pixel.
+                // being a dead pixel. The label below the icon swaps
+                // from "Hold to record" to "Voice limit" so the
+                // reporter sees explicitly what's paused without a
+                // banner cluttering the bar.
                 _LabeledBarButton(
-                  label: s.tooltipMic,
+                  label: isQuotaExhausted ? s.quotaMicDisabledLabel : s.tooltipMic,
                   labelColor: t.mutedColor,
                   child: Semantics(
-                    label: s.tooltipMic,
+                    label: isQuotaExhausted ? s.quotaMicDisabledLabel : s.tooltipMic,
                     button: true,
                     enabled: !isProcessing && !isQuotaExhausted,
                     child: GestureDetector(
@@ -4114,68 +4120,60 @@ class _ErrorBanner extends StatelessWidget {
 }
 
 
-/// Tiny chip rendered above the bottom bar showing how much monthly
-/// STT budget the reporter has left. Visible only when remaining
-/// drops below 30 min so the badge stays out of sight 99% of the
-/// time. Coral background when remaining < 5 min OR exhausted to
-/// communicate urgency.
+/// Subtle pre-flight chip showing how much monthly voice-typing
+/// budget the reporter has left.
+///
+/// Visibility: only when 0 < remaining ≤ 30 min. When the quota is
+/// fully exhausted we render NOTHING here — the disabled mic button
+/// + its swapped "Voice limit" label tell the whole story without
+/// adding a banner that visually competes with the bottom bar
+/// (which made earlier reporters think "I can't even submit").
+///
+/// Styling: text-only with a small icon — no fill, no border. Muted
+/// grey by default, switches to coral text only when remaining < 5
+/// min. Sits inline above the bottom bar centred. The deliberate
+/// understatement is the point: this is informational, not an
+/// alarm.
 class _QuotaBadge extends ConsumerWidget {
   const _QuotaBadge();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final quota = ref.watch(transcriptionQuotaProvider);
+    // When fully exhausted we hide the chip entirely — the disabled
+    // mic button + label-swap communicate the state on the actual
+    // affected control. A second banner is redundant and tonally
+    // alarms the reader about features that still work fine.
+    if (quota.isOverQuota) return const SizedBox.shrink();
     if (!quota.showBadge) return const SizedBox.shrink();
     final s = AppStrings.of(ref);
     final t = context.t;
-    final isUrgent = quota.isOverQuota || quota.isNearLimit;
-    final label = quota.isOverQuota
-        ? s.quotaExhausted
-        : s.quotaMinutesLeft(quota.remainingMinutes);
+    final color = quota.isNearLimit ? AppColors.coral500 : t.mutedColor;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.xl,
-        AppSpacing.sm,
+        AppSpacing.xs,
         AppSpacing.xl,
-        0,
+        AppSpacing.xs,
       ),
       child: Align(
         alignment: Alignment.center,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: 6,
-          ),
-          decoration: BoxDecoration(
-            color: isUrgent
-                ? AppColors.coral500.withValues(alpha: 0.12)
-                : t.actionChipBg,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: isUrgent
-                  ? AppColors.coral500.withValues(alpha: 0.4)
-                  : t.dividerColor,
-              width: 1,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.timer, size: 12, color: color),
+            const SizedBox(width: 4),
+            Text(
+              s.quotaMinutesLeft(quota.remainingMinutes),
+              style: AppTypography.odiaBodySmall.copyWith(
+                color: color,
+                fontSize: 12,
+                fontWeight: quota.isNearLimit
+                    ? FontWeight.w500
+                    : FontWeight.normal,
+              ),
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                LucideIcons.timer,
-                size: 14,
-                color: isUrgent ? AppColors.coral500 : t.mutedColor,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: AppTypography.odiaBodySmall.copyWith(
-                  color: isUrgent ? AppColors.coral500 : t.mutedColor,
-                  fontWeight: isUrgent ? FontWeight.w600 : FontWeight.normal,
-                ),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );

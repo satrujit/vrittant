@@ -475,25 +475,37 @@ class AppStrings {
 
   // ===========================================================================
   // Monthly transcription quota (per-reporter STT budget)
+  //
+  // All copy here references "voice typing" / "ସ୍ୱର ଟାଇପ୍" specifically
+  // — never just "limit" — so the reporter immediately knows that
+  // typing, attaching, refining, and submitting are all still
+  // available, and only the mic dictation surface is paused.
   // ===========================================================================
 
-  /// Badge near the mic button when remaining < 30 min. [minutes] is
-  /// always >= 0 — when the quota is fully exhausted we render
-  /// [quotaExhausted] instead.
+  /// Pre-flight chip, only shown when remaining < 30 min and > 0.
+  /// Sits as a subtle informational hint near the mic button (not
+  /// styled as an error). [minutes] is always > 0 — when quota is
+  /// fully exhausted we hide the chip entirely and let the disabled
+  /// mic + its swapped label communicate the state.
   String quotaMinutesLeft(int minutes) => isOdia
-      ? '${_toOdiaDigits('$minutes')} ମିନିଟ୍ ବାକି'
-      : '$minutes min left';
+      ? '${_toOdiaDigits('$minutes')} ମିନିଟ୍ ସ୍ୱର ଟାଇପ୍ ବାକି'
+      : '$minutes min voice typing left';
 
-  /// Badge / disabled-mic tooltip when remaining = 0.
-  String get quotaExhausted => isOdia
-      ? 'ଏହି ମାସର ସୀମା ଶେଷ। ୧ ତାରିଖରେ ପୁଣି ଆରମ୍ଭ ହେବ।'
-      : 'Monthly limit reached. Resets on the 1st.';
+  /// Replaces the mic button's "Hold to record" label when the
+  /// reporter is over quota. Short — sits in the small label slot.
+  String get quotaMicDisabledLabel => isOdia ? 'ସୀମା ଶେଷ' : 'Voice limit';
+
+  /// Snackbar shown when the user taps the disabled mic. Explicit
+  /// that only voice is paused; everything else continues to work.
+  String get quotaExhaustedExplain => isOdia
+      ? 'ଏହି ମାସର ସ୍ୱର ଟାଇପ୍ ସୀମା ଶେଷ। ଆପଣ ତଥାପି ଲେଖି, ଫାଇଲ ଯୋଡ଼ି, ସୁଧାରି ଓ ଦାଖଲ କରି ପାରିବେ।'
+      : 'Voice typing paused for this month. You can still type, attach files, refine, and submit.';
 
   /// Pre-session warning snackbar — shown when the user starts
   /// dictation with < 5 minutes remaining. Single-shot per session.
   String get quotaNearLimitWarning => isOdia
-      ? 'ଏହି ମାସରେ ୫ ମିନିଟରୁ କମ୍ ସମୟ ବାକି।'
-      : 'Less than 5 minutes left this month.';
+      ? 'ଏହି ମାସରେ ୫ ମିନିଟରୁ କମ୍ ସ୍ୱର ଟାଇପ୍ ବାକି।'
+      : 'Less than 5 minutes of voice typing left this month.';
 
   // ===========================================================================
   // Errors (user-facing)
