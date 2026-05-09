@@ -37,3 +37,4 @@ coverage/
 
 # Local git worktrees (used by subagent-driven workflows)
 .worktrees/
+uploads/

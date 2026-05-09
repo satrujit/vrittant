@@ -24,6 +24,7 @@ from ..services.otp_provider import (
     verify_otp as otp_verify,
     resend_otp as otp_resend,
 )
+from ..services import transcription_quota
 from ..utils.tz import now_ist
 
 router = APIRouter()
@@ -418,6 +419,30 @@ def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)
                 if isinstance(c, dict) and c.get("is_active") and c.get("key")
             ]
     return response
+
+
+# ── Per-reporter monthly STT quota ──
+
+@router.get("/me/transcription-usage")
+def get_transcription_usage(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the current reporter's monthly STT usage + remaining
+    budget. Mobile polls this on app resume / notepad-screen entry /
+    just after a session ends, and renders a "X min left" badge plus
+    disables the mic button when remaining=0.
+
+    Limit is per-user via ``users.monthly_transcription_limit`` (in
+    HOURS, default 3). Counter resets on the 1st of each IST month;
+    the rollover is read-side virtual until the user starts their
+    first session of the new month, at which point the stored row
+    is rewritten atomically inside ``add_usage``.
+
+    Shape is intentionally flat / read-only — no schemas/models
+    needed since the consumer is just the mobile app drawing UI.
+    """
+    return transcription_quota.get_status(db, user)
 
 
 # ── Account deletion (store-compliance) ──

@@ -12,6 +12,7 @@ import 'core/services/local_drafts_store.dart';
 import 'core/services/local_profile_cache.dart';
 import 'core/services/local_stories_cache.dart';
 import 'core/services/sentry_setup.dart';
+import 'core/services/transliteration_service.dart';
 
 void main() async {
   // Sentry must wrap runApp so uncaught Dart errors AND Flutter framework
@@ -29,6 +30,11 @@ void main() async {
     await LocalDraftsStore.init();
     await LocalStoriesCache.init();
     await LocalProfileCache.init();
+    // Open transliteration cache eagerly so the first word a reporter
+    // types in the notepad doesn't pay the box-open round-trip. The
+    // service tolerates init failure (logs + falls back to network-only
+    // mode), so this is a non-fatal best-effort.
+    await TransliterationService.instance.initialize();
     runApp(
       const ProviderScope(child: _AppLinksScope(child: NewsFlowApp())),
     );
