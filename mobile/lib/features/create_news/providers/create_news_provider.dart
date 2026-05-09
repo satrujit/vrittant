@@ -261,6 +261,21 @@ class NotepadState {
   /// re-enables. Cleared on draft load (paragraphs reset → mismatch).
   final String? lastRefineSnapshot;
 
+  /// Number of times AI Refine has been invoked on this story in
+  /// the current session. Used to enforce [aiRefineMaxPerStory] —
+  /// once a reporter has refined twice, the FAB hides entirely
+  /// even if they make further edits. Two refines is plenty: pass 1
+  /// cleans up dictation slips and structures paragraphs; pass 2
+  /// applies any post-edit polish. Beyond that we'd be burning
+  /// LLM calls on diminishing-returns iteration.
+  ///
+  /// Resets to 0 when the story is reloaded / a new draft starts.
+  /// In-memory only — a reporter who closes + reopens the app does
+  /// get a fresh budget on the same draft. Acceptable: AI Refine
+  /// itself is cheap (~₹0.10–0.25 per call), so the cap is a
+  /// soft-prevent-spam guardrail rather than a hard cost gate.
+  final int aiRefineCount;
+
   /// Set to a non-null reason string when the recording timer auto-
   /// stopped without the reporter tapping mic (10-minute hard cap or
   /// 10-minute silence safety net). The notepad screen listens for
@@ -299,6 +314,7 @@ class NotepadState {
     this.isGeneratingStory = false,
     this.pendingFocusParagraphIndex,
     this.lastRefineSnapshot,
+    this.aiRefineCount = 0,
     this.recordingAutoStopReason,
   });
 
@@ -345,6 +361,13 @@ class NotepadState {
   /// which is the smallest unit Refine can meaningfully improve.
   static const int aiRefineMinWords = 20;
 
+  /// Maximum number of AI Refine invocations per story in a single
+  /// session. Two passes is enough: pass 1 cleans dictation slips and
+  /// structures paragraphs; pass 2 applies post-edit polish. Beyond
+  /// that we're burning LLM calls on diminishing returns and inviting
+  /// reporters to refine-spam instead of writing.
+  static const int aiRefineMaxPerStory = 2;
+
   /// String reason the AI Refine FAB should be inactive, or null when
   /// the FAB is good to fire. Codifies all the gating conditions in
   /// one place so the FAB widget doesn't have to know any of them
@@ -353,8 +376,15 @@ class NotepadState {
   /// first so the reporter who has typed a couple of words sees the
   /// minimum-length hint rather than a "no changes since last
   /// refine" hint that would be confusing on an empty draft.
+  ///
+  /// The notepad screen interprets each reason differently:
+  ///   - "too_short" → render the FAB visible-but-disabled with a
+  ///     tooltip (educates a fresh reporter)
+  ///   - "no_changes" / "cap_reached" → hide the FAB entirely
+  ///     (don't tempt the reporter to keep tapping a no-op affordance)
   String? get aiRefineDisableReason {
     if (bodyWordCount < aiRefineMinWords) return 'too_short';
+    if (aiRefineCount >= aiRefineMaxPerStory) return 'cap_reached';
     if (!isRefineStale) return 'no_changes';
     return null;
   }
@@ -395,6 +425,7 @@ class NotepadState {
     bool clearPendingFocus = false,
     String? lastRefineSnapshot,
     bool clearLastRefineSnapshot = false,
+    int? aiRefineCount,
     String? recordingAutoStopReason,
     bool clearRecordingAutoStopReason = false,
   }) {
@@ -437,6 +468,7 @@ class NotepadState {
       lastRefineSnapshot: clearLastRefineSnapshot
           ? null
           : (lastRefineSnapshot ?? this.lastRefineSnapshot),
+      aiRefineCount: aiRefineCount ?? this.aiRefineCount,
       recordingAutoStopReason: clearRecordingAutoStopReason
           ? null
           : (recordingAutoStopReason ?? this.recordingAutoStopReason),
@@ -1425,6 +1457,12 @@ class NotepadNotifier extends Notifier<NotepadState> {
         paragraphs: [...newTextParas, ...mediaParas],
         isGeneratingStory: false,
         lastRefineSnapshot: refinedSnapshot,
+        // Increment AFTER a successful refine. If the call failed
+        // we don't burn one of the per-story budget on it — the
+        // reporter gets to try again. The cap is enforced by
+        // aiRefineDisableReason returning "cap_reached" once
+        // count >= aiRefineMaxPerStory; the FAB hides on that.
+        aiRefineCount: state.aiRefineCount + 1,
       );
       _scheduleAutoSave();
     } catch (_) {

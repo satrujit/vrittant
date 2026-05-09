@@ -818,8 +818,22 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
         // recording mic + Submit + safe area) so it never overlaps.
         // Adds the device's safe-area inset on top so it stays in the
         // same visual position across notch/home-indicator phones.
+        //
+        // Visibility decisions per state.aiRefineDisableReason:
+        //   - null       → show + enabled (the happy path)
+        //   - too_short  → show + DISABLED (with educational tooltip
+        //                   so a fresh reporter learns the 20-word
+        //                   minimum exists)
+        //   - no_changes → HIDE (the reporter just refined and hasn't
+        //                   typed anything; a disabled FAB just begs
+        //                   to be tapped, hide it instead)
+        //   - cap_reached→ HIDE (2 refines per story used; further
+        //                   passes bring diminishing returns and we
+        //                   don't want to invite refine-spam)
         if (!state.isRecording &&
             !isReadOnly &&
+            state.aiRefineDisableReason != 'no_changes' &&
+            state.aiRefineDisableReason != 'cap_reached' &&
             state.paragraphs
                 .where((p) =>
                     !p.hasMedia && !p.isTable && p.text.trim().isNotEmpty)
@@ -830,13 +844,6 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
             child: _AiRefineFab(
               onTap: () => notifier.generateStory(),
               isGenerating: state.isGeneratingStory,
-              // The FAB is disabled in two distinct cases:
-              //   - body has fewer than 20 words (LLM has no
-              //     structure to work with; would just waste cents)
-              //   - reporter just refined and hasn't changed
-              //     anything since (no-op refine)
-              // The reason string drives both the disabled state AND
-              // the tooltip copy so the reporter knows why.
               disableReason: state.aiRefineDisableReason,
             ),
           ),
