@@ -263,8 +263,10 @@ _VAD_MIN_SPEECH_BYTES = int(_PCM_BYTES_PER_SEC * 0.6)
 # trying to RMS-tune our way out of the problem (we'd reject quiet
 # real speech alongside the noise).
 _STT_HALLUCINATION_PHRASES = (
-    "ଏହି ଘରଟି ବହୁତ ସୁନ୍ଦର",  # "this house is very beautiful" — Flash-Lite Odia
+    "ଏହି ଘରଟି ବହୁତ ସୁନ୍ଦର",  # "this house is very beautiful" — Flash-Lite Odia (colloquial)
     "ଏହି ଘରଟି ବହୁତ ସୁନ୍ଦର।",
+    "ଏହି ଗୃହଟି ବହୁତ ସୁନ୍ଦର",  # same phrase, formal register variant (ଗୃହ vs ଘର)
+    "ଏହି ଗୃହଟି ବହୁତ ସୁନ୍ଦର।",
     "ମୁଁ ତୁମକୁ ଭଲପାଏ",  # "I love you" — observed 2026-05-09 on silence
     "ମୁଁ ତୁମକୁ ଭଲପାଏ।",
     "this house is very beautiful",
