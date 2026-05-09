@@ -280,6 +280,83 @@ _STT_HALLUCINATION_PHRASES = (
 # collapse below scrubs whatever did slip through.
 _STT_STREAMING_MAX_TOKENS = 200
 
+# When the configured STT model produces a transcript that fails
+# quality checks (token-ratio anomaly, script drift, etc.) we retry
+# the SAME chunk on this stronger model. Cost overhead is bounded by
+# the quality-failure rate; in steady-state Flash-Lite handles >95%
+# of chunks and the 5% retry budget keeps the bill well below all-
+# Flash. If we're already configured to use Flash (or higher) the
+# quality gate just drops bad chunks without retry.
+_STT_FALLBACK_MODEL = "gemini-2.5-flash"
+
+# Quality gate: max output tokens per second of audio. Real human
+# speech tops out around 5-6 syllables/second; even with dense Indic
+# token expansion that's roughly 10-15 tokens/sec at the high end. 30
+# tokens/sec is ~3× faster than humanly possible — anything above is
+# the model emitting filler / repetition rather than transcribing
+# speech. Catches degenerate-repetition runaways even when the
+# model output is structurally diverse (so the trigram collapse
+# below misses it).
+_MAX_OUTPUT_TOKENS_PER_SECOND = 30
+
+# Quality gate: minimum fraction of alphabetic chars that must be in
+# Odia script for an od-IN session. Below this we consider the
+# transcript to have language-drifted (Tamil, Bengali, Devanagari,
+# etc.) and retry on the fallback model. Set conservatively at 0.7
+# so a transcript with embedded English names ("Mishra", "BJP", place
+# names) still passes — typical Odia news copy is >95% Odia chars.
+_MIN_ODIA_SCRIPT_RATIO = 0.7
+
+
+def _odia_script_ratio(text: str) -> float:
+    """Fraction of alphabetic characters in ``text`` that are Odia
+    (U+0B00-U+0B7F). Numbers, digits, punctuation, whitespace are
+    ignored. Returns 1.0 for transcripts with no alphabetic chars
+    (numbers / punctuation only — neutral, not a drift signal).
+    """
+    odia = 0
+    other_alpha = 0
+    for ch in text:
+        cp = ord(ch)
+        if 0x0B00 <= cp <= 0x0B7F:
+            odia += 1
+        elif ch.isalpha():
+            other_alpha += 1
+    total = odia + other_alpha
+    if total == 0:
+        return 1.0
+    return odia / total
+
+
+def _check_chunk_quality(
+    text: str,
+    *,
+    audio_seconds: float,
+    output_tokens: int,
+    expected_script_lang: str,
+) -> Optional[str]:
+    """Returns a short failure-reason string if ``text`` looks like a
+    model failure (runaway repetition, language drift), else None.
+    Empty transcripts pass — they're handled separately downstream.
+    """
+    if not text:
+        return None
+    # Token-ratio anomaly. Independent of the trigram collapse — catches
+    # cases where the model's repetition is structurally diverse enough
+    # to evade the collapse but quantitatively absurd.
+    if audio_seconds > 0:
+        ratio = output_tokens / audio_seconds
+        if ratio > _MAX_OUTPUT_TOKENS_PER_SECOND:
+            return f"token_ratio={ratio:.1f}/s"
+    # Script-drift check. Only enforce when the session language is
+    # Odia; if we add other Indic-language flavours later the same
+    # gate can be templated per-language.
+    if expected_script_lang.lower().startswith("od"):
+        odia_ratio = _odia_script_ratio(text)
+        if odia_ratio < _MIN_ODIA_SCRIPT_RATIO:
+            return f"odia_ratio={odia_ratio:.2f}"
+    return None
+
 
 # Pattern that catches a token (any non-whitespace run) repeated 3+
 # times consecutively — e.g. "୩୦ ୩୦ ୩୦ ୩୦ ୩୦". The capture group is
@@ -503,6 +580,7 @@ async def _gemini_streaming_handler(
     silent_chunks_dropped = 0
     hallucinations_filtered = 0
     repetition_runs_collapsed = 0
+    flash_fallbacks = 0
     total_audio_bytes = 0
     # Audio actually sent to Gemini after VAD compression. Diverges
     # from total_audio_bytes when chunks have silent stretches that
@@ -551,6 +629,7 @@ async def _gemini_streaming_handler(
         nonlocal cumulative_text, pending_chunk, chunk_count
         nonlocal silent_chunks_dropped, compressed_audio_bytes
         nonlocal hallucinations_filtered, repetition_runs_collapsed
+        nonlocal flash_fallbacks
 
         if not pending_chunk:
             return
@@ -588,12 +667,14 @@ async def _gemini_streaming_handler(
         # latches onto the text and re-emits it across chunks).
 
         wav = _wrap_pcm_as_wav(compressed_bytes)
+        audio_seconds = len(compressed_bytes) / _PCM_BYTES_PER_SEC
+        primary_model = settings.STT_GEMINI_MODEL
         try:
             text = await gemini_client.stt(
                 audio_bytes=wav,
                 mime_type="audio/wav",
                 language_code=language_code,
-                model=settings.STT_GEMINI_MODEL,
+                model=primary_model,
                 max_tokens=_STT_STREAMING_MAX_TOKENS,
                 usage_sink=usage_sink,
             )
@@ -603,6 +684,65 @@ async def _gemini_streaming_handler(
                 reporter_id, chunk_count, len(chunk_bytes), exc,
             )
             return
+
+        # Quality gate (token-ratio anomaly + script-drift). Run on the
+        # raw primary output BEFORE name-replacement / collapse / phrase
+        # filter, so the gate sees what Gemini actually produced. If the
+        # primary model failed AND it isn't already the fallback, retry
+        # the same chunk on the stronger Flash model. This is the
+        # reactive routing strategy: cheap default, escalate only on
+        # detected failure. ~5% expected fallback rate based on Flash-
+        # Lite quality observed so far; cost overhead bounded by that.
+        primary_usage = usage_sink[-1] if usage_sink else {}
+        primary_output_tokens = int(primary_usage.get("output_tokens") or 0)
+        primary_failure = _check_chunk_quality(
+            text or "",
+            audio_seconds=audio_seconds,
+            output_tokens=primary_output_tokens,
+            expected_script_lang=language_code,
+        )
+        if primary_failure and primary_model != _STT_FALLBACK_MODEL:
+            logger.info(
+                "Gemini STT: chunk %d quality fail on %s (%s) — "
+                "retrying on %s (reporter=%s)",
+                chunk_count, primary_model, primary_failure,
+                _STT_FALLBACK_MODEL, reporter_id,
+            )
+            try:
+                fallback_text = await gemini_client.stt(
+                    audio_bytes=wav,
+                    mime_type="audio/wav",
+                    language_code=language_code,
+                    model=_STT_FALLBACK_MODEL,
+                    max_tokens=_STT_STREAMING_MAX_TOKENS,
+                    usage_sink=usage_sink,
+                )
+                flash_fallbacks += 1
+                # Re-check the fallback's output. If even Flash fails the
+                # gate (rare but possible — genuinely bad audio), drop the
+                # chunk entirely rather than emit either bad transcript.
+                fb_usage = usage_sink[-1] if usage_sink else {}
+                fb_output_tokens = int(fb_usage.get("output_tokens") or 0)
+                fb_failure = _check_chunk_quality(
+                    fallback_text or "",
+                    audio_seconds=audio_seconds,
+                    output_tokens=fb_output_tokens,
+                    expected_script_lang=language_code,
+                )
+                if fb_failure:
+                    logger.info(
+                        "Gemini STT: fallback also failed quality (%s) — "
+                        "dropping chunk %d", fb_failure, chunk_count,
+                    )
+                    text = ""
+                else:
+                    text = fallback_text
+            except Exception as exc:
+                logger.warning(
+                    "Gemini STT fallback to %s failed (chunk=%d): %r — "
+                    "dropping chunk", _STT_FALLBACK_MODEL, chunk_count, exc,
+                )
+                text = ""
 
         text = name_registry.replace_english_names((text or "").strip())
 
@@ -747,13 +887,13 @@ async def _gemini_streaming_handler(
             "Gemini STT session ended (reporter=%s, duration=%.1fs, "
             "audio_bytes=%d, audio_to_gemini=%d (%.1f%%), "
             "chunks=%d, silent_dropped=%d, hallucinations_filtered=%d, "
-            "repetitions_collapsed=%d, gemini_calls=%d, "
-            "cost=₹%.4f, input_tokens=%d, output_tokens=%d)",
+            "repetitions_collapsed=%d, flash_fallbacks=%d, "
+            "gemini_calls=%d, cost=₹%.4f, input_tokens=%d, output_tokens=%d)",
             reporter_id, duration, total_audio_bytes,
             compressed_audio_bytes, audio_retained_pct,
             chunk_count, silent_chunks_dropped, hallucinations_filtered,
-            repetition_runs_collapsed, gemini_calls,
-            total_cost, total_input, total_output,
+            repetition_runs_collapsed, flash_fallbacks,
+            gemini_calls, total_cost, total_input, total_output,
         )
         try:
             await ws.close()
