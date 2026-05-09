@@ -229,13 +229,8 @@ class NotepadState {
   final bool isGeneratingTitle;
   final bool isProcessing;
   final String? error;
-  final bool isSpeechEditing;
-  final String speechEditTranscript;
   final bool isOcrProcessing;
   final double ocrProgress;
-  final int? improvingParagraphIndex; // which paragraph is being AI-improved
-  final int? improvingSelStart; // selection start within paragraph (null = whole)
-  final int? improvingSelEnd;   // selection end within paragraph
   /// IDs (not indices) of paragraphs currently being auto-polished by the LLM.
   /// Keyed by ID so reorders/deletes during the in-flight polish don't mis-attribute
   /// the result to the wrong paragraph.
@@ -293,13 +288,8 @@ class NotepadState {
     this.isGeneratingTitle = false,
     this.isProcessing = false,
     this.error,
-    this.isSpeechEditing = false,
-    this.speechEditTranscript = '',
     this.isOcrProcessing = false,
     this.ocrProgress = 0.0,
-    this.improvingParagraphIndex,
-    this.improvingSelStart,
-    this.improvingSelEnd,
     this.polishingParagraphIds = const {},
     this.isAudioSaveMode = false,
     this.isNoisyEnvironment = false,
@@ -391,14 +381,8 @@ class NotepadState {
     bool? isProcessing,
     String? error,
     bool clearError = false,
-    bool? isSpeechEditing,
-    String? speechEditTranscript,
     bool? isOcrProcessing,
     double? ocrProgress,
-    int? improvingParagraphIndex,
-    bool clearImprovingParagraphIndex = false,
-    int? improvingSelStart,
-    int? improvingSelEnd,
     Set<String>? polishingParagraphIds,
     bool? isAudioSaveMode,
     bool? isNoisyEnvironment,
@@ -438,19 +422,8 @@ class NotepadState {
       isGeneratingTitle: isGeneratingTitle ?? this.isGeneratingTitle,
       isProcessing: isProcessing ?? this.isProcessing,
       error: clearError ? null : (error ?? this.error),
-      isSpeechEditing: isSpeechEditing ?? this.isSpeechEditing,
-      speechEditTranscript: speechEditTranscript ?? this.speechEditTranscript,
       isOcrProcessing: isOcrProcessing ?? this.isOcrProcessing,
       ocrProgress: ocrProgress ?? this.ocrProgress,
-      improvingParagraphIndex: clearImprovingParagraphIndex
-          ? null
-          : (improvingParagraphIndex ?? this.improvingParagraphIndex),
-      improvingSelStart: clearImprovingParagraphIndex
-          ? null
-          : (improvingSelStart ?? this.improvingSelStart),
-      improvingSelEnd: clearImprovingParagraphIndex
-          ? null
-          : (improvingSelEnd ?? this.improvingSelEnd),
       polishingParagraphIds: polishingParagraphIds ?? this.polishingParagraphIds,
       isAudioSaveMode: isAudioSaveMode ?? this.isAudioSaveMode,
       isNoisyEnvironment: isNoisyEnvironment ?? this.isNoisyEnvironment,
@@ -553,10 +526,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
 
   // --- Auto-paragraph support ---
   Timer? _autoParagraphTimer;
-
-  // --- Speech edit support ---
-  StreamingSttService? _speechEditStt;
-  StreamSubscription<SttSegment>? _speechEditSub;
 
   // --- Undo / Redo support ---
   final List<List<Paragraph>> _undoStack = [];
@@ -1687,66 +1656,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
     _scheduleAutoSave();
   }
 
-  /// Uses AI to rephrase / improve a paragraph's text in Odia.
-  /// If [instruction] is provided, the user's spoken instruction guides the rewrite.
-  Future<void> improveParagraphWithAI(int index, {String? instruction}) async {
-    if (index < 0 || index >= state.paragraphs.length) return;
-    _pushUndo();
-
-    final paragraph = state.paragraphs[index];
-    if (paragraph.text.trim().isEmpty) return;
-
-    state = state.copyWith(
-      improvingParagraphIndex: index,
-      clearEditingParagraphIndex: true,
-    );
-
-    try {
-      final systemPrompt = instruction != null && instruction.trim().isNotEmpty
-          ? 'You are an expert Odia news editor. The user will give you a paragraph of Odia news text '
-            'and a spoken instruction about how to change it. Apply the instruction to the paragraph. '
-            'Keep the facts accurate. Use ONLY Odia script — no Roman/English letters or digits. '
-            'Use Odia numerals (୦-୯). Return ONLY the rewritten paragraph, nothing else.'
-          : 'You are an expert Odia news editor. Given a paragraph of Odia news text, '
-            'rewrite it to be clearer, more professional, and publication-ready. '
-            'Keep the same meaning and facts. Use ONLY Odia script — no Roman/English letters or digits. '
-            'Use Odia numerals (୦-୯). Return ONLY the improved paragraph, nothing else.';
-
-      final userContent = instruction != null && instruction.trim().isNotEmpty
-          ? 'ଅନୁଚ୍ଛେଦ:\n${paragraph.text}\n\nନିର୍ଦ୍ଦେଶ:\n$instruction'
-          : paragraph.text;
-
-      final messages = [
-        ChatMessage(role: 'system', content: systemPrompt),
-        ChatMessage(role: 'user', content: userContent),
-      ];
-
-      final response = await _sarvam.chat(
-        messages: messages,
-        temperature: 0.4,
-        maxTokens: 2048,
-      );
-
-      final improved = toOdiaDigits(response.firstMessageContent.trim());
-      if (improved.isNotEmpty) {
-        final updated = List<Paragraph>.from(state.paragraphs);
-        updated[index] = updated[index].copyWith(text: improved);
-        state = state.copyWith(
-          paragraphs: updated,
-          clearImprovingParagraphIndex: true,
-        );
-        _scheduleAutoSave();
-      } else {
-        state = state.copyWith(clearImprovingParagraphIndex: true);
-      }
-    } catch (e) {
-      state = state.copyWith(
-        clearImprovingParagraphIndex: true,
-        error: _err('AI polish failed: $e', 'AI ସୁଧାର ବିଫଳ: $e'),
-      );
-    }
-  }
-
   /// Auto-polishes a freshly transcribed paragraph using LLM.
   /// Fixes: Roman→Odia script, Arabic→Odia numerals, duplicate phrases,
   /// punctuation, misplaced purna virama, grammar — without changing meaning.
@@ -1817,83 +1726,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
       // Polish failed silently — keep raw text
       state = state.copyWith(
         polishingParagraphIds: {...state.polishingParagraphIds}..remove(pid),
-      );
-    }
-  }
-
-  /// Uses AI to apply a spoken instruction to a selected portion of text.
-  /// [index] — paragraph index
-  /// [fullParagraphText] — the full paragraph text (with selection in context)
-  /// [selectedText] — the selected portion the user wants to change
-  /// [selectionStart] / [selectionEnd] — character offsets within the paragraph
-  /// [instruction] — the user's spoken instruction (e.g. "make this formal")
-  Future<void> instructEditWithAI({
-    required int index,
-    required String fullParagraphText,
-    required String selectedText,
-    required int selectionStart,
-    required int selectionEnd,
-    required String instruction,
-  }) async {
-    if (index < 0 || index >= state.paragraphs.length) return;
-    if (selectedText.trim().isEmpty || instruction.trim().isEmpty) return;
-    _pushUndo();
-
-    state = state.copyWith(
-      improvingParagraphIndex: index,
-      improvingSelStart: selectionStart,
-      improvingSelEnd: selectionEnd,
-      clearEditingParagraphIndex: true,
-    );
-
-    try {
-      // Send ONLY the selected text + instruction. The LLM rewrites just that
-      // portion and we splice the result back into the paragraph.
-      final messages = [
-        const ChatMessage(
-          role: 'system',
-          content:
-              'You are an expert Odia text editor. '
-              'The user gives you a piece of Odia text and an instruction. '
-              'Rewrite the given text according to the instruction. '
-              'Return ONLY the rewritten text — nothing else. No explanations, '
-              'no quotes, no labels, no prefixes. Just the rewritten Odia text. '
-              'Use ONLY Odia script — no Roman/English letters or digits. '
-              'Use Odia numerals (୦-୯).',
-        ),
-        ChatMessage(
-          role: 'user',
-          content: '$selectedText\n\nନିର୍ଦ୍ଦେଶ: $instruction',
-        ),
-      ];
-
-      final response = await _sarvam.chat(
-        messages: messages,
-        temperature: 0.4,
-        maxTokens: 2048,
-      );
-
-      final replacement = toOdiaDigits(response.firstMessageContent.trim());
-      if (replacement.isNotEmpty) {
-        // Splice the replacement back into the full paragraph
-        final before = fullParagraphText.substring(0, selectionStart);
-        final after = fullParagraphText.substring(selectionEnd);
-        final newText = '$before$replacement$after';
-
-        final updated = List<Paragraph>.from(state.paragraphs);
-        updated[index] = updated[index].copyWith(text: newText);
-        state = state.copyWith(
-          paragraphs: updated,
-          clearImprovingParagraphIndex: true,
-        );
-        _scheduleAutoSave();
-      } else {
-        state = state.copyWith(clearImprovingParagraphIndex: true);
-      }
-    } catch (e) {
-      state = state.copyWith(
-        clearImprovingParagraphIndex: true,
-        error: _err('AI instruction failed: $e', 'AI ନିର୍ଦ୍ଦେଶ ବିଫଳ: $e'),
       );
     }
   }
@@ -2272,37 +2104,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
   }
 
   // ---------------------------------------------------------------------------
-  // Speech edit
-  // ---------------------------------------------------------------------------
-
-  /// Start a short speech-edit recording. The live text is exposed via
-  /// state.speechEditTranscript so the UI can show it.
-  Future<void> startSpeechEdit() async {
-    _speechEditStt = StreamingSttService();
-    _speechEditStt!.authToken = ref.read(apiServiceProvider).token;
-    final stream = await _speechEditStt!.start();
-    state = state.copyWith(isSpeechEditing: true, speechEditTranscript: '');
-    _speechEditSub = stream.listen(
-      (segment) {
-        state = state.copyWith(speechEditTranscript: toOdiaDigits(segment.text));
-      },
-      onError: (_) {},
-    );
-  }
-
-  /// Stop speech-edit and return the transcript.
-  Future<String> stopSpeechEdit() async {
-    final transcript = state.speechEditTranscript;
-    _speechEditSub?.cancel();
-    _speechEditSub = null;
-    await _speechEditStt?.stop();
-    _speechEditStt?.dispose();
-    _speechEditStt = null;
-    state = state.copyWith(isSpeechEditing: false, speechEditTranscript: '');
-    return transcript;
-  }
-
-  // ---------------------------------------------------------------------------
   // Error & reset
   // ---------------------------------------------------------------------------
 
@@ -2322,11 +2123,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
     _serverStoryId = null;
     _localId = null;
     _storyStatus = 'draft';
-    // Clean up speech-edit resources
-    _speechEditSub?.cancel();
-    _speechEditSub = null;
-    _speechEditStt?.dispose();
-    _speechEditStt = null;
     // Clean up headline dictation resources
     _headlineSttSub?.cancel();
     _headlineSttSub = null;

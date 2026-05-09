@@ -347,11 +347,8 @@ class AppStrings {
   String get notEnrolled => isOdia ? '\u0B28\u0B3F\u0B2C\u0B28\u0B4D\u0B27\u0B3F\u0B24 \u0B28\u0B3E\u0B39\u0B3F\u0B01' : 'Not enrolled';
 
   // ===========================================================================
-  // Notepad — attach menu, status, file types, AI instruction
+  // Notepad — attach menu, status, file types
   // ===========================================================================
-  String get instructionNotHeard => isOdia
-      ? 'ନିର୍ଦ୍ଦେଶ ଶୁଣାଗଲା ନାହିଁ। ଦୟାକରି ପୁଣି ଚେଷ୍ଟା କରନ୍ତୁ।'
-      : 'Instruction not heard. Please try again.';
   String get attachFile => isOdia ? 'ଫାଇଲ ଯୋଡ଼ନ୍ତୁ' : 'Attach file';
   String get camera => isOdia ? 'କ୍ୟାମେରା' : 'Camera';
   String get takeAPhoto => isOdia ? 'ଫଟୋ ତୁଳନ୍ତୁ' : 'Take a photo';
@@ -393,7 +390,6 @@ class AppStrings {
   String get audioLabel => isOdia ? 'ଅଡିଓ' : 'Audio';
   String get fileLabel => isOdia ? 'ଫାଇଲ' : 'File';
   String get enlarge => isOdia ? 'ବଡ଼ କରନ୍ତୁ' : 'Enlarge';
-  String get aiInstructHint => isOdia ? 'କି କରିବାକୁ କୁହନ୍ତୁ...' : 'What should I do...';
   String get apply => isOdia ? 'ପ୍ରୟୋଗ କରନ୍ତୁ' : 'Apply';
   String get retranscribe => isOdia ? 'ପୁନଃ ଲିପିଅନ୍ତର କରନ୍ତୁ' : 'Retry transcription';
   String get retranscribing => isOdia ? 'ଲିପିଅନ୍ତର ଚାଲିଛି...' : 'Transcribing...';
@@ -410,7 +406,6 @@ class AppStrings {
   String get tooltipBack => isOdia ? 'ପଛକୁ ଯାଆନ୍ତୁ' : 'Back';
   String get tooltipMic => isOdia ? 'ଚାପି ଧରନ୍ତୁ' : 'Hold to record';
   String get tooltipKeyboard => isOdia ? 'ଲେଖି ଯୋଗ କରନ୍ତୁ' : 'Type to add';
-  String get tooltipAI => isOdia ? 'AI ସୁଧାର' : 'AI assist';
   String get tooltipClose => isOdia ? 'ବନ୍ଦ କରନ୍ତୁ' : 'Close';
   // "AI Refine" replaces "Generate Story" — same backend call, but the
   // verb communicates what actually happens: clean up the dictation
@@ -479,10 +474,31 @@ class AppStrings {
   String get stayHere => isOdia ? 'ଏଠି ରୁହନ୍ତୁ' : 'Stay here';
 
   // ===========================================================================
+  // Monthly transcription quota (per-reporter STT budget)
+  // ===========================================================================
+
+  /// Badge near the mic button when remaining < 30 min. [minutes] is
+  /// always >= 0 — when the quota is fully exhausted we render
+  /// [quotaExhausted] instead.
+  String quotaMinutesLeft(int minutes) => isOdia
+      ? '${_toOdiaDigits('$minutes')} ମିନିଟ୍ ବାକି'
+      : '$minutes min left';
+
+  /// Badge / disabled-mic tooltip when remaining = 0.
+  String get quotaExhausted => isOdia
+      ? 'ଏହି ମାସର ସୀମା ଶେଷ। ୧ ତାରିଖରେ ପୁଣି ଆରମ୍ଭ ହେବ।'
+      : 'Monthly limit reached. Resets on the 1st.';
+
+  /// Pre-session warning snackbar — shown when the user starts
+  /// dictation with < 5 minutes remaining. Single-shot per session.
+  String get quotaNearLimitWarning => isOdia
+      ? 'ଏହି ମାସରେ ୫ ମିନିଟରୁ କମ୍ ସମୟ ବାକି।'
+      : 'Less than 5 minutes left this month.';
+
+  // ===========================================================================
   // Errors (user-facing)
   // ===========================================================================
   String get aiPolishFailed => isOdia ? 'AI ସୁଧାର ବିଫଳ' : 'AI polish failed';
-  String get aiInstructionFailed => isOdia ? 'AI ନିର୍ଦ୍ଦେଶ ବିଫଳ' : 'AI instruction failed';
   String get fileUploadFailed => isOdia ? 'ଫାଇଲ ଅପଲୋଡ ବିଫଳ ହେଲା। ପୁଣି ଚେଷ୍ଟା କରନ୍ତୁ।' : 'File upload failed. Please try again.';
   String get fileAttachFailed => isOdia ? 'ଫାଇଲ ଯୋଡ଼ିବା ବିଫଳ ହେଲା' : 'File attach failed';
 }

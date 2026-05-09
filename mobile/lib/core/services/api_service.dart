@@ -243,6 +243,18 @@ class ApiService {
     return (reporter: ReporterProfile.fromJson(raw), raw: raw);
   }
 
+  /// Fetches the reporter's monthly STT usage status. Source of truth
+  /// is the backend; the mobile-side provider caches this and uses it
+  /// to gate the mic button + render the "X min left" badge.
+  ///
+  /// Returns a flat map matching the server's TypedDict — left
+  /// untyped here so additive server fields (e.g. resets_at) don't
+  /// require a mobile build to consume.
+  Future<Map<String, dynamic>> getTranscriptionUsage() async {
+    final res = await _dio.get('/auth/me/transcription-usage');
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
   // -- LLM (server-owned prompts) --
 
   /// Polish raw reporter notes into a publishable Odia article body.

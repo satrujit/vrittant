@@ -15,6 +15,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../../core/services/api_config.dart';
 import '../../../core/services/mic_permission_ui.dart';
 import '../../../core/services/story_image_cache_manager.dart';
+import '../../../core/services/transliteration_attach.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_gradients.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -25,6 +26,7 @@ import '../../../core/providers/connectivity_provider.dart';
 import '../../../core/providers/phone_call_provider.dart';
 import '../../../core/widgets/status_banner.dart';
 import '../providers/create_news_provider.dart';
+import '../providers/transcription_quota_provider.dart';
 import '../../../core/services/file_picker_service.dart';
 import '../../../core/widgets/copy_guard.dart';
 import '../../home/providers/stories_provider.dart';
@@ -74,9 +76,45 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
     return ensureMicPermission(context, ref);
   }
 
-  // Controllers for inline text editing.
-  TextEditingController? _inlineEditController;
-  int? _inlineEditingIndex;
+  /// Pre-flight quota gate. Returns false (and shows the appropriate
+  /// snackbar) when the reporter has hit their monthly STT limit.
+  /// Also surfaces a one-shot warning when remaining is < 5 min.
+  ///
+  /// Server still enforces the limit; this gate just gives a faster,
+  /// clearer no than letting the WebSocket bounce back.
+  bool _gateQuota() {
+    final quota = ref.read(transcriptionQuotaProvider);
+    final s = AppStrings.of(ref);
+    if (quota.isOverQuota) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(s.quotaExhausted),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      return false;
+    }
+    if (quota.isNearLimit && !_quotaNearLimitWarningShown) {
+      _quotaNearLimitWarningShown = true;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(s.quotaNearLimitWarning),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.vrCoral,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      // fall through: warning is informational, dictation still allowed
+    }
+    return true;
+  }
+
   bool _hasTextSelection = false;
 
   // New simple-body editor state. The focused paragraph + cursor is what
@@ -85,24 +123,20 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
   int? _focusedParagraphIndex;
   int? _focusedCursorOffset;
 
-  // Selection from SelectableText (single-tap selected mode)
-  int? _selectableSelectionParaIndex;
-  TextSelection? _selectableSelection;
-
   // Guard to prevent double-save when closing
   bool _isClosing = false;
 
-  // AI instruction recording: which paragraph is being instructed
-  int? _instructingParagraphIndex;
-
-  // Captured text selection when starting AI instruction
-  String? _instructSelectedText;
-  int? _instructSelectionStart;
-  int? _instructSelectionEnd;
-  String? _instructFullText;
+  // One-shot guard so the "less than 5 minutes left" snackbar doesn't
+  // re-pop on every mic tap during a single visit to the notepad.
+  // Resets when the screen is re-entered.
+  bool _quotaNearLimitWarningShown = false;
 
   // Controller for headline editing
   final _headlineController = TextEditingController();
+  // Detacher returned by attachTransliteration; kept so dispose() can
+  // remove the listener cleanly. Late-init in initState() to avoid the
+  // service-not-yet-initialised case in test harnesses.
+  late final VoidCallback _detachHeadlineXlit;
   bool _isEditingHeadline = false;
   bool _isDictatingHeadline = false;
 
@@ -116,6 +150,10 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // Auto-transliterate Latin → Odia on every space/punctuation in
+    // the headline. See core/services/transliteration_attach.dart.
+    _detachHeadlineXlit = attachTransliteration(_headlineController);
 
     _waveformController = AnimationController(
       vsync: this,
@@ -151,14 +189,19 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
       } else {
         notifier.initWithExistingStory(id);
       }
+
+      // Pull the latest monthly STT quota so the badge / disabled-mic
+      // state are accurate before the user reaches for the mic. The
+      // provider's 5-second refresh-collapse stops this from
+      // duplicating with any prior in-flight refresh.
+      ref.read(transcriptionQuotaProvider.notifier).refresh();
     });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _inlineEditController?.removeListener(_onSelectionChanged);
-    _inlineEditController?.dispose();
+    _detachHeadlineXlit();
     _headlineController.dispose();
     _waveformController.dispose();
     _typingDotsController.dispose();
@@ -204,162 +247,6 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
         backgroundColor: AppColors.vrCoral,
       ),
     );
-  }
-
-  void _startInlineEdit(int index, String text) {
-    _inlineEditController?.removeListener(_onSelectionChanged);
-    _inlineEditController?.dispose();
-    _inlineEditController = TextEditingController(text: text);
-    _inlineEditController!.addListener(_onSelectionChanged);
-    setState(() {
-      _inlineEditingIndex = index;
-      _hasTextSelection = false;
-    });
-  }
-
-  void _onSelectionChanged() {
-    if (_inlineEditController == null) return;
-    final sel = _inlineEditController!.selection;
-    final hasSelection = sel.isValid && !sel.isCollapsed && sel.start >= 0;
-    if (hasSelection != _hasTextSelection) {
-      setState(() => _hasTextSelection = hasSelection);
-    }
-  }
-
-  void _commitInlineEdit(int index, {bool keepSelected = false}) {
-    if (_inlineEditController != null) {
-      final newText = _inlineEditController!.text.trim();
-      if (newText.isNotEmpty) {
-        ref.read(notepadProvider.notifier).updateParagraphText(index, newText);
-      }
-    }
-    setState(() {
-      _inlineEditingIndex = null;
-      _hasTextSelection = false;
-    });
-    _inlineEditController?.removeListener(_onSelectionChanged);
-    _inlineEditController?.dispose();
-    _inlineEditController = null;
-    if (!keepSelected) {
-      ref.read(notepadProvider.notifier).deselectParagraph();
-    }
-  }
-
-  /// Start recording a spoken instruction for AI rewrite.
-  /// Captures the current text selection so we can rewrite only that part.
-  Future<void> _startAIInstruction(int paragraphIndex) async {
-    // Capture text selection BEFORE committing/dismissing the TextField
-    String? selectedText;
-    int? selStart;
-    int? selEnd;
-    String? fullText;
-
-    if (_inlineEditController != null) {
-      // Selection from inline edit mode (TextField)
-      final sel = _inlineEditController!.selection;
-      fullText = _inlineEditController!.text;
-      if (sel.isValid && !sel.isCollapsed && sel.start >= 0) {
-        selStart = sel.start;
-        selEnd = sel.end;
-        selectedText = fullText.substring(selStart, selEnd);
-      }
-    } else if (_selectableSelection != null &&
-        _selectableSelectionParaIndex == paragraphIndex) {
-      // Selection from single-tap selected mode (SelectableText)
-      final sel = _selectableSelection!;
-      final state = ref.read(notepadProvider);
-      if (paragraphIndex < state.paragraphs.length) {
-        fullText = state.paragraphs[paragraphIndex].text;
-        if (sel.isValid && !sel.isCollapsed && sel.start >= 0 &&
-            sel.end <= fullText.length) {
-          selStart = sel.start;
-          selEnd = sel.end;
-          selectedText = fullText.substring(selStart, selEnd);
-        }
-      }
-    }
-
-    // Save any pending inline edit but keep paragraph selected
-    if (_inlineEditController != null && _inlineEditingIndex != null) {
-      _commitInlineEdit(_inlineEditingIndex!, keepSelected: true);
-    }
-
-    setState(() {
-      _instructingParagraphIndex = paragraphIndex;
-      _instructSelectedText = selectedText;
-      _instructSelectionStart = selStart;
-      _instructSelectionEnd = selEnd;
-      _instructFullText = fullText;
-    });
-    if (!await _gateMic(isStart: true)) return;
-    await ref.read(notepadProvider.notifier).startSpeechEdit();
-  }
-
-  /// Stop recording and apply the spoken instruction via AI.
-  /// If text was selected, rewrites only the selection; otherwise the whole paragraph.
-  Future<void> _stopAIInstruction() async {
-    final notifier = ref.read(notepadProvider.notifier);
-    final instruction = await notifier.stopSpeechEdit();
-    final idx = _instructingParagraphIndex;
-    final selectedText = _instructSelectedText;
-    final selStart = _instructSelectionStart;
-    final selEnd = _instructSelectionEnd;
-    final fullText = _instructFullText;
-
-    setState(() {
-      _instructingParagraphIndex = null;
-      _instructSelectedText = null;
-      _instructSelectionStart = null;
-      _instructSelectionEnd = null;
-      _instructFullText = null;
-    });
-
-    if (idx == null) return;
-    if (instruction.isEmpty) {
-      // STT didn't capture any instruction — notify user
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(s.instructionNotHeard),
-            backgroundColor: AppColors.vrCoral,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      }
-      return;
-    }
-
-    // If user had text selected, rewrite only that portion
-    if (selectedText != null &&
-        selectedText.isNotEmpty &&
-        selStart != null &&
-        selEnd != null &&
-        fullText != null) {
-      await notifier.instructEditWithAI(
-        index: idx,
-        fullParagraphText: fullText,
-        selectedText: selectedText,
-        selectionStart: selStart,
-        selectionEnd: selEnd,
-        instruction: instruction,
-      );
-    } else {
-      // No selection — rewrite the whole paragraph
-      await notifier.improveParagraphWithAI(idx, instruction: instruction);
-    }
-  }
-
-  /// Cancel AI instruction without applying
-  Future<void> _cancelAIInstruction() async {
-    await ref.read(notepadProvider.notifier).stopSpeechEdit();
-    setState(() {
-      _instructingParagraphIndex = null;
-      _instructSelectedText = null;
-      _instructSelectionStart = null;
-      _instructSelectionEnd = null;
-      _instructFullText = null;
-    });
   }
 
   @override
@@ -813,27 +700,24 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                 ),
 
               // === Zone 3: Bottom bar ===
+              // Render the monthly-quota badge inline above the bar.
+              // It's a no-op widget unless the reporter is within
+              // their last 30 minutes — most reporters won't ever
+              // see it.
+              if (!isReadOnly) const _QuotaBadge(),
               TextFieldTapRegion(
                 child: isReadOnly
                     // Read-only mode: only show attachment button
                     ? _IdleBottomBar(
                         canSubmit: false,
                         isProcessing: false,
-                        hasTextSelection: false,
                         isReadOnly: true,
                         onAttach: () => _showAttachMenu(context),
                         onRecord: () {},
                         onLongPressRecord: () {},
-                        onRewrite: () {},
                         onSubmit: () {},
                       )
-                    : state.isSpeechEditing && _instructingParagraphIndex != null
-                        ? _AIInstructionBottomBar(
-                            transcript: state.speechEditTranscript,
-                            onApply: _stopAIInstruction,
-                            onCancel: _cancelAIInstruction,
-                          )
-                        : state.isRecording
+                    : state.isRecording
                             ? _RecordingBottomBar(
                                 formattedDuration: state.formattedDuration,
                                 // Compute the "0:30 left" label here
@@ -856,14 +740,29 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                                 moveCloserLabel: s.moveCloserHint,
                                 speakerFilterActive: state.speakerFilterActive,
                                 isSpeakerVerified: state.isSpeakerVerified,
-                                onStop: () => notifier.toggleRecording(),
+                                onStop: () {
+                                  notifier.toggleRecording();
+                                  // Server records monthly STT usage as the
+                                  // WS closes; refresh after a short delay so
+                                  // the on-screen badge reflects the new
+                                  // remaining time before the user reaches
+                                  // for the mic again.
+                                  Future.delayed(const Duration(seconds: 2), () {
+                                    if (!mounted) return;
+                                    ref
+                                        .read(transcriptionQuotaProvider.notifier)
+                                        .refresh(force: true);
+                                  });
+                                },
                               )
                             : _IdleBottomBar(
                                 canSubmit: notifier.canSubmit,
                                 isProcessing: state.isProcessing,
-                                hasTextSelection: _hasTextSelection,
+                                isQuotaExhausted:
+                                    ref.watch(transcriptionQuotaProvider).isOverQuota,
                                 onAttach: () => _showAttachMenu(context),
                                 onRecord: () async {
+                                  if (!_gateQuota()) return;
                                   if (!await _gateMic(isStart: true)) return;
                                   _maybeShowCloseTalkHint();
                                   // Decide where the live transcript should
@@ -894,19 +793,10 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                                   notifier.toggleRecording();
                                 },
                                 onLongPressRecord: () async {
+                                  if (!_gateQuota()) return;
                                   if (!await _gateMic(isStart: true)) return;
                                   _maybeShowCloseTalkHint();
                                   notifier.toggleRecording(saveAudio: true);
-                                },
-                                onRewrite: () {
-                                  // AI rewrite operates on the focused
-                                  // paragraph (whole-paragraph rewrite). The
-                                  // legacy selection-aware path is dropped
-                                  // for simplicity in the new editor.
-                                  final idx = _focusedParagraphIndex;
-                                  if (idx != null) {
-                                    _startAIInstruction(idx);
-                                  }
                                 },
                                 onSubmit: () {
                                   if (notifier.canSubmit) {
@@ -1544,6 +1434,13 @@ class _NotepadHeader extends ConsumerWidget {
                         fontSize: 18,
                       ),
                       keyboardType: TextInputType.text,
+                      // iOS QuickType / autocorrect would race with our
+                      // Latin→Odia transliteration on every space, undoing
+                      // our replacement or flagging the Odia output as
+                      // misspelled. Disable both. Reporters get our
+                      // transliteration as the correction layer instead.
+                      autocorrect: false,
+                      enableSuggestions: false,
                       decoration: InputDecoration(
                         hintText: s.titleHintWrite,
                         hintStyle: AppTypography.odiaHeadlineMedium.copyWith(
@@ -2200,6 +2097,11 @@ class _SimpleNotepadBodyState extends State<_SimpleNotepadBody> {
         ctrl = TextEditingController(text: joined);
         _controllers[id] = ctrl;
         _lastSyncedText[id] = joined;
+        // Latin → Odia auto-replace on space/punctuation. The
+        // attachment is idempotent and tied to the controller's
+        // lifetime — when this controller is dispose()'d in our
+        // dispose() the listener goes with it.
+        attachTransliteration(ctrl);
         final focus = FocusNode();
         focus.addListener(() => _onFocusChanged(id, focus));
         _focusNodes[id] = focus;
@@ -2216,6 +2118,20 @@ class _SimpleNotepadBodyState extends State<_SimpleNotepadBody> {
         // TextField is focused.
         final lastSynced = _lastSyncedText[id] ?? '';
         if (joined != ctrl.text && ctrl.text == lastSynced) {
+          // Guard: if the only difference between provider state and
+          // controller is trailing whitespace that the provider's
+          // replaceTextRun trimmed, DON'T overwrite. The whitespace
+          // belongs to the user's active typing (the just-typed
+          // space / period / newline that triggered transliteration
+          // or marks a word boundary). Without this guard, the
+          // trailing space gets stomped roughly 300 ms after typing,
+          // which is exactly what a reporter sees as "the space I
+          // pressed disappears" — particularly visible when
+          // transliteration replaces the Latin word and the trailing
+          // space then vanishes.
+          if (ctrl.text.trimRight() == joined) {
+            continue;
+          }
           final newCursor = joined.length;
           ctrl.value = TextEditingValue(
             text: joined,
@@ -2469,6 +2385,10 @@ class _TextRunField extends StatelessWidget {
       maxLines: null,
       keyboardType: TextInputType.multiline,
       textCapitalization: TextCapitalization.sentences,
+      // See headline TextField above — autocorrect/suggestions disabled
+      // so iOS QuickType doesn't fight the Latin→Odia transliteration.
+      autocorrect: false,
+      enableSuggestions: false,
       style: style,
       cursorColor: AppColors.vrCoral,
       // Copy / cut guard. When the reporter selects more than 30 words
@@ -3281,23 +3201,21 @@ class _FullScreenImageViewer extends StatelessWidget {
 class _IdleBottomBar extends ConsumerWidget {
   final bool canSubmit;
   final bool isProcessing;
-  final bool hasTextSelection;
   final bool isReadOnly;
+  final bool isQuotaExhausted;
   final VoidCallback onAttach;
   final VoidCallback onRecord;
   final VoidCallback onLongPressRecord;
-  final VoidCallback onRewrite;
   final VoidCallback onSubmit;
 
   const _IdleBottomBar({
     required this.canSubmit,
     required this.isProcessing,
-    required this.hasTextSelection,
     this.isReadOnly = false,
+    this.isQuotaExhausted = false,
     required this.onAttach,
     required this.onRecord,
     required this.onLongPressRecord,
-    required this.onRewrite,
     required this.onSubmit,
   });
 
@@ -3305,9 +3223,6 @@ class _IdleBottomBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.t;
     final s = AppStrings.of(ref);
-
-    // Only show AI rewrite when user has actually selected text
-    final bool isRewriteMode = hasTextSelection && !isProcessing;
 
     return Container(
       decoration: BoxDecoration(
@@ -3359,21 +3274,22 @@ class _IdleBottomBar extends ConsumerWidget {
               ),
 
               if (!isReadOnly) ...[
-                // Center button: Mic (default) or AI Rewrite (when paragraph selected)
+                // Center button: Mic for voice dictation.
                 // Tap = transcription only. Long-press = transcription + audio file.
+                // When isQuotaExhausted, the button still calls onRecord
+                // (which short-circuits to a snackbar) so the disabled
+                // state communicates "tap me to learn why" rather than
+                // being a dead pixel.
                 _LabeledBarButton(
-                  label: isRewriteMode ? s.tooltipAI : s.tooltipMic,
-                  labelColor: isRewriteMode ? t.primary : t.mutedColor,
+                  label: s.tooltipMic,
+                  labelColor: t.mutedColor,
                   child: Semantics(
-                    label: isRewriteMode ? s.tooltipAI : s.tooltipMic,
+                    label: s.tooltipMic,
                     button: true,
+                    enabled: !isProcessing && !isQuotaExhausted,
                     child: GestureDetector(
-                      onTap: isProcessing
-                          ? null
-                          : isRewriteMode
-                              ? onRewrite
-                              : onRecord,
-                      onLongPress: isProcessing || isRewriteMode
+                      onTap: isProcessing ? null : onRecord,
+                      onLongPress: (isProcessing || isQuotaExhausted)
                           ? null
                           : () {
                               HapticFeedback.mediumImpact();
@@ -3386,23 +3302,13 @@ class _IdleBottomBar extends ConsumerWidget {
                         height: 44,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: isProcessing
+                          gradient: (isProcessing || isQuotaExhausted)
                               ? null
-                              : isRewriteMode
-                                  ? null
-                                  : t.primaryGradient,
-                          color: isProcessing
+                              : t.primaryGradient,
+                          color: (isProcessing || isQuotaExhausted)
                               ? t.dividerColor
-                              : isRewriteMode
-                                  ? t.aiChipBg
-                                  : null,
-                          border: isRewriteMode
-                              ? Border.all(
-                                  color: t.primary.withValues(alpha: 0.4),
-                                  width: 1.5,
-                                )
                               : null,
-                          boxShadow: isProcessing
+                          boxShadow: (isProcessing || isQuotaExhausted)
                               ? null
                               : [
                                   BoxShadow(
@@ -3424,13 +3330,9 @@ class _IdleBottomBar extends ConsumerWidget {
                                 ),
                               )
                             : Icon(
-                                isRewriteMode
-                                    ? LucideIcons.sparkles
-                                    : LucideIcons.mic,
-                                color: isRewriteMode
-                                    ? t.primary
-                                    : t.onPrimary,
-                                size: isRewriteMode ? 22 : 24,
+                                LucideIcons.mic,
+                                color: t.onPrimary,
+                                size: 24,
                               ),
                       ),
                     ),
@@ -3511,138 +3413,6 @@ class _LabeledBarButton extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
       ],
-    );
-  }
-}
-
-// =============================================================================
-// Zone 3: Bottom bar — AI instruction recording mode
-// =============================================================================
-
-class _AIInstructionBottomBar extends ConsumerWidget {
-  final String transcript;
-  final VoidCallback onApply;
-  final VoidCallback onCancel;
-
-  const _AIInstructionBottomBar({
-    required this.transcript,
-    required this.onApply,
-    required this.onCancel,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = context.t;
-    final s = AppStrings.of(ref);
-    return Container(
-      decoration: BoxDecoration(
-        color: t.cardBg,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 16,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.base,
-            vertical: AppSpacing.md,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Prompt label
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(LucideIcons.sparkles, size: 14, color: t.primary),
-                  const SizedBox(width: 4),
-                  Text(
-                    s.aiInstructHint,
-                    style: AppTypography.odiaBodySmall.copyWith(
-                      color: t.mutedColor,
-                    ),
-                  ),
-                ],
-              ),
-              // Live transcript
-              if (transcript.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(
-                    top: AppSpacing.sm,
-                    left: AppSpacing.md,
-                    right: AppSpacing.md,
-                  ),
-                  child: Text(
-                    transcript,
-                    style: AppTypography.odiaBodyMedium.copyWith(
-                      color: t.bodyColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              const SizedBox(height: AppSpacing.md),
-              // Apply + Cancel row
-              Row(
-                children: [
-                  // Cancel
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: onCancel,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: t.mutedColor,
-                        side: BorderSide(color: t.dividerColor),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(AppSpacing.radiusFull),
-                        ),
-                      ),
-                      child: Text(
-                        s.cancel,
-                        style: AppTypography.odiaTitleLarge.copyWith(
-                          color: t.mutedColor,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  // Apply
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton.icon(
-                      onPressed: onApply,
-                      icon: const Icon(LucideIcons.sparkles, size: 16),
-                      label: Text(
-                        s.apply,
-                        style: AppTypography.odiaTitleLarge.copyWith(
-                          color: t.onPrimary,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: t.primary,
-                        foregroundColor: t.onPrimary,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(AppSpacing.radiusFull),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
@@ -4338,6 +4108,75 @@ class _ErrorBanner extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+/// Tiny chip rendered above the bottom bar showing how much monthly
+/// STT budget the reporter has left. Visible only when remaining
+/// drops below 30 min so the badge stays out of sight 99% of the
+/// time. Coral background when remaining < 5 min OR exhausted to
+/// communicate urgency.
+class _QuotaBadge extends ConsumerWidget {
+  const _QuotaBadge();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final quota = ref.watch(transcriptionQuotaProvider);
+    if (!quota.showBadge) return const SizedBox.shrink();
+    final s = AppStrings.of(ref);
+    final t = context.t;
+    final isUrgent = quota.isOverQuota || quota.isNearLimit;
+    final label = quota.isOverQuota
+        ? s.quotaExhausted
+        : s.quotaMinutesLeft(quota.remainingMinutes);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        AppSpacing.sm,
+        AppSpacing.xl,
+        0,
+      ),
+      child: Align(
+        alignment: Alignment.center,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: 6,
+          ),
+          decoration: BoxDecoration(
+            color: isUrgent
+                ? AppColors.coral500.withValues(alpha: 0.12)
+                : t.actionChipBg,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: isUrgent
+                  ? AppColors.coral500.withValues(alpha: 0.4)
+                  : t.dividerColor,
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                LucideIcons.timer,
+                size: 14,
+                color: isUrgent ? AppColors.coral500 : t.mutedColor,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: AppTypography.odiaBodySmall.copyWith(
+                  color: isUrgent ? AppColors.coral500 : t.mutedColor,
+                  fontWeight: isUrgent ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
