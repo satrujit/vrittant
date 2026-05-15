@@ -393,6 +393,9 @@ class AppStrings {
   String get apply => isOdia ? 'ପ୍ରୟୋଗ କରନ୍ତୁ' : 'Apply';
   String get retranscribe => isOdia ? 'ପୁନଃ ଲିପିଅନ୍ତର କରନ୍ତୁ' : 'Retry transcription';
   String get retranscribing => isOdia ? 'ଲିପିଅନ୍ତର ଚାଲିଛି...' : 'Transcribing...';
+  /// Short label shown under the mic button while batch transcription
+  /// is in progress (after recording stops, before text arrives).
+  String get transcribing => isOdia ? 'ଲିପିବଦ୍ଧ...' : 'Transcribing...';
   String get editParagraph => isOdia ? 'ସମ୍ପାଦନ କରନ୍ତୁ' : 'Edit';
   String get insertHere => isOdia ? 'ଏଠି ଯୋଗ କରନ୍ତୁ' : 'Insert here';
   String get recordVoice => isOdia ? 'ସ୍ୱର ରେକର୍ଡ କରନ୍ତୁ' : 'Record voice';

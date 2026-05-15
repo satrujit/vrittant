@@ -15,6 +15,7 @@ import '../../../core/services/file_picker_service.dart';
 import '../../../core/services/local_drafts_store.dart';
 import '../../../core/services/local_stories_cache.dart';
 import '../../../core/services/sarvam_api.dart';
+import '../../../core/services/batch_recording_service.dart';
 import '../../../core/services/stt_service.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../core/l10n/language_provider.dart';
@@ -490,8 +491,10 @@ class NotepadState {
 // =============================================================================
 
 class NotepadNotifier extends Notifier<NotepadState> {
-  StreamingSttService? _streamingStt;
-  StreamSubscription<SttSegment>? _transcriptSubscription;
+  /// Batch recorder for the main body dictation flow. Records locally,
+  /// then uploads for a single Gemini call on stop. Replaces the old
+  /// WebSocket streaming path for ~7× cost savings.
+  BatchRecordingService? _batchRecorder;
   Timer? _recordingTimer;
   final OcrService _ocrService = OcrService();
 
@@ -549,15 +552,8 @@ class NotepadNotifier extends Notifier<NotepadState> {
   /// Index of the paragraph being re-recorded (null if creating new).
   int? _reRecordingIndex;
 
-  // --- Auto-stop support ---
-  /// Last transcript snapshot used for silence detection.
-  String _lastTranscriptCheck = '';
-
-  /// When the transcript last changed (for silence timeout).
-  DateTime _lastTranscriptChangeTime = DateTime.now();
-
-  // --- Auto-paragraph support ---
-  Timer? _autoParagraphTimer;
+  // (Auto-stop silence detection removed — batch mode has no live
+  //  transcript stream. The 10-minute hard cap is the only guardrail.)
 
   // --- Undo / Redo support ---
   final List<List<Paragraph>> _undoStack = [];
@@ -991,10 +987,12 @@ class NotepadNotifier extends Notifier<NotepadState> {
   // Recording toggle
   // ---------------------------------------------------------------------------
 
-  /// Toggles recording on/off.
-  /// START: opens streaming WebSocket + mic, transcripts arrive in real-time.
-  /// STOP: creates or replaces a Paragraph from liveTranscript.
-  /// [saveAudio] — when true (long-press), also saves WAV and inserts an
+  /// Toggles recording on/off (batch flow).
+  ///
+  /// START: opens mic, records locally with DTLN denoising. No WebSocket.
+  /// STOP: VAD-trims silence client-side, uploads full audio to server for
+  ///   a single Gemini call, inserts the returned transcript as a paragraph.
+  /// [saveAudio] — when true (long-press), also uploads WAV and inserts an
   /// audio media block below the text paragraph.
   Future<void> toggleRecording({bool saveAudio = false}) async {
     if (state.isRecording) {
@@ -1012,18 +1010,28 @@ class NotepadNotifier extends Notifier<NotepadState> {
       );
 
       try {
-        // Grab WAV bytes BEFORE stopping (buffer is cleared on dispose).
-        // Always-upload pipeline: we capture the audio for every recording,
-        // not just long-press, so the server has it as a silent fallback if
-        // the live WS transcript came back empty / wrong. The wasAudioSave
-        // flag still controls the *visible* attachment block below.
-        final wavBytes = _streamingStt?.getRecordedWavBytes();
+        // Stop recording and get VAD-trimmed + full WAV bytes.
+        final result = await _batchRecorder!.stop();
 
-        await _streamingStt?.stop();
-        _transcriptSubscription?.cancel();
-        _transcriptSubscription = null;
+        if (result.isSilent) {
+          state = state.copyWith(
+            isProcessing: false,
+            error: 'Could not detect speech. Please try again.',
+          );
+          _reRecordingIndex = null;
+          _batchRecorder?.dispose();
+          _batchRecorder = null;
+          return;
+        }
 
-        final transcript = toOdiaDigits(state.liveTranscript.trim());
+        // Upload trimmed audio for batch transcription (single Gemini call).
+        final apiResult = await ref.read(apiServiceProvider).transcribeBatch(
+          wavBytes: result.trimmedWav.toList(),
+        );
+
+        final transcript = toOdiaDigits(
+          ((apiResult['transcript'] as String?) ?? '').trim(),
+        );
 
         if (transcript.isEmpty) {
           state = state.copyWith(
@@ -1031,15 +1039,15 @@ class NotepadNotifier extends Notifier<NotepadState> {
             error: 'Could not detect speech. Please try again.',
           );
           _reRecordingIndex = null;
-          _streamingStt?.dispose();
-          _streamingStt = null;
+          _batchRecorder?.dispose();
+          _batchRecorder = null;
           return;
         }
 
         _pushUndo();
 
-        // Track which paragraph to auto-polish after insertion
-        int? polishTargetIndex;
+        // Full (untrimmed) WAV for the always-upload backup pipeline.
+        final wavBytes = result.fullWav;
 
         if (_reRecordingIndex != null) {
           // Re-recording: replace existing paragraph's text
@@ -1053,9 +1061,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
               isProcessing: false,
               clearEditingParagraphIndex: true,
             );
-            polishTargetIndex = idx;
-            // Silent-backup audio upload — see comment in "new text paragraph"
-            // branch below for why this fires for every recording.
             _queueSilentBackupAudio(updated[idx].id, wavBytes);
           } else {
             state = state.copyWith(isProcessing: false);
@@ -1063,7 +1068,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
         } else if (state.cursorInsertParagraphIndex != null &&
                    state.cursorInsertPosition != null) {
           // Cursor insertion: splice text into existing paragraph
-          // Skip auto-polish for cursor splices — it's partial insertion
           final pIdx = state.cursorInsertParagraphIndex!;
           final cursorPos = state.cursorInsertPosition!;
           if (pIdx >= 0 && pIdx < state.paragraphs.length) {
@@ -1071,7 +1075,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
             final clampedPos = cursorPos.clamp(0, existing.length);
             final before = existing.substring(0, clampedPos);
             final after = existing.substring(clampedPos);
-            // Add a space separator if needed
             final sep = before.isNotEmpty && !before.endsWith(' ') && !transcript.startsWith(' ') ? ' ' : '';
             final sepAfter = after.isNotEmpty && !after.startsWith(' ') && !transcript.endsWith(' ') ? ' ' : '';
             final newText = '$before$sep$transcript$sepAfter$after';
@@ -1110,15 +1113,11 @@ class NotepadNotifier extends Notifier<NotepadState> {
             updated.add(paragraph);
           }
 
-          // Silent-backup audio for the always-upload pipeline. Every
-          // recording's WAV is queued to the server even when the user
-          // didn't long-press; if the live WS transcript path returned
-          // nothing the server uses this audio to silently re-transcribe.
-          // Reporter sees no UI for this.
+          // Silent-backup audio for the always-upload pipeline.
           _queueSilentBackupAudio(paragraph.id, wavBytes);
 
           // If audio-save mode, upload WAV and insert audio block below text
-          if (wasAudioSave && wavBytes != null && wavBytes.isNotEmpty) {
+          if (wasAudioSave && wavBytes.isNotEmpty) {
             try {
               final timestamp = DateTime.now().millisecondsSinceEpoch;
               final filename = 'voice_$timestamp.wav';
@@ -1148,41 +1147,37 @@ class NotepadNotifier extends Notifier<NotepadState> {
             isProcessing: false,
             clearInsertAtIndex: true,
           );
-          polishTargetIndex = textInsertedAt;
         }
 
-        _streamingStt?.dispose();
-        _streamingStt = null;
+        _batchRecorder?.dispose();
+        _batchRecorder = null;
 
-        // Save paragraphs to server IMMEDIATELY (don't wait for title/metadata)
+        // Save paragraphs to server IMMEDIATELY
         _scheduleAutoSave();
 
-        // Auto-generate headline ONLY for the first paragraph (when headline
-        // is still empty). After that the user owns the headline — it should
-        // only change via manual edit or voice dictation.
+        // Auto-generate headline for the first paragraph
         final body = fullBodyText;
         if (body.isNotEmpty && state.headline.isEmpty) {
           _generateTitleAndMetadata(body);
         } else if (body.isNotEmpty && state.category == null) {
-          // Still infer metadata if missing, but skip headline regeneration.
           _autoInferMetadata(body).then((_) => _scheduleAutoSave()).catchError((_) {});
         }
-      } on StreamingSttException catch (e) {
+      } on BatchRecordingException catch (e) {
         _reRecordingIndex = null;
         state = state.copyWith(
           isProcessing: false,
-          error: 'Streaming error: ${e.message}',
+          error: 'Recording error: ${e.message}',
         );
-        _streamingStt?.dispose();
-        _streamingStt = null;
+        _batchRecorder?.dispose();
+        _batchRecorder = null;
       } catch (e) {
         _reRecordingIndex = null;
         state = state.copyWith(
           isProcessing: false,
           error: 'Transcription failed: $e',
         );
-        _streamingStt?.dispose();
-        _streamingStt = null;
+        _batchRecorder?.dispose();
+        _batchRecorder = null;
       }
     } else {
       // === START recording ===
@@ -1198,18 +1193,16 @@ class NotepadNotifier extends Notifier<NotepadState> {
         final enrollment = await EnrollmentStorage.load();
         final hasEnrollment = enrollment != null && enrollment.embedding.isNotEmpty;
 
-        _streamingStt = StreamingSttService();
-        _streamingStt!.authToken = ref.read(apiServiceProvider).token;
-        _streamingStt!.onNoisyChanged = (isNoisy) {
+        _batchRecorder = BatchRecordingService();
+        _batchRecorder!.onNoisyChanged = (isNoisy) {
           state = state.copyWith(isNoisyEnvironment: isNoisy);
         };
         if (hasEnrollment) {
-          _streamingStt!.onSpeakerStatusChanged = (isVerified, similarity) {
+          _batchRecorder!.onSpeakerStatusChanged = (isVerified, similarity) {
             state = state.copyWith(isSpeakerVerified: isVerified);
           };
         }
-        final transcriptStream = await _streamingStt!.start(
-          saveAudio: saveAudio,
+        await _batchRecorder!.start(
           verifySpeaker: hasEnrollment,
           enrolledEmbedding: enrollment?.embedding,
         );
@@ -1218,45 +1211,16 @@ class NotepadNotifier extends Notifier<NotepadState> {
           state = state.copyWith(speakerFilterActive: true);
         }
 
-        _transcriptSubscription = transcriptStream.listen(
-          (segment) {
-            // The STT service now manages full accumulation internally.
-            // segment.text always contains ALL text so far (committed + partial).
-            // Convert Roman numerals to Odia numerals for display.
-            state = state.copyWith(liveTranscript: toOdiaDigits(segment.text));
-
-            // Auto-paragraph: after a VAD-end with substantial text, wait 3s
-            // of silence then commit as a paragraph (only for normal append).
-            if (_reRecordingIndex == null &&
-                state.cursorInsertParagraphIndex == null) {
-              if (segment.isFinal && segment.text.trim().length >= 20) {
-                _autoParagraphTimer?.cancel();
-                _autoParagraphTimer = Timer(const Duration(seconds: 3), () {
-                  _commitAutoParagraph();
-                });
-              } else if (!segment.isFinal) {
-                // New speech arrived — cancel pending auto-paragraph
-                _autoParagraphTimer?.cancel();
-              }
-            }
-          },
-          onError: (error) {
-            if (error is StreamingSttException) {
-              state = state.copyWith(error: 'Streaming: ${error.message}');
-            }
-          },
-        );
-
         _startTimer();
         state = state.copyWith(isRecording: true);
-      } on StreamingSttException catch (e) {
+      } on BatchRecordingException catch (e) {
         _reRecordingIndex = null;
         state = state.copyWith(
           isRecording: false,
           error: e.message,
         );
-        _streamingStt?.dispose();
-        _streamingStt = null;
+        _batchRecorder?.dispose();
+        _batchRecorder = null;
       } catch (e) {
         _reRecordingIndex = null;
         state = state.copyWith(
@@ -1264,8 +1228,8 @@ class NotepadNotifier extends Notifier<NotepadState> {
           error: 'Microphone access denied or not available. '
               'Please allow microphone access in your browser.',
         );
-        _streamingStt?.dispose();
-        _streamingStt = null;
+        _batchRecorder?.dispose();
+        _batchRecorder = null;
       }
     }
   }
@@ -1276,40 +1240,15 @@ class NotepadNotifier extends Notifier<NotepadState> {
 
   void _startTimer() {
     _recordingTimer?.cancel();
-    _lastTranscriptCheck = '';
-    _lastTranscriptChangeTime = DateTime.now();
     _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       final newDuration = state.recordingDuration + const Duration(seconds: 1);
       state = state.copyWith(recordingDuration: newDuration);
 
-      // Track transcript activity for the silence safety net below.
-      if (newDuration.inSeconds >= 30) {
-        final currentTranscript = state.liveTranscript;
-        if (currentTranscript != _lastTranscriptCheck) {
-          _lastTranscriptCheck = currentTranscript;
-          _lastTranscriptChangeTime = DateTime.now();
-        } else {
-          // Silence safety net — same 10-minute ceiling as the hard cap.
-          // Kept as a separate check so a wedged WS that stops feeding
-          // transcripts can't keep the mic open indefinitely; in practice
-          // whichever fires first triggers the same auto-stop+save path.
-          final silenceDuration =
-              DateTime.now().difference(_lastTranscriptChangeTime);
-          if (silenceDuration.inSeconds >= 600) {
-            // Flag BEFORE toggling. toggleRecording sets isRecording=false
-            // which the screen listens to; we want the reason field set
-            // by the time that listener fires so a single rebuild can
-            // surface the snackbar + haptic.
-            state = state.copyWith(recordingAutoStopReason: 'silence');
-            toggleRecording();
-            return;
-          }
-        }
-      }
-
-      // Hard cap: 10 minutes. toggleRecording() routes to the STOP path,
-      // which commits the live transcript as a paragraph and queues the
-      // captured WAV for upload — nothing is lost on a timeout.
+      // Hard cap: 10 minutes. In batch mode there's no silence-based
+      // auto-stop since we don't have a live transcript stream to monitor.
+      // The 10-minute cap is the only guardrail — keeps recordings within
+      // Gemini's comfortable processing range and prevents accidental
+      // "left mic on in pocket" scenarios.
       if (newDuration.inMinutes >= 10) {
         state = state.copyWith(recordingAutoStopReason: 'max_duration');
         toggleRecording();
@@ -1321,10 +1260,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
   void _stopTimer() {
     _recordingTimer?.cancel();
     _recordingTimer = null;
-    _lastTranscriptCheck = '';
-    _lastTranscriptChangeTime = DateTime.now();
-    _autoParagraphTimer?.cancel();
-    _autoParagraphTimer = null;
   }
 
   /// Acknowledge the auto-stop notification. Called by the notepad
@@ -1334,44 +1269,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
   void clearRecordingAutoStopReason() {
     if (state.recordingAutoStopReason == null) return;
     state = state.copyWith(clearRecordingAutoStopReason: true);
-  }
-
-  /// Commits the current live transcript as a paragraph mid-recording,
-  /// resets STT accumulation, and continues recording for the next paragraph.
-  void _commitAutoParagraph() {
-    final transcript = toOdiaDigits(state.liveTranscript.trim());
-    if (transcript.isEmpty || !state.isRecording) return;
-
-    _pushUndo();
-
-    final paragraph = Paragraph(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      text: transcript,
-      createdAt: DateTime.now(),
-    );
-
-    final updated = List<Paragraph>.from(state.paragraphs);
-    final insertIdx = state.insertAtIndex;
-    int insertedAt;
-    if (insertIdx != null && insertIdx >= 0 && insertIdx <= updated.length) {
-      updated.insert(insertIdx, paragraph);
-      insertedAt = insertIdx;
-      // Advance insert position so next auto-para goes below
-      state = state.copyWith(
-        paragraphs: updated,
-        liveTranscript: '',
-        insertAtIndex: insertIdx + 1,
-      );
-    } else {
-      insertedAt = updated.length;
-      updated.add(paragraph);
-      state = state.copyWith(paragraphs: updated, liveTranscript: '');
-    }
-
-    // Reset STT accumulation so next speech starts fresh
-    _streamingStt?.resetAccumulation();
-
-    _scheduleAutoSave();
   }
 
   /// Take all current text paragraphs (raw STT + typed input) and ask the
@@ -2151,13 +2048,9 @@ class NotepadNotifier extends Notifier<NotepadState> {
     _stopTimer();
     _autoSaveTimer?.cancel();
     _autoSaveTimer = null;
-    _transcriptSubscription?.cancel();
-    _transcriptSubscription = null;
-    _streamingStt?.dispose();
-    _streamingStt = null;
+    _batchRecorder?.dispose();
+    _batchRecorder = null;
     _reRecordingIndex = null;
-    _lastTranscriptCheck = '';
-    _lastTranscriptChangeTime = DateTime.now();
     _serverStoryId = null;
     _localId = null;
     _storyStatus = 'draft';

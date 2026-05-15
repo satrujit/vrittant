@@ -1546,6 +1546,207 @@ async def _fetch_audio_bytes(audio_url: str) -> bytes:
 
 
 # ---------------------------------------------------------------------------
+# Batch transcription endpoint
+#
+# Replaces the WebSocket streaming path for mobile v2. The app records
+# locally (with on-device DTLN denoising + optional speaker verification),
+# trims silence client-side, then uploads the full audio here for a SINGLE
+# Gemini call. Advantages over the streaming path:
+#   - ~7× cheaper (system instruction sent once, not per 4 s chunk)
+#   - Better accuracy (Gemini sees full context, no chunk-boundary splits)
+#   - Simpler code (no WebSocket reconnect, no sliding-window state)
+#   - No hallucination feedback loops (no cumulative transcript echo)
+# ---------------------------------------------------------------------------
+
+# Cap batch output tokens. A 10 min recording at normal Odia speech pace
+# transcribes to ~2000–3000 tokens; 8000 gives generous headroom for
+# dense/fast speakers or code-mixed segments.
+_BATCH_MAX_OUTPUT_TOKENS = 8000
+
+
+@router.post("/api/stt/transcribe")
+async def transcribe_batch(
+    file: UploadFile = FastAPIFile(...),
+    language_code: str = Form("od-IN"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Transcribe a complete audio recording in a single Gemini call.
+
+    The mobile app records locally, applies on-device DTLN denoising and
+    optional client-side VAD trimming, then uploads the WAV here. We run
+    a server-side VAD pass (defence-in-depth), call Gemini once with the
+    full audio, and return the transcript synchronously.
+
+    Returns:
+        ``{"transcript": "...", "status": "ok"|"silence", "audio_seconds": float}``
+    """
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Empty audio file",
+        )
+    if len(contents) > 25 * 1024 * 1024:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Audio file too large (max 25 MB)",
+        )
+
+    # ── Quota gate ────────────────────────────────────────────────────
+    if transcription_quota.is_over_quota(db, user):
+        raise HTTPException(
+            status_code=http_status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Monthly transcription quota exhausted",
+        )
+
+    # ── Extract PCM from WAV ──────────────────────────────────────────
+    # Mobile sends 16 kHz 16-bit mono WAV. Strip the 44-byte header to
+    # get raw PCM for VAD compression.
+    pcm_bytes = contents
+    if contents[:4] == b"RIFF" and contents[8:12] == b"WAVE":
+        # Standard WAV: data chunk starts after the header. Find the
+        # "data" sub-chunk rather than assuming a fixed 44-byte offset
+        # (some encoders add extra chunks before data).
+        data_offset = contents.find(b"data")
+        if data_offset != -1:
+            # 4 bytes "data" + 4 bytes chunk-size → PCM starts at +8
+            pcm_bytes = contents[data_offset + 8:]
+        else:
+            pcm_bytes = contents[44:]  # fallback: assume minimal header
+
+    # ── Server-side VAD compression ───────────────────────────────────
+    # Defence-in-depth: the client already trimmed silence, but run the
+    # same sub-window VAD to catch anything that slipped through (e.g.
+    # older app versions that don't have client-side trimming yet).
+    compressed, vad_stats = _compress_pcm_silence(pcm_bytes)
+    raw_audio_seconds = len(pcm_bytes) / _PCM_BYTES_PER_SEC
+    compressed_seconds = len(compressed) / _PCM_BYTES_PER_SEC
+
+    logger.info(
+        "Batch STT: reporter=%s, raw=%.1fs, after_vad=%.1fs (%.0f%% retained), lang=%s",
+        user.id, raw_audio_seconds, compressed_seconds,
+        (compressed_seconds / raw_audio_seconds * 100) if raw_audio_seconds > 0 else 0,
+        language_code,
+    )
+
+    # All silence — nothing to transcribe
+    if len(compressed) < _VAD_MIN_SPEECH_BYTES:
+        return {"transcript": "", "status": "silence", "audio_seconds": 0.0}
+
+    # ── Single Gemini call ────────────────────────────────────────────
+    wav = _wrap_pcm_as_wav(compressed)
+    audio_seconds = len(compressed) / _PCM_BYTES_PER_SEC
+    primary_model = settings.STT_GEMINI_MODEL
+    usage_sink: list[dict] = []
+
+    try:
+        text = await gemini_client.stt(
+            audio_bytes=wav,
+            mime_type="audio/wav",
+            language_code=language_code,
+            model=primary_model,
+            max_tokens=_BATCH_MAX_OUTPUT_TOKENS,
+            usage_sink=usage_sink,
+            # Longer timeout for full recordings (up to 10 min audio)
+            timeout=120.0,
+        )
+    except Exception as exc:
+        logger.error(
+            "Batch STT Gemini call failed (reporter=%s, audio=%.1fs): %r",
+            user.id, audio_seconds, exc,
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail="Transcription failed — please try again",
+        )
+
+    # ── Quality gate + fallback ───────────────────────────────────────
+    primary_usage = usage_sink[-1] if usage_sink else {}
+    primary_output_tokens = int(primary_usage.get("output_tokens") or 0)
+    primary_failure = _check_chunk_quality(
+        text or "",
+        audio_seconds=audio_seconds,
+        output_tokens=primary_output_tokens,
+        expected_script_lang=language_code,
+    )
+
+    flash_fallback_used = False
+    if primary_failure and primary_model != _STT_FALLBACK_MODEL:
+        logger.info(
+            "Batch STT: quality fail on %s (%s) — retrying on %s (reporter=%s)",
+            primary_model, primary_failure, _STT_FALLBACK_MODEL, user.id,
+        )
+        try:
+            fallback_text = await gemini_client.stt(
+                audio_bytes=wav,
+                mime_type="audio/wav",
+                language_code=language_code,
+                model=_STT_FALLBACK_MODEL,
+                max_tokens=_BATCH_MAX_OUTPUT_TOKENS,
+                usage_sink=usage_sink,
+                timeout=120.0,
+            )
+            flash_fallback_used = True
+            fb_usage = usage_sink[-1] if usage_sink else {}
+            fb_output_tokens = int(fb_usage.get("output_tokens") or 0)
+            fb_failure = _check_chunk_quality(
+                fallback_text or "",
+                audio_seconds=audio_seconds,
+                output_tokens=fb_output_tokens,
+                expected_script_lang=language_code,
+            )
+            if fb_failure:
+                logger.warning(
+                    "Batch STT: fallback also failed quality (%s) — "
+                    "returning primary output anyway (reporter=%s)",
+                    fb_failure, user.id,
+                )
+                # For batch, return the primary output rather than empty —
+                # the reporter can see and manually correct it.
+            else:
+                text = fallback_text
+        except Exception as exc:
+            logger.warning(
+                "Batch STT fallback to %s failed: %r — using primary output",
+                _STT_FALLBACK_MODEL, exc,
+            )
+
+    # ── Post-processing ───────────────────────────────────────────────
+    text = name_registry.replace_english_names((text or "").strip())
+    text, runs_collapsed = _collapse_runaway_repetition(text)
+    if runs_collapsed:
+        logger.info("Batch STT: collapsed %d repetition run(s) (reporter=%s)", runs_collapsed, user.id)
+    text, was_hallucinated = _filter_hallucinations(text)
+    if was_hallucinated:
+        logger.info("Batch STT: filtered hallucination (reporter=%s)", user.id)
+
+    # ── Telemetry ─────────────────────────────────────────────────────
+    total_cost = sum(float(u.get("cost_inr") or 0) for u in usage_sink)
+    total_input = sum(int(u.get("input_tokens") or 0) for u in usage_sink)
+    total_output = sum(int(u.get("output_tokens") or 0) for u in usage_sink)
+    logger.info(
+        "Batch STT done (reporter=%s, audio=%.1fs, vad_trimmed=%.1fs, "
+        "flash_fallback=%s, cost=₹%.4f, in=%d, out=%d)",
+        user.id, raw_audio_seconds, compressed_seconds,
+        flash_fallback_used, total_cost, total_input, total_output,
+    )
+
+    # ── Quota usage ───────────────────────────────────────────────────
+    # Count mic-on seconds (raw, not post-VAD) so the reporter's
+    # perception of "I spoke for X minutes" matches the quota drain.
+    used_seconds = int(round(raw_audio_seconds))
+    if used_seconds > 0:
+        transcription_quota.add_usage(db, user_id=user.id, seconds=used_seconds)
+
+    return {
+        "transcript": text or "",
+        "status": "ok" if text else "silence",
+        "audio_seconds": round(raw_audio_seconds, 1),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Task 3 – REST LLM chat proxy
 # ---------------------------------------------------------------------------
 
