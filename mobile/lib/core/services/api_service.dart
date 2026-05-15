@@ -449,6 +449,31 @@ class ApiService {
     return Map<String, dynamic>.from(res.data as Map);
   }
 
+  /// Batch-transcribe a complete audio recording via the server.
+  ///
+  /// Uploads the VAD-trimmed WAV to `POST /api/stt/transcribe` and waits
+  /// for the server to run a single Gemini call on the full audio. Returns
+  /// the parsed response: `{transcript, status, audio_seconds}`.
+  ///
+  /// This replaces the WebSocket streaming path — cheaper (~7× fewer
+  /// tokens) and more accurate (Gemini sees full context).
+  Future<Map<String, dynamic>> transcribeBatch({
+    required List<int> wavBytes,
+    String languageCode = 'od-IN',
+  }) async {
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(wavBytes, filename: 'recording.wav'),
+      'language_code': languageCode,
+    });
+    // Longer timeout: 10 min recording may take ~60s to transcribe.
+    final res = await _dio.post(
+      '/api/stt/transcribe',
+      data: formData,
+      options: Options(receiveTimeout: const Duration(seconds: 120)),
+    );
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
   /// Re-run STT against a paragraph's stored audio. Returns the new transcript.
   Future<String> retranscribeParagraph({
     required String storyId,

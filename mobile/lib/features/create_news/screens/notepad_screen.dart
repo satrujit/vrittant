@@ -3294,8 +3294,12 @@ class _IdleBottomBar extends ConsumerWidget {
                 // reporter sees explicitly what's paused without a
                 // banner cluttering the bar.
                 _LabeledBarButton(
-                  label: isQuotaExhausted ? s.quotaMicDisabledLabel : s.tooltipMic,
-                  labelColor: t.mutedColor,
+                  label: isProcessing
+                      ? s.transcribing
+                      : isQuotaExhausted
+                          ? s.quotaMicDisabledLabel
+                          : s.tooltipMic,
+                  labelColor: isProcessing ? t.primary : t.mutedColor,
                   child: Semantics(
                     label: isQuotaExhausted ? s.quotaMicDisabledLabel : s.tooltipMic,
                     button: true,
