@@ -1283,13 +1283,13 @@ class NotepadNotifier extends Notifier<NotepadState> {
     final idx = updated.indexWhere((p) => p.id == paragraphId);
 
     if (idx != -1) {
-      final existing = updated[idx].text;
+      final existing = updated[idx].text.trim();
       if (existing.isEmpty) {
         // Placeholder — replace with transcript
         updated[idx] = updated[idx].copyWith(text: transcript);
       } else {
-        // Re-recording or cursor-insert — replace text
-        updated[idx] = updated[idx].copyWith(text: transcript);
+        // Append to existing content (space-separated)
+        updated[idx] = updated[idx].copyWith(text: '$existing $transcript');
       }
     } else {
       // Paragraph was deleted while transcribing — append as new

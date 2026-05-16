@@ -52,6 +52,12 @@ class TransliterationService {
   static const _kNumCandidates = 3;
   static const _kTimeout = Duration(milliseconds: 1500);
 
+  /// Punctuation → Odia equivalents (purna biram, etc.)
+  static const _kPunctuationMap = <String, String>{
+    '.': ' ।',   // full stop → space + purna chheda (purna biram)
+    '..': ' ।।', // double stop → space + double danda
+  };
+
   Box<String>? _cache;
   // In-flight de-dup so two near-simultaneous transliterations of the
   // same word don't fire two HTTP calls.
@@ -91,6 +97,10 @@ class TransliterationService {
     // typing native Odia (Lipikaar / Gboard Odia / paste). Don't
     // disrupt their typing.
     if (_containsOdiaScript(trimmed)) return null;
+
+    // Punctuation mapping — convert common punctuation to Odia equivalents.
+    final punct = _kPunctuationMap[trimmed];
+    if (punct != null) return punct;
 
     // Skip if the word contains no Latin alphabet — pure punctuation,
     // numbers, emoji shouldn't be sent to the API.
