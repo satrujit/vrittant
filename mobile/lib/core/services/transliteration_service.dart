@@ -35,6 +35,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 
+import 'transliteration_loanwords.dart';
+
 class TransliterationService {
   TransliterationService._();
   static final TransliterationService instance = TransliterationService._();
@@ -95,6 +97,12 @@ class TransliterationService {
     if (!_containsLatinAlpha(trimmed)) return null;
 
     final key = trimmed.toLowerCase();
+
+    // Loanword dictionary — instant, offline, correct for English words
+    // that Google's phonetic transliteration gets wrong (e.g. "college"
+    // → କଲେଜ instead of mangled phonetic output).
+    final loanword = lookupLoanword(key);
+    if (loanword != null) return loanword;
 
     // Hot cache hit
     final cached = _cache?.get(key);
