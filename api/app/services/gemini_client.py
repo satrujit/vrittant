@@ -407,11 +407,10 @@ async def chat_with_cached_system(
 # Recommended rollout: feature-flag both providers, dual-log for a few
 # days to compare transcripts side-by-side, then commit.
 
-# Default model for STT. 2.5 Flash-Lite is cheapest but its multilingual
-# audio understanding is weaker than Flash on Indic languages — start
-# on Flash and only flip to Flash-Lite after offline eval shows it's
-# acceptable for Odia.
-_STT_DEFAULT_MODEL = "gemini-2.5-flash"
+# Default model for STT. Flash-Lite is 3x cheaper on audio input
+# ($0.30/M vs $1.00/M standard, $0.15/M vs $0.50/M batch).
+# Switched after confirming acceptable Odia transcription quality.
+_STT_DEFAULT_MODEL = "gemini-2.5-flash-lite"
 
 # Mapping IETF / RFC 5646 codes used by the existing Sarvam path to
 # language names Gemini will recognise in the prompt. Falls back to
