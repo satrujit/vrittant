@@ -514,6 +514,7 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                     : _SimpleNotepadBody(
                         state: state,
                         isReadOnly: isReadOnly,
+                        transcribingLabel: s.transcribingYourRecording,
                         // Threaded down so each text-run's copy/cut
                         // menu can substitute "<Org> Confidential"
                         // when reporters try to bulk-copy story
@@ -1890,6 +1891,8 @@ class _SimpleNotepadBody extends StatefulWidget {
   /// guard (used when org info hasn't loaded yet — better to allow
   /// copy than fail closed).
   final String orgName;
+  /// Localized label for the inline transcribing indicator.
+  final String transcribingLabel;
 
   const _SimpleNotepadBody({
     required this.state,
@@ -1897,6 +1900,7 @@ class _SimpleNotepadBody extends StatefulWidget {
     required this.onTextRunCommitted,
     required this.onTapEmptySpace,
     required this.orgName,
+    required this.transcribingLabel,
     this.onRemoveMedia,
     this.onOcrPhoto,
     this.onUpdateTable,
@@ -2289,6 +2293,19 @@ class _SimpleNotepadBodyState extends State<_SimpleNotepadBody> {
         if (showLivePreview && id == _streamingRunId) {
           children.add(_LiveTranscriptPreview(text: liveTranscript));
         }
+        // Show inline transcribing indicator if any paragraph in this run
+        // is being transcribed in the background.
+        final transcribingIds = widget.state.transcribingParagraphIds;
+        if (transcribingIds.isNotEmpty) {
+          for (int pi = run.firstIdx; pi <= run.lastIdx; pi++) {
+            if (transcribingIds.contains(paras[pi].id)) {
+              children.add(_TranscribingIndicator(
+                label: widget.transcribingLabel,
+              ));
+              break; // one indicator per run is enough
+            }
+          }
+        }
       } else {
         final p = paras[run.firstIdx];
         if (p.hasMedia) {
@@ -2357,6 +2374,71 @@ class _LiveTranscriptPreview extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Text(text, style: style),
+    );
+  }
+}
+
+/// Subtle inline indicator shown below a paragraph that's being
+/// transcribed in the background. Pulsing opacity animation draws
+/// gentle attention without blocking the reporter's workflow.
+class _TranscribingIndicator extends StatefulWidget {
+  final String label;
+  const _TranscribingIndicator({required this.label});
+
+  @override
+  State<_TranscribingIndicator> createState() => _TranscribingIndicatorState();
+}
+
+class _TranscribingIndicatorState extends State<_TranscribingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    )..repeat(reverse: true);
+    _opacity = Tween(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      child: FadeTransition(
+        opacity: _opacity,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.vrCoral.withValues(alpha: 0.7),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              widget.label,
+              style: AppTypography.odiaBodyMedium.copyWith(
+                color: AppColors.vrCoral.withValues(alpha: 0.8),
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

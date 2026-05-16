@@ -60,6 +60,7 @@ rely on implicit caching where Google decides to apply it.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -87,6 +88,14 @@ _PRICING = {
         # 32 audio tokens per second of audio. Used by stt() / not by
         # plain chat(). Source: ai.google.dev/gemini-api/docs/pricing
         "audio_input_per_m": Decimal("0.30"),
+    },
+    # Batch tier pricing (50% of standard). Used by stt_batch() when
+    # the batch API path succeeds. Keyed with a ":batch" suffix so
+    # _cost_stt can distinguish batch vs standard billing.
+    "gemini-2.5-flash-lite:batch": {
+        "input_per_m": Decimal("0.05"),
+        "output_per_m": Decimal("0.20"),
+        "audio_input_per_m": Decimal("0.15"),
     },
     "gemini-2.5-flash": {
         "input_per_m": Decimal("0.30"),
@@ -684,6 +693,304 @@ async def stt(
     return text
 
 
+# ---------------------------------------------------------------------------
+# Batch STT via Gemini's batchGenerateContent API (50% cheaper)
+# ---------------------------------------------------------------------------
+#
+# The Batch API accepts inline requests (same payload shape as
+# generateContent) and processes them asynchronously. If the batch
+# completes within our patience window (default 60 s), we use it for
+# the 50% cost saving. If it takes longer, we cancel the batch job and
+# fall back to the synchronous generateContent call.
+#
+# Endpoint: POST /v1beta/models/{model}:batchGenerateContent
+# Poll:     GET  /v1beta/{operation-name}
+# Cancel:   POST /v1beta/{operation-name}:cancel
+#
+# For our use case (single short recording, inline data < 20 MB), most
+# batch jobs complete in 5–30 seconds during non-peak hours.
+
+_BATCH_PATIENCE_SECONDS = 60.0
+_BATCH_POLL_INTERVAL_SECONDS = 3.0
+
+
+async def stt_batch(
+    *,
+    audio_bytes: bytes,
+    mime_type: str,
+    language_code: str = "od-IN",
+    model: Optional[str] = None,
+    max_tokens: int = 8000,
+    timeout_patience: float = _BATCH_PATIENCE_SECONDS,
+    client: Optional[httpx.AsyncClient] = None,
+    usage_sink: Optional[list] = None,
+) -> str:
+    """Transcribe audio via Gemini's Batch API for 50% cost savings.
+
+    Falls back to synchronous ``stt()`` if:
+      - The batch job doesn't complete within ``timeout_patience`` seconds.
+      - The batch submission fails.
+      - The batch result indicates failure.
+
+    Returns the transcript text (same contract as ``stt()``).
+    """
+    if not audio_bytes:
+        return ""
+    if not _api_key():
+        raise GeminiError("GEMINI_API_KEY is not configured", status_code=None)
+
+    resolved_model = model or _STT_DEFAULT_MODEL
+    batch_url = f"{_base_url()}/v1beta/models/{resolved_model}:batchGenerateContent"
+
+    # Build the single inline request (same shape as generateContent)
+    request_payload = {
+        "systemInstruction": {
+            "parts": [
+                {"text": _build_stt_system_instruction(language_code)},
+            ],
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": base64.b64encode(audio_bytes).decode("ascii"),
+                        }
+                    },
+                ],
+            },
+        ],
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
+            "temperature": 0.0,
+        },
+    }
+
+    batch_body = {
+        "requests": [
+            {"request": {"generateContentRequest": request_payload}}
+        ],
+    }
+
+    started = time.monotonic()
+
+    try:
+        async with _maybe_client(client, timeout_patience + 30) as c:
+            # Submit batch job
+            resp = await c.post(
+                batch_url, json=batch_body, headers=_headers(), timeout=30.0
+            )
+            if resp.status_code >= 400:
+                logger.warning(
+                    "stt_batch: submission failed (%d) — falling back to sync",
+                    resp.status_code,
+                )
+                return await _stt_sync_fallback(
+                    audio_bytes=audio_bytes,
+                    mime_type=mime_type,
+                    language_code=language_code,
+                    model=resolved_model,
+                    max_tokens=max_tokens,
+                    client=c,
+                    usage_sink=usage_sink,
+                    started=started,
+                )
+
+            batch_data = resp.json()
+            operation_name = batch_data.get("name")
+            if not operation_name:
+                logger.warning("stt_batch: no operation name in response — falling back")
+                return await _stt_sync_fallback(
+                    audio_bytes=audio_bytes,
+                    mime_type=mime_type,
+                    language_code=language_code,
+                    model=resolved_model,
+                    max_tokens=max_tokens,
+                    client=c,
+                    usage_sink=usage_sink,
+                    started=started,
+                )
+
+            # Poll until done or patience exhausted
+            poll_url = f"{_base_url()}/v1beta/{operation_name}"
+            while (time.monotonic() - started) < timeout_patience:
+                await asyncio.sleep(_BATCH_POLL_INTERVAL_SECONDS)
+                poll_resp = await c.get(poll_url, headers=_headers(), timeout=15.0)
+                if poll_resp.status_code >= 400:
+                    logger.warning(
+                        "stt_batch: poll returned %d — falling back",
+                        poll_resp.status_code,
+                    )
+                    break
+                poll_data = poll_resp.json()
+
+                # Check if done
+                if poll_data.get("done"):
+                    # Extract result from inlinedResponses
+                    result = _extract_batch_result(poll_data)
+                    if result is not None:
+                        duration_ms = int((time.monotonic() - started) * 1000)
+                        # Log at batch pricing
+                        usage = _extract_batch_usage(poll_data)
+                        input_tokens = usage.get("input_tokens", 0)
+                        output_tokens = usage.get("output_tokens", 0)
+                        batch_model_key = f"{_normalize_model(resolved_model)}:batch"
+                        cost = _cost_stt(batch_model_key, input_tokens, output_tokens)
+                        _write_log_row(
+                            service="gemini_stt_batch",
+                            model=resolved_model,
+                            endpoint="/v1beta/batchGenerateContent",
+                            input_tokens=input_tokens,
+                            cached_tokens=0,
+                            output_tokens=output_tokens,
+                            cost_inr=cost,
+                            duration_ms=duration_ms,
+                            status_code=200,
+                        )
+                        if usage_sink is not None:
+                            usage_sink.append({
+                                "input_tokens": input_tokens,
+                                "output_tokens": output_tokens,
+                                "cost_inr": cost,
+                                "duration_ms": duration_ms,
+                                "batch": True,
+                            })
+                        text = _filter_hallucination(result)
+                        logger.info(
+                            "stt_batch: completed in %dms (batch pricing)",
+                            duration_ms,
+                        )
+                        return text
+                    else:
+                        # Batch completed but no valid result
+                        logger.warning("stt_batch: batch done but no result — falling back")
+                        break
+
+                state = poll_data.get("metadata", {}).get("state", "")
+                if state in ("JOB_STATE_FAILED", "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED"):
+                    logger.warning("stt_batch: job %s — falling back", state)
+                    break
+
+            else:
+                # Patience exhausted — cancel the batch job and fall back
+                logger.info(
+                    "stt_batch: patience exhausted (%.0fs) — cancelling and falling back",
+                    time.monotonic() - started,
+                )
+                cancel_url = f"{_base_url()}/v1beta/{operation_name}:cancel"
+                try:
+                    await c.post(cancel_url, headers=_headers(), timeout=5.0)
+                except Exception:
+                    pass  # best-effort cancel
+
+            # Fall back to sync
+            return await _stt_sync_fallback(
+                audio_bytes=audio_bytes,
+                mime_type=mime_type,
+                language_code=language_code,
+                model=resolved_model,
+                max_tokens=max_tokens,
+                client=c,
+                usage_sink=usage_sink,
+                started=started,
+            )
+
+    except (httpx.RequestError, ValueError) as exc:
+        logger.warning("stt_batch: request error (%s) — falling back to sync", exc)
+        return await stt(
+            audio_bytes=audio_bytes,
+            mime_type=mime_type,
+            language_code=language_code,
+            model=resolved_model,
+            max_tokens=max_tokens,
+            usage_sink=usage_sink,
+            timeout=120.0,
+        )
+
+
+async def _stt_sync_fallback(
+    *,
+    audio_bytes: bytes,
+    mime_type: str,
+    language_code: str,
+    model: str,
+    max_tokens: int,
+    client: Optional[httpx.AsyncClient],
+    usage_sink: Optional[list],
+    started: float,
+) -> str:
+    """Thin wrapper around ``stt()`` used as the batch fallback path."""
+    logger.info(
+        "stt_batch: using sync fallback (elapsed %.1fs so far)",
+        time.monotonic() - started,
+    )
+    return await stt(
+        audio_bytes=audio_bytes,
+        mime_type=mime_type,
+        language_code=language_code,
+        model=model,
+        max_tokens=max_tokens,
+        client=client,
+        usage_sink=usage_sink,
+        timeout=120.0,
+    )
+
+
+def _extract_batch_result(poll_data: dict) -> Optional[str]:
+    """Extract transcript text from a completed batch operation response.
+
+    The batch API nests results under:
+      response.inlinedResponses[0].response.candidates[0].content.parts[0].text
+    or for newer API versions:
+      result.response.candidates[0].content.parts[0].text
+    """
+    # Try the "response" path (operation result)
+    response = poll_data.get("response") or poll_data.get("result", {}).get("response")
+    if response:
+        inlined = response.get("inlinedResponses") or []
+        if inlined:
+            inner = inlined[0].get("response") or inlined[0]
+            return _extract_text(inner)
+        # Direct response format
+        return _extract_text(response)
+
+    # Try top-level inlinedResponses
+    inlined = poll_data.get("inlinedResponses") or []
+    if inlined:
+        inner = inlined[0].get("response") or inlined[0]
+        return _extract_text(inner)
+
+    return None
+
+
+def _extract_batch_usage(poll_data: dict) -> dict:
+    """Extract token usage from batch operation response."""
+    # Navigate to the inner response's usageMetadata
+    response = poll_data.get("response") or poll_data.get("result", {}).get("response")
+    if response:
+        inlined = response.get("inlinedResponses") or []
+        if inlined:
+            inner = inlined[0].get("response") or inlined[0]
+            usage = inner.get("usageMetadata") or {}
+            return {
+                "input_tokens": int(usage.get("promptTokenCount") or 0),
+                "output_tokens": int(usage.get("candidatesTokenCount") or 0),
+            }
+
+    inlined = poll_data.get("inlinedResponses") or []
+    if inlined:
+        inner = inlined[0].get("response") or inlined[0]
+        usage = inner.get("usageMetadata") or {}
+        return {
+            "input_tokens": int(usage.get("promptTokenCount") or 0),
+            "output_tokens": int(usage.get("candidatesTokenCount") or 0),
+        }
+
+    return {"input_tokens": 0, "output_tokens": 0}
+
+
 async def translate(
     *,
     text: str,
@@ -814,8 +1121,6 @@ def _extract_text(data: dict) -> str:
 # We deliberately avoid a global lock around create-or-get: a concurrent
 # duplicate-create just means two cache resources for the same content
 # for ~1h, costing pennies. Simpler than a coroutine-aware lock.
-
-import asyncio  # noqa: E402
 
 _CACHE_REGISTRY: dict[str, tuple[str, float]] = {}
 _UNCACHEABLE_SENTINEL = "__uncacheable__"

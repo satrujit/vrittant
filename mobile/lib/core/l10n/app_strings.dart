@@ -396,6 +396,12 @@ class AppStrings {
   /// Short label shown under the mic button while batch transcription
   /// is in progress (after recording stops, before text arrives).
   String get transcribing => isOdia ? 'ଲିପିବଦ୍ଧ...' : 'Transcribing...';
+  /// Inline indicator shown inside a paragraph placeholder while
+  /// background transcription is running. Non-blocking — reporter can
+  /// keep editing other paragraphs.
+  String get transcribingYourRecording => isOdia
+      ? 'ଆପଣଙ୍କ ରେକର୍ଡିଂ ଲିପିବଦ୍ଧ ହେଉଛି...'
+      : 'Transcribing your recording...';
   String get editParagraph => isOdia ? 'ସମ୍ପାଦନ କରନ୍ତୁ' : 'Edit';
   String get insertHere => isOdia ? 'ଏଠି ଯୋଗ କରନ୍ତୁ' : 'Insert here';
   String get recordVoice => isOdia ? 'ସ୍ୱର ରେକର୍ଡ କରନ୍ତୁ' : 'Record voice';
