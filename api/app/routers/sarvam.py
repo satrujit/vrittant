@@ -1624,7 +1624,7 @@ async def transcribe_batch(
     compressed_seconds = len(compressed) / _PCM_BYTES_PER_SEC
 
     logger.info(
-        "Batch STT: reporter=%s, raw=%.1fs, after_vad=%.1fs (%.0f%% retained), lang=%s",
+        "STT: reporter=%s, raw=%.1fs, after_vad=%.1fs (%.0f%% retained), lang=%s",
         user.id, raw_audio_seconds, compressed_seconds,
         (compressed_seconds / raw_audio_seconds * 100) if raw_audio_seconds > 0 else 0,
         language_code,
@@ -1644,17 +1644,18 @@ async def transcribe_batch(
     usage_sink: list[dict] = []
 
     try:
-        text = await gemini_client.stt_batch(
+        text = await gemini_client.stt(
             audio_bytes=wav,
             mime_type="audio/wav",
             language_code=language_code,
             model=primary_model,
             max_tokens=_BATCH_MAX_OUTPUT_TOKENS,
             usage_sink=usage_sink,
+            timeout=120.0,
         )
     except Exception as exc:
         logger.error(
-            "Batch STT Gemini call failed (reporter=%s, audio=%.1fs): %r",
+            "STT Gemini call failed (reporter=%s, audio=%.1fs): %r",
             user.id, audio_seconds, exc,
         )
         raise HTTPException(
@@ -1675,7 +1676,7 @@ async def transcribe_batch(
     flash_fallback_used = False
     if primary_failure and primary_model != _STT_FALLBACK_MODEL:
         logger.info(
-            "Batch STT: quality fail on %s (%s) — retrying on %s (reporter=%s)",
+            "STT: quality fail on %s (%s) — retrying on %s (reporter=%s)",
             primary_model, primary_failure, _STT_FALLBACK_MODEL, user.id,
         )
         try:
@@ -1699,7 +1700,7 @@ async def transcribe_batch(
             )
             if fb_failure:
                 logger.warning(
-                    "Batch STT: fallback also failed quality (%s) — "
+                    "STT: fallback also failed quality (%s) — "
                     "returning primary output anyway (reporter=%s)",
                     fb_failure, user.id,
                 )
@@ -1709,7 +1710,7 @@ async def transcribe_batch(
                 text = fallback_text
         except Exception as exc:
             logger.warning(
-                "Batch STT fallback to %s failed: %r — using primary output",
+                "STT fallback to %s failed: %r — using primary output",
                 _STT_FALLBACK_MODEL, exc,
             )
 
@@ -1717,17 +1718,17 @@ async def transcribe_batch(
     text = name_registry.replace_english_names((text or "").strip())
     text, runs_collapsed = _collapse_runaway_repetition(text)
     if runs_collapsed:
-        logger.info("Batch STT: collapsed %d repetition run(s) (reporter=%s)", runs_collapsed, user.id)
+        logger.info("STT: collapsed %d repetition run(s) (reporter=%s)", runs_collapsed, user.id)
     text, was_hallucinated = _filter_hallucinations(text)
     if was_hallucinated:
-        logger.info("Batch STT: filtered hallucination (reporter=%s)", user.id)
+        logger.info("STT: filtered hallucination (reporter=%s)", user.id)
 
     # ── Telemetry ─────────────────────────────────────────────────────
     total_cost = sum(float(u.get("cost_inr") or 0) for u in usage_sink)
     total_input = sum(int(u.get("input_tokens") or 0) for u in usage_sink)
     total_output = sum(int(u.get("output_tokens") or 0) for u in usage_sink)
     logger.info(
-        "Batch STT done (reporter=%s, audio=%.1fs, vad_trimmed=%.1fs, "
+        "STT done (reporter=%s, audio=%.1fs, vad_trimmed=%.1fs, "
         "flash_fallback=%s, cost=₹%.4f, in=%d, out=%d)",
         user.id, raw_audio_seconds, compressed_seconds,
         flash_fallback_used, total_cost, total_input, total_output,

@@ -768,9 +768,7 @@ async def stt_batch(
     }
 
     batch_body = {
-        "requests": [
-            {"request": {"generateContentRequest": request_payload}}
-        ],
+        "inlineRequests": [request_payload],
     }
 
     started = time.monotonic()
