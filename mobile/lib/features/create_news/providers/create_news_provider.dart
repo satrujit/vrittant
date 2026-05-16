@@ -16,6 +16,7 @@ import '../../../core/services/local_drafts_store.dart';
 import '../../../core/services/local_stories_cache.dart';
 import '../../../core/services/sarvam_api.dart';
 import '../../../core/services/batch_recording_service.dart';
+import '../../../core/services/transcription_job_queue.dart';
 import '../../../core/services/stt_service.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../core/l10n/language_provider.dart';
@@ -236,6 +237,9 @@ class NotepadState {
   /// Keyed by ID so reorders/deletes during the in-flight polish don't mis-attribute
   /// the result to the wrong paragraph.
   final Set<String> polishingParagraphIds;
+  /// IDs of paragraphs whose transcription is in progress (background).
+  /// The UI shows an inline "Transcribing..." indicator for these.
+  final Set<String> transcribingParagraphIds;
   final bool isAudioSaveMode; // long-press: also save audio file
   final bool isNoisyEnvironment; // ambient noise is high
   final bool speakerFilterActive; // speaker verification is filtering audio
@@ -307,6 +311,7 @@ class NotepadState {
     this.isOcrProcessing = false,
     this.ocrProgress = 0.0,
     this.polishingParagraphIds = const {},
+    this.transcribingParagraphIds = const {},
     this.isAudioSaveMode = false,
     this.isNoisyEnvironment = false,
     this.speakerFilterActive = false,
@@ -415,6 +420,7 @@ class NotepadState {
     bool? isOcrProcessing,
     double? ocrProgress,
     Set<String>? polishingParagraphIds,
+    Set<String>? transcribingParagraphIds,
     bool? isAudioSaveMode,
     bool? isNoisyEnvironment,
     bool? speakerFilterActive,
@@ -457,6 +463,7 @@ class NotepadState {
       isOcrProcessing: isOcrProcessing ?? this.isOcrProcessing,
       ocrProgress: ocrProgress ?? this.ocrProgress,
       polishingParagraphIds: polishingParagraphIds ?? this.polishingParagraphIds,
+      transcribingParagraphIds: transcribingParagraphIds ?? this.transcribingParagraphIds,
       isAudioSaveMode: isAudioSaveMode ?? this.isAudioSaveMode,
       isNoisyEnvironment: isNoisyEnvironment ?? this.isNoisyEnvironment,
       speakerFilterActive: speakerFilterActive ?? this.speakerFilterActive,
@@ -633,6 +640,7 @@ class NotepadNotifier extends Notifier<NotepadState> {
       location: (reporterArea != null && reporterArea.isNotEmpty) ? reporterArea : null,
     );
     debugPrint('[create_news] initWithNewStory OK localId=$_localId');
+    resumePendingTranscriptions();
   }
 
   /// Initialize from an existing local draft (Hive). Used when the
@@ -674,6 +682,7 @@ class NotepadNotifier extends Notifier<NotepadState> {
       userNotes: payload['user_notes'] as String?,
     );
     debugPrint('[create_news] initWithLocalDraft OK localId=$_localId paragraphs=${paragraphs.length}');
+    resumePendingTranscriptions();
   }
 
   /// Initialize from an existing server-side story. Used when the
@@ -737,6 +746,7 @@ class NotepadNotifier extends Notifier<NotepadState> {
         state = state.copyWith(error: 'Failed to load story');
       }
     }
+    resumePendingTranscriptions();
   }
 
   /// Silent backup: hand the raw WAV to the persistent upload queue so the
@@ -1024,144 +1034,81 @@ class NotepadNotifier extends Notifier<NotepadState> {
           return;
         }
 
-        // Upload trimmed audio for batch transcription (single Gemini call).
-        final apiResult = await ref.read(apiServiceProvider).transcribeBatch(
-          wavBytes: result.trimmedWav.toList(),
-        );
-
-        final transcript = toOdiaDigits(
-          ((apiResult['transcript'] as String?) ?? '').trim(),
-        );
-
-        if (transcript.isEmpty) {
-          state = state.copyWith(
-            isProcessing: false,
-            error: 'Could not detect speech. Please try again.',
-          );
-          _reRecordingIndex = null;
-          _batchRecorder?.dispose();
-          _batchRecorder = null;
-          return;
-        }
-
         _pushUndo();
 
         // Full (untrimmed) WAV for the always-upload backup pipeline.
         final wavBytes = result.fullWav;
 
-        if (_reRecordingIndex != null) {
-          // Re-recording: replace existing paragraph's text
-          final idx = _reRecordingIndex!;
-          _reRecordingIndex = null;
-          if (idx >= 0 && idx < state.paragraphs.length) {
-            final updated = List<Paragraph>.from(state.paragraphs);
-            updated[idx] = updated[idx].copyWith(text: transcript);
-            state = state.copyWith(
-              paragraphs: updated,
-              isProcessing: false,
-              clearEditingParagraphIndex: true,
-            );
-            _queueSilentBackupAudio(updated[idx].id, wavBytes);
-          } else {
-            state = state.copyWith(isProcessing: false);
-          }
-        } else if (state.cursorInsertParagraphIndex != null &&
-                   state.cursorInsertPosition != null) {
-          // Cursor insertion: splice text into existing paragraph
-          final pIdx = state.cursorInsertParagraphIndex!;
-          final cursorPos = state.cursorInsertPosition!;
-          if (pIdx >= 0 && pIdx < state.paragraphs.length) {
-            final existing = state.paragraphs[pIdx].text;
-            final clampedPos = cursorPos.clamp(0, existing.length);
-            final before = existing.substring(0, clampedPos);
-            final after = existing.substring(clampedPos);
-            final sep = before.isNotEmpty && !before.endsWith(' ') && !transcript.startsWith(' ') ? ' ' : '';
-            final sepAfter = after.isNotEmpty && !after.startsWith(' ') && !transcript.endsWith(' ') ? ' ' : '';
-            final newText = '$before$sep$transcript$sepAfter$after';
+        // Determine where the transcript will go and insert a placeholder
+        // immediately so the reporter can keep working. Transcription
+        // continues in the background (persisted to survive app kill).
+        String targetParagraphId;
+        final reRecIdx = _reRecordingIndex;
+        final cursorPIdx = state.cursorInsertParagraphIndex;
+        final cursorPos = state.cursorInsertPosition;
+        _reRecordingIndex = null;
 
-            final updated = List<Paragraph>.from(state.paragraphs);
-            updated[pIdx] = updated[pIdx].copyWith(text: toOdiaDigits(newText));
-            state = state.copyWith(
-              paragraphs: updated,
-              isProcessing: false,
-              clearCursorInsert: true,
-              clearEditingParagraphIndex: true,
-            );
-            _queueSilentBackupAudio(updated[pIdx].id, wavBytes);
-          } else {
-            state = state.copyWith(
-              isProcessing: false,
-              clearCursorInsert: true,
-            );
-          }
+        if (reRecIdx != null && reRecIdx >= 0 && reRecIdx < state.paragraphs.length) {
+          // Re-recording: mark existing paragraph as transcribing
+          targetParagraphId = state.paragraphs[reRecIdx].id;
+          state = state.copyWith(
+            isProcessing: false,
+            clearEditingParagraphIndex: true,
+            transcribingParagraphIds: {...state.transcribingParagraphIds, targetParagraphId},
+          );
+        } else if (cursorPIdx != null && cursorPos != null &&
+                   cursorPIdx >= 0 && cursorPIdx < state.paragraphs.length) {
+          // Cursor insertion into existing paragraph
+          targetParagraphId = state.paragraphs[cursorPIdx].id;
+          state = state.copyWith(
+            isProcessing: false,
+            clearCursorInsert: true,
+            clearEditingParagraphIndex: true,
+            transcribingParagraphIds: {...state.transcribingParagraphIds, targetParagraphId},
+          );
         } else {
-          // New text paragraph
-          final paragraph = Paragraph(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            text: transcript,
+          // New placeholder paragraph
+          targetParagraphId = DateTime.now().millisecondsSinceEpoch.toString();
+          final placeholder = Paragraph(
+            id: targetParagraphId,
+            text: '', // empty — UI shows "Transcribing..." overlay
             createdAt: DateTime.now(),
           );
 
           final updated = List<Paragraph>.from(state.paragraphs);
           final insertIdx = state.insertAtIndex;
-          int textInsertedAt;
           if (insertIdx != null && insertIdx >= 0 && insertIdx <= updated.length) {
-            updated.insert(insertIdx, paragraph);
-            textInsertedAt = insertIdx;
+            updated.insert(insertIdx, placeholder);
           } else {
-            textInsertedAt = updated.length;
-            updated.add(paragraph);
-          }
-
-          // Silent-backup audio for the always-upload pipeline.
-          _queueSilentBackupAudio(paragraph.id, wavBytes);
-
-          // If audio-save mode, upload WAV and insert audio block below text
-          if (wasAudioSave && wavBytes.isNotEmpty) {
-            try {
-              final timestamp = DateTime.now().millisecondsSinceEpoch;
-              final filename = 'voice_$timestamp.wav';
-              final uploadResult = await ref.read(apiServiceProvider).uploadFile(
-                wavBytes.toList(),
-                filename,
-              );
-              final audioPath = uploadResult['url'] as String? ??
-                  uploadResult['file_url'] as String? ??
-                  '/uploads/$filename';
-
-              final audioBlock = Paragraph(
-                id: '${timestamp}_audio',
-                mediaPath: audioPath,
-                mediaType: MediaType.audio,
-                mediaName: filename,
-                createdAt: DateTime.now(),
-              );
-              updated.insert(textInsertedAt + 1, audioBlock);
-            } catch (_) {
-              // Audio upload failed silently — text paragraph is still there
-            }
+            updated.add(placeholder);
           }
 
           state = state.copyWith(
             paragraphs: updated,
             isProcessing: false,
             clearInsertAtIndex: true,
+            transcribingParagraphIds: {...state.transcribingParagraphIds, targetParagraphId},
           );
         }
+
+        // Silent-backup audio
+        _queueSilentBackupAudio(targetParagraphId, wavBytes);
 
         _batchRecorder?.dispose();
         _batchRecorder = null;
 
-        // Save paragraphs to server IMMEDIATELY
-        _scheduleAutoSave();
-
-        // Auto-generate headline for the first paragraph
-        final body = fullBodyText;
-        if (body.isNotEmpty && state.headline.isEmpty) {
-          _generateTitleAndMetadata(body);
-        } else if (body.isNotEmpty && state.category == null) {
-          _autoInferMetadata(body).then((_) => _scheduleAutoSave()).catchError((_) {});
-        }
+        // Fire background transcription (non-blocking, persists to disk).
+        _enqueueBackgroundTranscription(
+          paragraphId: targetParagraphId,
+          trimmedWav: result.trimmedWav,
+          fullWav: wavBytes,
+          wasAudioSave: wasAudioSave,
+          cursorInsertParagraphId: (cursorPIdx != null && cursorPos != null &&
+              cursorPIdx >= 0 && cursorPIdx < state.paragraphs.length)
+              ? state.paragraphs[cursorPIdx].id
+              : null,
+          cursorPosition: cursorPos,
+        );
       } on BatchRecordingException catch (e) {
         _reRecordingIndex = null;
         state = state.copyWith(
@@ -1269,6 +1216,125 @@ class NotepadNotifier extends Notifier<NotepadState> {
   void clearRecordingAutoStopReason() {
     if (state.recordingAutoStopReason == null) return;
     state = state.copyWith(clearRecordingAutoStopReason: true);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Background transcription (non-blocking, survives app kill)
+  // ---------------------------------------------------------------------------
+
+  /// Fire-and-forget: enqueue transcription job to persistent queue.
+  /// The reporter can keep editing; transcript auto-inserts when ready.
+  void _enqueueBackgroundTranscription({
+    required String paragraphId,
+    required Uint8List trimmedWav,
+    required Uint8List fullWav,
+    required bool wasAudioSave,
+    String? cursorInsertParagraphId,
+    int? cursorPosition,
+  }) {
+    final api = ref.read(apiServiceProvider);
+    final queue = TranscriptionJobQueue.instance(api);
+
+    // Register delivery callback (idempotent — safe to set multiple times)
+    queue.onTranscriptReady = _onTranscriptDelivered;
+
+    // Enqueue (async but we don't await — fire and forget)
+    queue.enqueue(
+      paragraphId: paragraphId,
+      wavBytes: trimmedWav.toList(),
+      storyId: _serverStoryId,
+    ).then((_) {}).catchError((e) {
+      debugPrint('[NotepadNotifier] Failed to enqueue transcription: $e');
+      // Remove transcribing indicator on queue failure
+      final ids = Set<String>.from(state.transcribingParagraphIds)
+        ..remove(paragraphId);
+      state = state.copyWith(
+        transcribingParagraphIds: ids,
+        error: 'Transcription failed to start. Please try again.',
+      );
+    });
+  }
+
+  /// Callback from TranscriptionJobQueue when a transcript is ready.
+  /// Inserts the text into the target paragraph.
+  void _onTranscriptDelivered(String paragraphId, String rawTranscript, String? storyId) {
+    final transcript = toOdiaDigits(rawTranscript.trim());
+
+    // Remove from transcribing set
+    final ids = Set<String>.from(state.transcribingParagraphIds)
+      ..remove(paragraphId);
+
+    if (transcript.isEmpty) {
+      // Silent — remove placeholder paragraph if it's still empty
+      final updated = List<Paragraph>.from(state.paragraphs);
+      final idx = updated.indexWhere((p) => p.id == paragraphId);
+      if (idx != -1 && updated[idx].text.isEmpty) {
+        updated.removeAt(idx);
+      }
+      state = state.copyWith(
+        paragraphs: updated,
+        transcribingParagraphIds: ids,
+      );
+      return;
+    }
+
+    // Find the target paragraph and insert transcript
+    final updated = List<Paragraph>.from(state.paragraphs);
+    final idx = updated.indexWhere((p) => p.id == paragraphId);
+
+    if (idx != -1) {
+      final existing = updated[idx].text;
+      if (existing.isEmpty) {
+        // Placeholder — replace with transcript
+        updated[idx] = updated[idx].copyWith(text: transcript);
+      } else {
+        // Re-recording or cursor-insert — replace text
+        updated[idx] = updated[idx].copyWith(text: transcript);
+      }
+    } else {
+      // Paragraph was deleted while transcribing — append as new
+      updated.add(Paragraph(
+        id: paragraphId,
+        text: transcript,
+        createdAt: DateTime.now(),
+      ));
+    }
+
+    state = state.copyWith(
+      paragraphs: updated,
+      transcribingParagraphIds: ids,
+    );
+
+    // Save immediately
+    _scheduleAutoSave();
+
+    // Auto-generate headline if this is the first content
+    final body = fullBodyText;
+    if (body.isNotEmpty && state.headline.isEmpty) {
+      _generateTitleAndMetadata(body);
+    } else if (body.isNotEmpty && state.category == null) {
+      _autoInferMetadata(body).then((_) => _scheduleAutoSave()).catchError((_) {});
+    }
+
+    debugPrint('[NotepadNotifier] Transcript delivered for paragraph $paragraphId '
+        '(${transcript.length} chars)');
+  }
+
+  /// Resume any pending transcription jobs from a previous session.
+  /// Called during story load / draft hydration.
+  void resumePendingTranscriptions() {
+    final api = ref.read(apiServiceProvider);
+    final queue = TranscriptionJobQueue.instance(api);
+    queue.onTranscriptReady = _onTranscriptDelivered;
+    queue.resumePendingJobs();
+
+    // Mark any pending paragraphs in our state
+    final pendingIds = queue.pendingJobs.map((j) => j.paragraphId).toSet();
+    if (pendingIds.isNotEmpty) {
+      state = state.copyWith(
+        transcribingParagraphIds: {...state.transcribingParagraphIds, ...pendingIds},
+      );
+    }
   }
 
   /// Take all current text paragraphs (raw STT + typed input) and ask the

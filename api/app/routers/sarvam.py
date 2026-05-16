@@ -1634,22 +1634,23 @@ async def transcribe_batch(
     if len(compressed) < _VAD_MIN_SPEECH_BYTES:
         return {"transcript": "", "status": "silence", "audio_seconds": 0.0}
 
-    # ── Single Gemini call ────────────────────────────────────────────
+    # ── Gemini call (batch API with sync fallback) ──────────────────────
+    # Uses batchGenerateContent for 50% cost savings. If the batch job
+    # doesn't complete within 60 s, automatically cancels and falls back
+    # to synchronous generateContent at standard pricing.
     wav = _wrap_pcm_as_wav(compressed)
     audio_seconds = len(compressed) / _PCM_BYTES_PER_SEC
     primary_model = settings.STT_GEMINI_MODEL
     usage_sink: list[dict] = []
 
     try:
-        text = await gemini_client.stt(
+        text = await gemini_client.stt_batch(
             audio_bytes=wav,
             mime_type="audio/wav",
             language_code=language_code,
             model=primary_model,
             max_tokens=_BATCH_MAX_OUTPUT_TOKENS,
             usage_sink=usage_sink,
-            # Longer timeout for full recordings (up to 10 min audio)
-            timeout=120.0,
         )
     except Exception as exc:
         logger.error(
