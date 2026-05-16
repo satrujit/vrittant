@@ -1044,8 +1044,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
         // continues in the background (persisted to survive app kill).
         String targetParagraphId;
         final reRecIdx = _reRecordingIndex;
-        final cursorPIdx = state.cursorInsertParagraphIndex;
-        final cursorPos = state.cursorInsertPosition;
         _reRecordingIndex = null;
 
         if (reRecIdx != null && reRecIdx >= 0 && reRecIdx < state.paragraphs.length) {
@@ -1053,16 +1051,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
           targetParagraphId = state.paragraphs[reRecIdx].id;
           state = state.copyWith(
             isProcessing: false,
-            clearEditingParagraphIndex: true,
-            transcribingParagraphIds: {...state.transcribingParagraphIds, targetParagraphId},
-          );
-        } else if (cursorPIdx != null && cursorPos != null &&
-                   cursorPIdx >= 0 && cursorPIdx < state.paragraphs.length) {
-          // Cursor insertion into existing paragraph
-          targetParagraphId = state.paragraphs[cursorPIdx].id;
-          state = state.copyWith(
-            isProcessing: false,
-            clearCursorInsert: true,
             clearEditingParagraphIndex: true,
             transcribingParagraphIds: {...state.transcribingParagraphIds, targetParagraphId},
           );
@@ -1103,11 +1091,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
           trimmedWav: result.trimmedWav,
           fullWav: wavBytes,
           wasAudioSave: wasAudioSave,
-          cursorInsertParagraphId: (cursorPIdx != null && cursorPos != null &&
-              cursorPIdx >= 0 && cursorPIdx < state.paragraphs.length)
-              ? state.paragraphs[cursorPIdx].id
-              : null,
-          cursorPosition: cursorPos,
         );
       } on BatchRecordingException catch (e) {
         _reRecordingIndex = null;
@@ -1229,8 +1212,6 @@ class NotepadNotifier extends Notifier<NotepadState> {
     required Uint8List trimmedWav,
     required Uint8List fullWav,
     required bool wasAudioSave,
-    String? cursorInsertParagraphId,
-    int? cursorPosition,
   }) {
     final api = ref.read(apiServiceProvider);
     final queue = TranscriptionJobQueue.instance(api);
@@ -1283,14 +1264,8 @@ class NotepadNotifier extends Notifier<NotepadState> {
     final idx = updated.indexWhere((p) => p.id == paragraphId);
 
     if (idx != -1) {
-      final existing = updated[idx].text.trim();
-      if (existing.isEmpty) {
-        // Placeholder — replace with transcript
-        updated[idx] = updated[idx].copyWith(text: transcript);
-      } else {
-        // Append to existing content (space-separated)
-        updated[idx] = updated[idx].copyWith(text: '$existing $transcript');
-      }
+      // Replace placeholder (or re-record) with transcript
+      updated[idx] = updated[idx].copyWith(text: transcript);
     } else {
       // Paragraph was deleted while transcribing — append as new
       updated.add(Paragraph(
