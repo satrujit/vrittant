@@ -62,6 +62,7 @@ class WhatsAppThreadState(Base):
     pending_media_count = Column(Integer, nullable=False, default=0)
     pending_text_concat = Column(Text, nullable=False, default="")
     interactive_msg_id = Column(String)
+    prompt_sent_at = Column(DateTime(timezone=True))
     audio_warning_shown = Column(Boolean, nullable=False, default=False)
 
 

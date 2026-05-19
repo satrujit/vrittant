@@ -124,6 +124,14 @@ def warm_db_pool():
     except Exception as e:
         logger.warning("Failed to warm DB pool (will retry on first request): %s", e)
 
+
+@app.on_event("startup")
+async def start_prompt_sender():
+    """Launch the WhatsApp prompt-sender background loop."""
+    import asyncio
+    from .services.whatsapp.dispatcher import prompt_sender_loop
+    asyncio.create_task(prompt_sender_loop())
+
 # Serve uploaded files locally in dev; in prod GCS URLs are returned directly
 if settings.STORAGE_BACKEND == "local":
     _uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
