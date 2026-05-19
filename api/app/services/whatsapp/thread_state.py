@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import event
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.whatsapp_buffer import WhatsAppThreadState
@@ -55,9 +56,15 @@ def open_or_get(
     `thread_kind`/`target_story_id` are only honored when creating a new
     row. To switch an existing row to the 'add' kind, the caller should
     `close()` first then `open_or_get(..., thread_kind='add', ...)`.
+
+    Handles the race where two workers both see no row and try to INSERT
+    simultaneously — the loser gets an IntegrityError, rolls back the
+    nested savepoint, and re-SELECTs.
     """
     ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
-    if ts is None:
+    if ts is not None:
+        return ts
+    try:
         ts = WhatsAppThreadState(
             sender_phone=sender_phone,
             thread_kind=thread_kind,
@@ -65,7 +72,13 @@ def open_or_get(
         )
         db.add(ts)
         db.flush()
-    return ts
+        return ts
+    except IntegrityError:
+        db.rollback()
+        ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
+        if ts is None:
+            raise  # shouldn't happen — re-raise for visibility
+        return ts
 
 
 def increment_text(db: Session, sender_phone: str, text: str) -> None:

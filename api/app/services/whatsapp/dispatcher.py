@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -30,12 +29,11 @@ log = logging.getLogger("whatsapp.dispatcher")
 # When a reporter forwards multiple messages at once (text + images),
 # Gupshup delivers each as a separate webhook within seconds. Without
 # debounce, each webhook sends a separate [Submit][Cancel] prompt.
-# Instead, we wait DEBOUNCE_SECONDS after the last message in a burst
-# before sending the prompt.
-DEBOUNCE_SECONDS = 5
-
-# {sender_phone: monotonic_timestamp_of_last_message}
-_pending_prompts: dict[str, float] = {}
+# Instead, after buffering each message we sleep DEBOUNCE_SECONDS then
+# check the DB: if `last_message_at` hasn't moved, the burst is over
+# and we send one consolidated prompt. No in-memory state — the DB
+# timestamp is the single source of truth, safe across workers.
+DEBOUNCE_SECONDS = 15
 
 
 def resolve_user_for_phone(db: Session, sender_phone: str) -> Optional[User]:
@@ -474,35 +472,36 @@ async def handle_forward(*, db, sender_phone, user, payload):
     else:
         return  # not a forward we handle here
 
-    # 5. Send / edit the [Submit][Cancel] interactive.
-    #    Debounce: when a reporter forwards multiple messages at once,
-    #    Gupshup delivers each as a separate webhook within seconds.
-    #    We wait DEBOUNCE_SECONDS for the burst to settle before sending.
-    #    Thanks to the per-sender advisory lock, webhooks for the same
-    #    sender are serialized — so we sleep inline. If another webhook
-    #    arrives during the sleep, it'll queue behind the lock and this
-    #    handler will see the stale stamp and skip the prompt.
-    ts = thread_state.open_or_get(db, sender_phone)
-    stamp = time.monotonic()
-    _pending_prompts[sender_phone] = stamp
+    # 6. Commit the buffered content, then wait for the burst to settle.
+    #    Each webhook updates `last_message_at` via thread_state helpers.
+    #    After sleeping DEBOUNCE_SECONDS we re-read the DB: if
+    #    `last_message_at` is still the same value we saw before sleeping,
+    #    no new message arrived → send the consolidated prompt. Otherwise
+    #    a newer webhook will handle it. Pure DB check, no in-memory dict,
+    #    works across multiple gunicorn workers.
     db.commit()
 
     if DEBOUNCE_SECONDS > 0:
+        # Snapshot the timestamp AFTER commit so it includes our update.
+        ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
+        if ts is None:
+            return
+        snapshot_ts = ts.last_message_at
         await asyncio.sleep(DEBOUNCE_SECONDS)
+        # Re-read from DB — another worker may have updated it.
+        db.expire_all()
+        ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
+        if ts is None:
+            return
+        # If last_message_at moved, a newer webhook arrived — let it handle the prompt.
+        if ts.last_message_at != snapshot_ts:
+            return
+    else:
+        ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
+        if ts is None:
+            return
 
-    # Another message arrived during our sleep — let that handler send
-    # the prompt with the updated counts instead.
-    if _pending_prompts.get(sender_phone) != stamp:
-        return
-
-    _pending_prompts.pop(sender_phone, None)
-
-    # Re-read thread state to get the latest counts (other handlers
-    # may have incremented during our sleep).
-    db.expire_all()
-    ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
-    if ts is None:
-        return
+    # Burst is over — send the consolidated [Submit][Cancel] prompt.
     total = (ts.pending_text_count or 0) + (ts.pending_media_count or 0)
     if total == 0:
         return
