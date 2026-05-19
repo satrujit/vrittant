@@ -10,6 +10,9 @@ until every handler ships and the flag is flipped.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
+import time
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -20,6 +23,20 @@ from app.services.whatsapp import (
     outbound, i18n, dedup, buffer, thread_state, ingest, finalize,
 )
 from app.services.whatsapp.classifier import classify, MessageKind
+
+log = logging.getLogger("whatsapp.dispatcher")
+
+# ── Debounce for forward bursts ──────────────────────────────────
+# When a reporter forwards multiple messages at once (text + images),
+# Gupshup delivers each as a separate webhook within seconds. Without
+# debounce, each webhook sends a separate [Submit][Cancel] prompt.
+# Instead, we wait DEBOUNCE_SECONDS after the last message in a burst
+# before sending the prompt.
+DEBOUNCE_SECONDS = 5
+
+# {sender_phone: monotonic_timestamp_of_last_message}
+_pending_prompts: dict[str, float] = {}
+_prompt_tasks: dict[str, asyncio.Task] = {}
 
 
 def resolve_user_for_phone(db: Session, sender_phone: str) -> Optional[User]:
@@ -458,30 +475,83 @@ async def handle_forward(*, db, sender_phone, user, payload):
     else:
         return  # not a forward we handle here
 
-    # 5. Send / edit the [Submit][Cancel] interactive
+    # 5. Commit buffered data immediately (text/media counts, dedup rows)
+    #    so concurrent webhooks see the latest state.
     ts = thread_state.open_or_get(db, sender_phone)
-    total = (ts.pending_text_count or 0) + (ts.pending_media_count or 0)
-    if total <= 1:
-        body = i18n.t("thread.first", lang)
-    else:
-        body = i18n.t(
-            "thread.update", lang,
-            count=total,
-            text=ts.pending_text_count,
-            media=ts.pending_media_count,
-        )
-    new_msg_id = await outbound.edit_or_send_interactive(
-        to=sender_phone,
-        existing_msg_id=ts.interactive_msg_id,
-        body=body,
-        buttons=[
-            ("submit_thread", i18n.t("btn.submit", lang)),
-            ("cancel_thread", i18n.t("btn.cancel", lang)),
-        ],
-    )
-    if new_msg_id:
-        ts.interactive_msg_id = new_msg_id
     db.commit()
+
+    # 6. Debounce the [Submit][Cancel] interactive message.
+    #    When a reporter forwards 5 messages at once, Gupshup delivers
+    #    them as 5 separate webhooks within seconds. Rather than sending
+    #    5 prompts (one per webhook), we wait DEBOUNCE_SECONDS after the
+    #    last message, then send a single consolidated prompt.
+    _schedule_debounced_prompt(sender_phone, user, lang)
+
+
+def _schedule_debounced_prompt(sender_phone: str, user: Optional[User], lang: str):
+    """Schedule (or reschedule) the [Submit][Cancel] prompt after a burst
+    debounce window. Each new message resets the timer so only one prompt
+    is sent per forward-burst."""
+    stamp = time.monotonic()
+    _pending_prompts[sender_phone] = stamp
+
+    # Cancel any existing scheduled prompt for this sender
+    existing = _prompt_tasks.get(sender_phone)
+    if existing and not existing.done():
+        existing.cancel()
+
+    async def _send_after_delay():
+        await asyncio.sleep(DEBOUNCE_SECONDS)
+        # Only fire if no newer message arrived during the sleep
+        if _pending_prompts.get(sender_phone) != stamp:
+            return
+        _pending_prompts.pop(sender_phone, None)
+        _prompt_tasks.pop(sender_phone, None)
+        try:
+            await _send_thread_prompt(sender_phone, user, lang)
+        except Exception:
+            log.exception("debounced prompt failed for %s", sender_phone)
+
+    _prompt_tasks[sender_phone] = asyncio.ensure_future(_send_after_delay())
+
+
+async def _send_thread_prompt(sender_phone: str, user: Optional[User], lang: str):
+    """Read current thread state from DB and send the interactive prompt."""
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
+        if ts is None:
+            return
+        total = (ts.pending_text_count or 0) + (ts.pending_media_count or 0)
+        if total == 0:
+            return
+        if total <= 1:
+            body = i18n.t("thread.first", lang)
+        else:
+            body = i18n.t(
+                "thread.update", lang,
+                count=total,
+                text=ts.pending_text_count,
+                media=ts.pending_media_count,
+            )
+        new_msg_id = await outbound.edit_or_send_interactive(
+            to=sender_phone,
+            existing_msg_id=ts.interactive_msg_id,
+            body=body,
+            buttons=[
+                ("submit_thread", i18n.t("btn.submit", lang)),
+                ("cancel_thread", i18n.t("btn.cancel", lang)),
+            ],
+        )
+        if new_msg_id:
+            ts.interactive_msg_id = new_msg_id
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 async def handle_skip(*, db, sender_phone, user, kind):
