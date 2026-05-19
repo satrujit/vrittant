@@ -84,17 +84,22 @@ def process_image(contents: bytes, original_filename: str) -> dict:
         logger.warning("image_pipeline: could not decode %s: %s", original_filename, exc)
         return {"media_path": orig_url, "media_path_web": None, "media_path_thumb": None}
 
-    web_bytes = _resize_jpeg(img, WEB_MAX_LONG_EDGE, WEB_QUALITY)
+    # Resize in-place: web first (2000px), then thumb (400px) from the
+    # already-smaller web image. No .copy() — avoids duplicating the
+    # full-res ~50 MB decoded bitmap. Peak RAM drops from ~150 MB
+    # (orig + web copy + thumb copy) to ~50 MB (just the decoded image,
+    # which shrinks after each thumbnail() call).
+    img.thumbnail((WEB_MAX_LONG_EDGE, WEB_MAX_LONG_EDGE), Image.Resampling.LANCZOS)
+    web_bytes = _encode_jpeg(img, WEB_QUALITY)
     web_url = _upload(web_bytes, key=f"web/{base_uuid}.jpg", ext=".jpg")
     del web_bytes
 
-    thumb_bytes = _resize_jpeg(img, THUMB_MAX_LONG_EDGE, THUMB_QUALITY)
+    # img is now ≤2000px — thumbnail() to 400px is a small shrink.
+    img.thumbnail((THUMB_MAX_LONG_EDGE, THUMB_MAX_LONG_EDGE), Image.Resampling.LANCZOS)
+    thumb_bytes = _encode_jpeg(img, THUMB_QUALITY)
     thumb_url = _upload(thumb_bytes, key=f"thumb/{base_uuid}.jpg", ext=".jpg")
     del thumb_bytes
 
-    # Explicitly close the Pillow image to free decoded bitmap memory.
-    # Critical when processing multiple images in a WhatsApp forward —
-    # without this, each 12-24 MP image holds ~50 MB decoded in RAM.
     img.close()
 
     return {
@@ -104,16 +109,13 @@ def process_image(contents: bytes, original_filename: str) -> dict:
     }
 
 
-def _resize_jpeg(img: Image.Image, max_long_edge: int, quality: int) -> bytes:
-    """Resize ``img`` so its long edge ≤ max_long_edge, then JPEG-encode.
-
-    Uses copy() so the caller's ``img`` stays at full resolution for the
-    next resize call (web then thumb from the same source).
+def _encode_jpeg(img: Image.Image, quality: int) -> bytes:
+    """JPEG-encode ``img`` at the given quality. Caller is responsible
+    for resizing beforehand (we resize in-place in process_image to
+    avoid copying the full-res bitmap).
     """
-    out = img.copy()
-    out.thumbnail((max_long_edge, max_long_edge), Image.Resampling.LANCZOS)
     buf = io.BytesIO()
-    out.save(
+    img.save(
         buf,
         format="JPEG",
         quality=quality,
@@ -121,7 +123,6 @@ def _resize_jpeg(img: Image.Image, max_long_edge: int, quality: int) -> bytes:
         progressive=True,
     )
     result = buf.getvalue()
-    out.close()
     buf.close()
     return result
 
