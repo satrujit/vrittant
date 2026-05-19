@@ -1075,6 +1075,8 @@ class NotepadNotifier extends Notifier<NotepadState> {
             paragraphs: updated,
             isProcessing: false,
             clearInsertAtIndex: true,
+            clearCursorInsert: true,
+            clearEditingParagraphIndex: true,
             transcribingParagraphIds: {...state.transcribingParagraphIds, targetParagraphId},
           );
         }
@@ -1761,12 +1763,22 @@ class NotepadNotifier extends Notifier<NotepadState> {
       if (p.hasMedia || p.isTable) return;
     }
 
-    final sanitized = newTexts
-        .map((t) => toOdiaDigits(t).trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-
     final existing = state.paragraphs.sublist(firstIdx, lastIdxInclusive + 1);
+
+    // Preserve empty paragraphs that are currently being transcribed —
+    // their placeholder text is '' but they must survive until the
+    // background transcription delivers the transcript.
+    final transcribingIds = state.transcribingParagraphIds;
+    final sanitized = <String>[];
+    for (int i = 0; i < newTexts.length; i++) {
+      final cleaned = toOdiaDigits(newTexts[i]).trim();
+      if (cleaned.isNotEmpty) {
+        sanitized.add(cleaned);
+      } else if (i < existing.length && transcribingIds.contains(existing[i].id)) {
+        // Keep empty placeholder — transcription is in flight
+        sanitized.add('');
+      }
+    }
     final oldTexts = existing.map((p) => p.text).toList();
     if (sanitized.length == oldTexts.length) {
       bool same = true;
