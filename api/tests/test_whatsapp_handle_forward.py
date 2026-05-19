@@ -1,8 +1,9 @@
 """Tests for the handle_forward dispatcher handler.
 
 handle_forward owns the inbound side: buffering media, accumulating
-text, editing the [Submit][Cancel] interactive message. It does NOT
-create stories — Task 14's handle_button (submit_thread case) does that.
+text, committing to DB, then returning immediately. Prompt delivery
+is handled by the background prompt_sender_loop (tested separately
+in test_whatsapp_prompt_loop.py).
 """
 import asyncio
 from unittest.mock import AsyncMock, patch
@@ -68,14 +69,11 @@ def test_under_20_words_rejected_without_thread(mock_edit, mock_send, db):
 def test_under_20_words_accepted_in_add_mode(mock_edit, mock_send, db):
     """Add-mode appends to an existing story; the 20-word floor is for
     first submissions. A short follow-up like 'Police arrived at 9 PM'
-    is legitimate and must NOT be rejected. Regression for prod
-    2026-05-07."""
+    is legitimate and must NOT be rejected."""
     from app.services.whatsapp.dispatcher import handle_forward
     from app.services.whatsapp import thread_state
     user = _seed_user(db, lang="en")
 
-    # Open an add-mode thread (mimics the user tapping "➕ Add more"
-    # on a saved-confirmation).
     thread_state.open_or_get(
         db, sender_phone="+919",
         thread_kind="add", target_story_id="some-existing-story",
@@ -96,15 +94,14 @@ def test_under_20_words_accepted_in_add_mode(mock_edit, mock_send, db):
     assert ts is not None
     assert ts.thread_kind == "add"
     assert (ts.pending_text_count or 0) >= 1
-    # [Submit][Cancel] / saveAdd interactive was sent (i.e. we proceeded
-    # past the gate)
-    assert mock_edit.called
+    # Prompt is NOT sent inline — the background loop handles it.
+    # We only verify the data was buffered correctly.
 
 
 @patch("app.services.whatsapp.dispatcher.outbound.send_text", new_callable=AsyncMock)
 @patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive",
        new_callable=AsyncMock, return_value="wamid.NEW1")
-def test_text_forward_opens_thread_and_sends_buttons(mock_edit, mock_send, db):
+def test_text_forward_opens_thread_and_buffers(mock_edit, mock_send, db):
     from app.services.whatsapp.dispatcher import handle_forward
     user = _seed_user(db, lang="en")
     body = "Bypoll results announced today across the state. BJP won three seats and Congress won one in a closely fought contest."
@@ -113,20 +110,13 @@ def test_text_forward_opens_thread_and_sends_buttons(mock_edit, mock_send, db):
     _run(handle_forward(db=db, sender_phone="+919", user=user, payload=payload))
     db.commit()
 
-    # Thread created
+    # Thread created with correct state
     ts = db.query(WhatsAppThreadState).filter_by(sender_phone="+919").first()
     assert ts is not None
     assert ts.pending_text_count == 1
     assert "Bypoll results" in ts.pending_text_concat
-    assert ts.interactive_msg_id == "wamid.NEW1"
-
-    # Interactive buttons sent (with Submit + Cancel)
-    mock_edit.assert_called_once()
-    buttons = mock_edit.call_args.kwargs["buttons"]
-    assert buttons[0][0] == "submit_thread"
-    assert buttons[1][0] == "cancel_thread"
-
-    # No plain-text reply
+    # Prompt NOT sent inline (no interactive call)
+    mock_edit.assert_not_called()
     mock_send.assert_not_called()
 
 
@@ -174,8 +164,6 @@ def test_text_then_image_in_same_thread(mock_edit, db):
     ts = db.query(WhatsAppThreadState).filter_by(sender_phone="+919").first()
     assert ts.pending_text_count == 1
     assert ts.pending_media_count == 1
-    # edit_or_send_interactive called twice (initial send + edit)
-    assert mock_edit.call_count == 2
 
 
 @patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive",
@@ -194,8 +182,6 @@ def test_duplicate_text_silently_skipped(mock_edit, db):
     # Only one text entry counted
     ts = db.query(WhatsAppThreadState).filter_by(sender_phone="+919").first()
     assert ts.pending_text_count == 1
-    # Outbound called once for the first arrival; second was silent
-    assert mock_edit.call_count == 1
 
 
 @patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive",
@@ -242,9 +228,6 @@ def test_idle_thread_force_closed_before_new_forward(mock_edit, db):
     assert ts.pending_text_count == 1  # fresh start, NOT 3
     assert "old story body" not in ts.pending_text_concat
     assert "Fresh news" in ts.pending_text_concat
-    # Old interactive_msg_id discarded; sent fresh (existing_msg_id=None on edit_or_send)
-    call_kwargs = mock_edit.call_args.kwargs
-    assert call_kwargs["existing_msg_id"] is None
 
 
 @patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive",
@@ -270,12 +253,7 @@ def test_audio_forward_buffers_without_transcription(mock_edit, db):
 @patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive",
        new_callable=AsyncMock, return_value="wamid.G")
 def test_pdf_forward_is_rejected_with_explainer(mock_edit, mock_send_text, db):
-    """PDFs / DOCs are not supported on the WhatsApp self-service path —
-    the reviewer panel's media rails are designed for image/video/audio,
-    and the GCS upload path for documents is racy in prod (timeouts on
-    larger files). We send a polite explainer and bail out — no buffer
-    write, no [Submit][Cancel] interactive update.
-    """
+    """PDFs / DOCs are not supported on the WhatsApp self-service path."""
     from app.services.whatsapp.dispatcher import handle_forward
     user = _seed_user(db, lang="en")
     payload = {"type": "document", "payload": {"url": "https://gupshup/d1"}}
@@ -293,37 +271,4 @@ def test_pdf_forward_is_rejected_with_explainer(mock_edit, mock_send_text, db):
     assert mock_send_text.await_count == 1
     sent_body = mock_send_text.await_args.kwargs["body"]
     assert "PDF" in sent_body or "Files" in sent_body
-    # No [Submit][Cancel] update sent — the [Submit][Cancel] flow is for
-    # buffered content, and we didn't buffer anything.
     assert mock_edit.await_count == 0
-
-
-@patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive",
-       new_callable=AsyncMock, return_value="wamid.H")
-def test_first_forward_uses_thread_first_template(mock_edit, db):
-    """Single-message thread uses 'thread.first' (no count) — body checked."""
-    from app.services.whatsapp.dispatcher import handle_forward
-    user = _seed_user(db, lang="en")
-    text = "Bypoll results announced today across the state with BJP winning three seats convincingly today in a closely fought election held this week."
-    _run(handle_forward(db=db, sender_phone="+919", user=user,
-                         payload={"type": "text", "payload": {"text": text}}))
-    body = mock_edit.call_args.kwargs["body"]
-    assert "Got 1 message" in body
-
-
-@patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive",
-       new_callable=AsyncMock, return_value="wamid.I")
-def test_subsequent_forward_uses_thread_update_template(mock_edit, db):
-    """Multi-message thread renders the 'thread.update' template with counts."""
-    from app.services.whatsapp.dispatcher import handle_forward
-    user = _seed_user(db, lang="en")
-    text = "Bypoll results announced today across the state with BJP winning three seats convincingly in a closely fought election held this week across districts."
-    _run(handle_forward(db=db, sender_phone="+919", user=user,
-                         payload={"type": "text", "payload": {"text": text}}))
-    _run(handle_forward(db=db, sender_phone="+919", user=user,
-                         payload={"type": "image", "payload": {"url": "https://gupshup/x"}}))
-    db.commit()
-    body = mock_edit.call_args.kwargs["body"]
-    assert "Got 2 messages" in body
-    assert "1 text" in body
-    assert "1 media" in body

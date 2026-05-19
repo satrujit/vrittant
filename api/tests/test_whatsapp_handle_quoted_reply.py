@@ -118,8 +118,7 @@ def test_quoted_reply_opens_add_thread_and_processes_text(mock_edit, db):
     assert ts.thread_kind == "add"
     assert ts.target_story_id == "s_mine"
     assert "Adding more details" in ts.pending_text_concat
-    # Buttons sent (Save additions / Discard)
-    mock_edit.assert_called_once()
+    # Prompt is sent by background loop, not inline — verify data only
 
 
 @patch("app.services.whatsapp.dispatcher.outbound.edit_or_send_interactive",

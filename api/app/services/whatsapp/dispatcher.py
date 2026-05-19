@@ -7,13 +7,23 @@ Handlers are stubs in this commit (raise NotImplementedError) — they
 get filled in by Tasks 12-16. The dispatcher wiring is feature-flagged
 in webhooks_whatsapp.py so the legacy path remains fully functional
 until every handler ships and the flag is flipped.
+
+Prompt delivery is decoupled from webhook handling: the webhook buffers
+content and returns 200 immediately.  A background loop
+(`prompt_sender_loop`) wakes every POLL_INTERVAL seconds and sends the
+[Submit][Cancel] prompt for any thread whose `last_message_at` is older
+than SETTLE_SECONDS — meaning no new message has arrived and the burst
+is over. No asyncio.sleep inside request handlers, no held DB sessions,
+no worker-timeout risk.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from sqlalchemy import or_ as db_or
 from sqlalchemy.orm import Session
 
 from app.models.user import User
@@ -25,15 +35,13 @@ from app.services.whatsapp.classifier import classify, MessageKind
 
 log = logging.getLogger("whatsapp.dispatcher")
 
-# ── Debounce for forward bursts ──────────────────────────────────
-# When a reporter forwards multiple messages at once (text + images),
-# Gupshup delivers each as a separate webhook within seconds. Without
-# debounce, each webhook sends a separate [Submit][Cancel] prompt.
-# Instead, after buffering each message we sleep DEBOUNCE_SECONDS then
-# check the DB: if `last_message_at` hasn't moved, the burst is over
-# and we send one consolidated prompt. No in-memory state — the DB
-# timestamp is the single source of truth, safe across workers.
-DEBOUNCE_SECONDS = 15
+# ── Prompt-sender background loop settings ───────────────────────
+# SETTLE_SECONDS: how long after the last message before we consider
+# the burst over and send the prompt.
+SETTLE_SECONDS = 15
+# POLL_INTERVAL: how often the background loop wakes to check.
+# Worst-case latency = SETTLE_SECONDS + POLL_INTERVAL.
+POLL_INTERVAL = 5
 
 
 def resolve_user_for_phone(db: Session, sender_phone: str) -> Optional[User]:
@@ -472,59 +480,9 @@ async def handle_forward(*, db, sender_phone, user, payload):
     else:
         return  # not a forward we handle here
 
-    # 6. Commit the buffered content, then wait for the burst to settle.
-    #    Each webhook updates `last_message_at` via thread_state helpers.
-    #    After sleeping DEBOUNCE_SECONDS we re-read the DB: if
-    #    `last_message_at` is still the same value we saw before sleeping,
-    #    no new message arrived → send the consolidated prompt. Otherwise
-    #    a newer webhook will handle it. Pure DB check, no in-memory dict,
-    #    works across multiple gunicorn workers.
-    db.commit()
-
-    if DEBOUNCE_SECONDS > 0:
-        # Snapshot the timestamp AFTER commit so it includes our update.
-        ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
-        if ts is None:
-            return
-        snapshot_ts = ts.last_message_at
-        await asyncio.sleep(DEBOUNCE_SECONDS)
-        # Re-read from DB — another worker may have updated it.
-        db.expire_all()
-        ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
-        if ts is None:
-            return
-        # If last_message_at moved, a newer webhook arrived — let it handle the prompt.
-        if ts.last_message_at != snapshot_ts:
-            return
-    else:
-        ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
-        if ts is None:
-            return
-
-    # Burst is over — send the consolidated [Submit][Cancel] prompt.
-    total = (ts.pending_text_count or 0) + (ts.pending_media_count or 0)
-    if total == 0:
-        return
-    if total <= 1:
-        body = i18n.t("thread.first", lang)
-    else:
-        body = i18n.t(
-            "thread.update", lang,
-            count=total,
-            text=ts.pending_text_count,
-            media=ts.pending_media_count,
-        )
-    new_msg_id = await outbound.edit_or_send_interactive(
-        to=sender_phone,
-        existing_msg_id=ts.interactive_msg_id,
-        body=body,
-        buttons=[
-            ("submit_thread", i18n.t("btn.submit", lang)),
-            ("cancel_thread", i18n.t("btn.cancel", lang)),
-        ],
-    )
-    if new_msg_id:
-        ts.interactive_msg_id = new_msg_id
+    # 6. Commit and return immediately. The background prompt_sender_loop
+    #    will pick up this thread once last_message_at is >SETTLE_SECONDS
+    #    old, and send the consolidated [Submit][Cancel] prompt.
     db.commit()
 
 
@@ -538,3 +496,85 @@ async def handle_skip(*, db, sender_phone, user, kind):
         return  # silent — unknown types shouldn't talk back
     lang = i18n.resolve_lang(user)
     await outbound.send_text(to=sender_phone, body=i18n.t("err.sticker", lang))
+
+
+# ── Background prompt sender ────────────────────────────────────
+# Runs as an asyncio task started on app startup. Wakes every
+# POLL_INTERVAL seconds, finds threads where the burst has settled
+# (last_message_at older than SETTLE_SECONDS), and sends one
+# consolidated [Submit][Cancel] prompt per thread.
+
+async def _send_prompt_for_thread(ts: WhatsAppThreadState, db: Session) -> None:
+    """Send the [Submit][Cancel] interactive for one settled thread."""
+    user = resolve_user_for_phone(db, ts.sender_phone)
+    lang = i18n.resolve_lang(user)
+
+    total = (ts.pending_text_count or 0) + (ts.pending_media_count or 0)
+    if total == 0:
+        return
+    if total <= 1:
+        body = i18n.t("thread.first", lang)
+    else:
+        body = i18n.t(
+            "thread.update", lang,
+            count=total,
+            text=ts.pending_text_count,
+            media=ts.pending_media_count,
+        )
+    new_msg_id = await outbound.edit_or_send_interactive(
+        to=ts.sender_phone,
+        existing_msg_id=ts.interactive_msg_id,
+        body=body,
+        buttons=[
+            ("submit_thread", i18n.t("btn.submit", lang)),
+            ("cancel_thread", i18n.t("btn.cancel", lang)),
+        ],
+    )
+    if new_msg_id:
+        ts.interactive_msg_id = new_msg_id
+    ts.prompt_sent_at = datetime.now(timezone.utc)
+
+
+async def prompt_sender_loop() -> None:
+    """Infinite loop: poll DB for settled threads, send prompts."""
+    from app.database import SessionLocal
+
+    log.info("prompt_sender_loop started (settle=%ss, poll=%ss)",
+             SETTLE_SECONDS, POLL_INTERVAL)
+    while True:
+        try:
+            await asyncio.sleep(POLL_INTERVAL)
+            cutoff = datetime.now(timezone.utc) - timedelta(seconds=SETTLE_SECONDS)
+            db = SessionLocal()
+            try:
+                # Settled = last_message_at older than SETTLE_SECONDS.
+                # Only send if we haven't prompted for the current
+                # state: prompt_sent_at IS NULL (never prompted) or
+                # prompt_sent_at < last_message_at (new msg since prompt).
+                threads = (
+                    db.query(WhatsAppThreadState)
+                    .filter(
+                        WhatsAppThreadState.last_message_at < cutoff,
+                        db_or(
+                            WhatsAppThreadState.prompt_sent_at.is_(None),
+                            WhatsAppThreadState.prompt_sent_at < WhatsAppThreadState.last_message_at,
+                        ),
+                    )
+                    .all()
+                )
+                for ts in threads:
+                    try:
+                        await _send_prompt_for_thread(ts, db)
+                    except Exception:
+                        log.exception("prompt_sender: failed for %s", ts.sender_phone)
+                db.commit()
+            except Exception:
+                log.exception("prompt_sender: poll cycle failed")
+                db.rollback()
+            finally:
+                db.close()
+        except asyncio.CancelledError:
+            log.info("prompt_sender_loop cancelled")
+            break
+        except Exception:
+            log.exception("prompt_sender_loop: unexpected error, restarting in %ss", POLL_INTERVAL)

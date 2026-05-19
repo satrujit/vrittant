@@ -57,14 +57,14 @@ def open_or_get(
     row. To switch an existing row to the 'add' kind, the caller should
     `close()` first then `open_or_get(..., thread_kind='add', ...)`.
 
-    Handles the race where two workers both see no row and try to INSERT
-    simultaneously — the loser gets an IntegrityError, rolls back the
-    nested savepoint, and re-SELECTs.
+    Uses a savepoint so a concurrent-INSERT race doesn't roll back the
+    caller's outer transaction.
     """
     ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
     if ts is not None:
         return ts
     try:
+        nested = db.begin_nested()          # SAVEPOINT
         ts = WhatsAppThreadState(
             sender_phone=sender_phone,
             thread_kind=thread_kind,
@@ -74,7 +74,7 @@ def open_or_get(
         db.flush()
         return ts
     except IntegrityError:
-        db.rollback()
+        nested.rollback()                   # only rolls back the savepoint
         ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
         if ts is None:
             raise  # shouldn't happen — re-raise for visibility
