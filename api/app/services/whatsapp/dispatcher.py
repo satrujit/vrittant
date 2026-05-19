@@ -36,7 +36,6 @@ DEBOUNCE_SECONDS = 5
 
 # {sender_phone: monotonic_timestamp_of_last_message}
 _pending_prompts: dict[str, float] = {}
-_prompt_tasks: dict[str, asyncio.Task] = {}
 
 
 def resolve_user_for_phone(db: Session, sender_phone: str) -> Optional[User]:
@@ -475,83 +474,60 @@ async def handle_forward(*, db, sender_phone, user, payload):
     else:
         return  # not a forward we handle here
 
-    # 5. Commit buffered data immediately (text/media counts, dedup rows)
-    #    so concurrent webhooks see the latest state.
+    # 5. Send / edit the [Submit][Cancel] interactive.
+    #    Debounce: when a reporter forwards multiple messages at once,
+    #    Gupshup delivers each as a separate webhook within seconds.
+    #    We wait DEBOUNCE_SECONDS for the burst to settle before sending.
+    #    Thanks to the per-sender advisory lock, webhooks for the same
+    #    sender are serialized — so we sleep inline. If another webhook
+    #    arrives during the sleep, it'll queue behind the lock and this
+    #    handler will see the stale stamp and skip the prompt.
     ts = thread_state.open_or_get(db, sender_phone)
-    db.commit()
-
-    # 6. Debounce the [Submit][Cancel] interactive message.
-    #    When a reporter forwards 5 messages at once, Gupshup delivers
-    #    them as 5 separate webhooks within seconds. Rather than sending
-    #    5 prompts (one per webhook), we wait DEBOUNCE_SECONDS after the
-    #    last message, then send a single consolidated prompt.
-    _schedule_debounced_prompt(sender_phone, user, lang)
-
-
-def _schedule_debounced_prompt(sender_phone: str, user: Optional[User], lang: str):
-    """Schedule (or reschedule) the [Submit][Cancel] prompt after a burst
-    debounce window. Each new message resets the timer so only one prompt
-    is sent per forward-burst."""
     stamp = time.monotonic()
     _pending_prompts[sender_phone] = stamp
+    db.commit()
 
-    # Cancel any existing scheduled prompt for this sender
-    existing = _prompt_tasks.get(sender_phone)
-    if existing and not existing.done():
-        existing.cancel()
-
-    async def _send_after_delay():
+    if DEBOUNCE_SECONDS > 0:
         await asyncio.sleep(DEBOUNCE_SECONDS)
-        # Only fire if no newer message arrived during the sleep
-        if _pending_prompts.get(sender_phone) != stamp:
-            return
-        _pending_prompts.pop(sender_phone, None)
-        _prompt_tasks.pop(sender_phone, None)
-        try:
-            await _send_thread_prompt(sender_phone, user, lang)
-        except Exception:
-            log.exception("debounced prompt failed for %s", sender_phone)
 
-    _prompt_tasks[sender_phone] = asyncio.ensure_future(_send_after_delay())
+    # Another message arrived during our sleep — let that handler send
+    # the prompt with the updated counts instead.
+    if _pending_prompts.get(sender_phone) != stamp:
+        return
 
+    _pending_prompts.pop(sender_phone, None)
 
-async def _send_thread_prompt(sender_phone: str, user: Optional[User], lang: str):
-    """Read current thread state from DB and send the interactive prompt."""
-    from app.database import SessionLocal
-    db = SessionLocal()
-    try:
-        ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
-        if ts is None:
-            return
-        total = (ts.pending_text_count or 0) + (ts.pending_media_count or 0)
-        if total == 0:
-            return
-        if total <= 1:
-            body = i18n.t("thread.first", lang)
-        else:
-            body = i18n.t(
-                "thread.update", lang,
-                count=total,
-                text=ts.pending_text_count,
-                media=ts.pending_media_count,
-            )
-        new_msg_id = await outbound.edit_or_send_interactive(
-            to=sender_phone,
-            existing_msg_id=ts.interactive_msg_id,
-            body=body,
-            buttons=[
-                ("submit_thread", i18n.t("btn.submit", lang)),
-                ("cancel_thread", i18n.t("btn.cancel", lang)),
-            ],
+    # Re-read thread state to get the latest counts (other handlers
+    # may have incremented during our sleep).
+    db.expire_all()
+    ts = db.query(WhatsAppThreadState).filter_by(sender_phone=sender_phone).first()
+    if ts is None:
+        return
+    total = (ts.pending_text_count or 0) + (ts.pending_media_count or 0)
+    if total == 0:
+        return
+    if total <= 1:
+        body = i18n.t("thread.first", lang)
+    else:
+        body = i18n.t(
+            "thread.update", lang,
+            count=total,
+            text=ts.pending_text_count,
+            media=ts.pending_media_count,
         )
-        if new_msg_id:
-            ts.interactive_msg_id = new_msg_id
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
+    new_msg_id = await outbound.edit_or_send_interactive(
+        to=sender_phone,
+        existing_msg_id=ts.interactive_msg_id,
+        body=body,
+        buttons=[
+            ("submit_thread", i18n.t("btn.submit", lang)),
+            ("cancel_thread", i18n.t("btn.cancel", lang)),
+        ],
+    )
+    if new_msg_id:
+        ts.interactive_msg_id = new_msg_id
+    db.commit()
+
 
 
 async def handle_skip(*, db, sender_phone, user, kind):
