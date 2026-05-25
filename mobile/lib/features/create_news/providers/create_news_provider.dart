@@ -1055,30 +1055,55 @@ class NotepadNotifier extends Notifier<NotepadState> {
             transcribingParagraphIds: {...state.transcribingParagraphIds, targetParagraphId},
           );
         } else {
-          // New placeholder paragraph
-          targetParagraphId = DateTime.now().millisecondsSinceEpoch.toString();
-          final placeholder = Paragraph(
-            id: targetParagraphId,
-            text: '', // empty — UI shows "Transcribing..." overlay
-            createdAt: DateTime.now(),
-          );
+          // Reuse the empty cursor-insert paragraph that was created when
+          // recording started (addEmptyParagraph → setCursorInsert). In
+          // batch mode no live transcript is spliced into it, so it sits
+          // empty. Creating a second placeholder would leave the first one
+          // as a blank line above the transcript.
+          final cursorIdx = state.cursorInsertParagraphIndex;
+          final paras = state.paragraphs;
+          final existingEmpty = cursorIdx != null &&
+              cursorIdx >= 0 &&
+              cursorIdx < paras.length &&
+              paras[cursorIdx].text.isEmpty &&
+              !paras[cursorIdx].hasMedia;
 
-          final updated = List<Paragraph>.from(state.paragraphs);
-          final insertIdx = state.insertAtIndex;
-          if (insertIdx != null && insertIdx >= 0 && insertIdx <= updated.length) {
-            updated.insert(insertIdx, placeholder);
+          if (existingEmpty) {
+            // Reuse the already-present empty paragraph as the target.
+            targetParagraphId = paras[cursorIdx].id;
+            state = state.copyWith(
+              isProcessing: false,
+              clearInsertAtIndex: true,
+              clearCursorInsert: true,
+              clearEditingParagraphIndex: true,
+              transcribingParagraphIds: {...state.transcribingParagraphIds, targetParagraphId},
+            );
           } else {
-            updated.add(placeholder);
-          }
+            // No cursor-insert paragraph to reuse — create a new placeholder.
+            targetParagraphId = DateTime.now().millisecondsSinceEpoch.toString();
+            final placeholder = Paragraph(
+              id: targetParagraphId,
+              text: '', // empty — UI shows "Transcribing..." overlay
+              createdAt: DateTime.now(),
+            );
 
-          state = state.copyWith(
-            paragraphs: updated,
-            isProcessing: false,
-            clearInsertAtIndex: true,
-            clearCursorInsert: true,
-            clearEditingParagraphIndex: true,
-            transcribingParagraphIds: {...state.transcribingParagraphIds, targetParagraphId},
-          );
+            final updated = List<Paragraph>.from(paras);
+            final insertIdx = state.insertAtIndex;
+            if (insertIdx != null && insertIdx >= 0 && insertIdx <= updated.length) {
+              updated.insert(insertIdx, placeholder);
+            } else {
+              updated.add(placeholder);
+            }
+
+            state = state.copyWith(
+              paragraphs: updated,
+              isProcessing: false,
+              clearInsertAtIndex: true,
+              clearCursorInsert: true,
+              clearEditingParagraphIndex: true,
+              transcribingParagraphIds: {...state.transcribingParagraphIds, targetParagraphId},
+            );
+          }
         }
 
         // Silent-backup audio

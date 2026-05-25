@@ -87,7 +87,15 @@ VoidCallback attachTransliteration(TextEditingController controller) {
     final boundaryIndex = cursor - 1; // index of the space/period/etc
     final wordEnd = boundaryIndex; // exclusive
     final wordStart = _findWordStart(next, wordEnd);
-    if (wordStart >= wordEnd) return;
+    if (wordStart >= wordEnd) {
+      // No Latin word before the boundary — but if the user typed a
+      // period after Odia text, convert it to purna chheda (।).
+      if (lastChar == '.') {
+        _replacePeriodWithDanda(controller, boundaryIndex);
+        previousText = controller.text;
+      }
+      return;
+    }
     final word = next.substring(wordStart, wordEnd);
 
     // Fire the transliteration. We capture wordStart/wordEnd at this
@@ -103,6 +111,11 @@ VoidCallback attachTransliteration(TextEditingController controller) {
         translated = null;
       }
       if (translated == null || translated.isEmpty) {
+        // No transliteration, but still convert period → purna chheda
+        if (lastChar == '.') {
+          _replacePeriodWithDanda(controller, boundaryIndex);
+          previousText = controller.text;
+        }
         inFlightReplacement = false;
         return;
       }
@@ -113,6 +126,11 @@ VoidCallback attachTransliteration(TextEditingController controller) {
         original: word,
         replacement: translated,
       );
+      // After transliteration, convert the period to purna chheda (।)
+      // if that was the boundary character.
+      if (lastChar == '.') {
+        _replacePeriodWithDanda(controller, wordStart + translated.length);
+      }
       // previousText must be updated to the new text so our next
       // listener invocation doesn't re-detect the same change as a
       // user-typed event.
@@ -217,6 +235,23 @@ String? _justInsertedSegment(String prev, String next, int cursor) {
   if (!prev.startsWith(prefix)) return null;
   if (!prev.endsWith(suffix)) return null;
   return next.substring(insertStart, insertEnd);
+}
+
+/// Replace the period at [index] with Odia purna chheda (।).
+/// Preserves cursor position and clears IME composition.
+void _replacePeriodWithDanda(TextEditingController controller, int index) {
+  final text = controller.text;
+  if (index < 0 || index >= text.length) return;
+  if (text[index] != '.') return;
+  final newText = text.replaceRange(index, index + 1, '।');
+  final oldCursor = controller.selection.baseOffset;
+  controller.value = TextEditingValue(
+    text: newText,
+    selection: TextSelection.collapsed(
+      offset: oldCursor.clamp(0, newText.length),
+    ),
+    composing: TextRange.empty,
+  );
 }
 
 // Module-level state to keep `attachTransliteration` idempotent.
