@@ -121,6 +121,11 @@ _PRICING = {
         "output_per_m": Decimal("1.50"),
         "audio_input_per_m": Decimal("0.50"),
     },
+    "gemini-3.1-flash": {
+        "input_per_m": Decimal("0.25"),
+        "output_per_m": Decimal("1.50"),
+        "audio_input_per_m": Decimal("0.50"),
+    },
 }
 
 
@@ -410,7 +415,7 @@ async def chat_with_cached_system(
 # Default model for STT. Flash-Lite is 3x cheaper on audio input
 # ($0.30/M vs $1.00/M standard, $0.15/M vs $0.50/M batch).
 # Switched after confirming acceptable Odia transcription quality.
-_STT_DEFAULT_MODEL = "gemini-2.5-flash-lite"
+_STT_DEFAULT_MODEL = "gemini-3.1-flash-lite"
 
 # Mapping IETF / RFC 5646 codes used by the existing Sarvam path to
 # language names Gemini will recognise in the prompt. Falls back to

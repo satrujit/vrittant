@@ -293,7 +293,7 @@ _STT_STREAMING_MAX_TOKENS = 200
 # of chunks and the 5% retry budget keeps the bill well below all-
 # Flash. If we're already configured to use Flash (or higher) the
 # quality gate just drops bad chunks without retry.
-_STT_FALLBACK_MODEL = "gemini-2.5-flash"
+_STT_FALLBACK_MODEL = "gemini-3.1-flash"
 
 # Quality gate: max output tokens per second of audio. Real human
 # speech tops out around 5-6 syllables/second; even with dense Indic
