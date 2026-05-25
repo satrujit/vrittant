@@ -1615,31 +1615,28 @@ async def transcribe_batch(
         else:
             pcm_bytes = contents[44:]  # fallback: assume minimal header
 
-    # ── Server-side VAD compression ───────────────────────────────────
-    # Defence-in-depth: the client already trimmed silence, but run the
-    # same sub-window VAD to catch anything that slipped through (e.g.
-    # older app versions that don't have client-side trimming yet).
-    compressed, vad_stats = _compress_pcm_silence(pcm_bytes)
+    # ── Audio duration ───────────────────────────────────────────────
+    # The mobile client already runs client-side VAD trimming before
+    # uploading. Running server-side VAD again is destructive — the
+    # double-pass aggressively strips speech that was already at reduced
+    # amplitude due to DTLN denoising + OS noise suppression. We trust
+    # the client-side trim and send the full received audio to Gemini.
+    # The only gate we keep is a minimum-length check to reject truly
+    # empty recordings.
     raw_audio_seconds = len(pcm_bytes) / _PCM_BYTES_PER_SEC
-    compressed_seconds = len(compressed) / _PCM_BYTES_PER_SEC
 
     logger.info(
-        "STT: reporter=%s, raw=%.1fs, after_vad=%.1fs (%.0f%% retained), lang=%s",
-        user.id, raw_audio_seconds, compressed_seconds,
-        (compressed_seconds / raw_audio_seconds * 100) if raw_audio_seconds > 0 else 0,
-        language_code,
+        "STT: reporter=%s, audio=%.1fs, lang=%s",
+        user.id, raw_audio_seconds, language_code,
     )
 
-    # All silence — nothing to transcribe
-    if len(compressed) < _VAD_MIN_SPEECH_BYTES:
+    # Too short — nothing to transcribe (< 0.6s of audio)
+    if len(pcm_bytes) < _VAD_MIN_SPEECH_BYTES:
         return {"transcript": "", "status": "silence", "audio_seconds": 0.0}
 
-    # ── Gemini call (batch API with sync fallback) ──────────────────────
-    # Uses batchGenerateContent for 50% cost savings. If the batch job
-    # doesn't complete within 60 s, automatically cancels and falls back
-    # to synchronous generateContent at standard pricing.
-    wav = _wrap_pcm_as_wav(compressed)
-    audio_seconds = len(compressed) / _PCM_BYTES_PER_SEC
+    # ── Gemini call ──────────────────────────────────────────────────
+    wav = _wrap_pcm_as_wav(pcm_bytes)
+    audio_seconds = raw_audio_seconds
     primary_model = settings.STT_GEMINI_MODEL
     usage_sink: list[dict] = []
 
@@ -1674,10 +1671,19 @@ async def transcribe_batch(
     )
 
     flash_fallback_used = False
-    if primary_failure and primary_model != _STT_FALLBACK_MODEL:
+    # Escalate to the stronger model when: (a) quality gate failed, OR
+    # (b) the primary returned an empty transcript for non-trivial audio
+    # (≥ 2s). Flash-Lite sometimes returns 0 output tokens on audio that
+    # survived client-side VAD — that's a model failure, not silence.
+    needs_fallback = bool(primary_failure) or (
+        not (text or "").strip()
+        and audio_seconds >= 2.0
+    )
+    if needs_fallback and primary_model != _STT_FALLBACK_MODEL:
+        reason = primary_failure or "empty_transcript"
         logger.info(
-            "STT: quality fail on %s (%s) — retrying on %s (reporter=%s)",
-            primary_model, primary_failure, _STT_FALLBACK_MODEL, user.id,
+            "STT: escalating to %s (%s on %s, reporter=%s)",
+            _STT_FALLBACK_MODEL, reason, primary_model, user.id,
         )
         try:
             fallback_text = await gemini_client.stt(
@@ -1728,9 +1734,9 @@ async def transcribe_batch(
     total_input = sum(int(u.get("input_tokens") or 0) for u in usage_sink)
     total_output = sum(int(u.get("output_tokens") or 0) for u in usage_sink)
     logger.info(
-        "STT done (reporter=%s, audio=%.1fs, vad_trimmed=%.1fs, "
+        "STT done (reporter=%s, audio=%.1fs, "
         "flash_fallback=%s, cost=₹%.4f, in=%d, out=%d)",
-        user.id, raw_audio_seconds, compressed_seconds,
+        user.id, raw_audio_seconds,
         flash_fallback_used, total_cost, total_input, total_output,
     )
 
