@@ -1,0 +1,10 @@
+{% if source_name %}
+<div class="vw-source">
+  ସୂତ୍ର:
+  {% if source_url %}
+    <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer">{{ source_name }}</a>
+  {% else %}
+    {{ source_name }}
+  {% endif %}
+</div>
+{% endif %}

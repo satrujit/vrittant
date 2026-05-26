@@ -1,0 +1,7 @@
+<h2>{{ title_or or title_en }}</h2>
+<div style="font-weight:700;">{{ data.name }}</div>
+<div class="vw-sub">Flight #{{ data.flight_number }} · {{ data.date_utc[:10] }} {{ data.date_utc[11:16] }} UTC</div>
+{% if data.details or data.details_or %}
+  <p style="margin:8px 0 0; font-size:13px;">{{ data.details_or or data.details }}</p>
+{% endif %}
+{% include "_source.html" %}

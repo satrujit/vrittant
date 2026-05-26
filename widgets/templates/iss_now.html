@@ -1,0 +1,13 @@
+<h2>{{ title_or or title_en }}</h2>
+<div style="display:flex; gap:16px; margin-top:6px;">
+  <div>
+    <div class="vw-sub">Latitude</div>
+    <div style="font-size:18px; font-weight:700;">{{ data.lat | abs }}° {{ data.lat_dir }}</div>
+  </div>
+  <div>
+    <div class="vw-sub">Longitude</div>
+    <div style="font-size:18px; font-weight:700;">{{ data.lon | abs }}° {{ data.lon_dir }}</div>
+  </div>
+</div>
+<div class="vw-sub" style="margin-top:6px;">Captured at fetch time · ~7.66 km/s</div>
+{% include "_source.html" %}

@@ -1,0 +1,11 @@
+<h2>{{ title_or or title_en }}</h2>
+{% if data.image_url %}
+  <img src="{{ data.image_url }}" alt="" loading="lazy"
+       style="width:100%; height:auto; max-height:200px; object-fit:cover; border-radius:6px; margin-bottom:8px;" />
+{% endif %}
+<div style="font-weight:600; margin-bottom:4px;">{{ data.title_or or data.title }}</div>
+<div class="vw-sub">{{ data.explanation_or or data.explanation }}</div>
+{% if data.copyright %}
+  <div class="vw-sub" style="margin-top:6px; font-size:11px;">© {{ data.copyright }}</div>
+{% endif %}
+{% include "_source.html" %}

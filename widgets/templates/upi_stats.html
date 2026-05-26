@@ -1,0 +1,40 @@
+<h2>{{ title_or or title_en }}</h2>
+{% if data.rows %}
+  {% set latest = data.rows[0] %}
+  <div class="vw-sub">{{ latest.label_or }} ସର୍ବଶେଷ</div>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;">
+    <div style="padding:8px; background:#f3f4f6; border-radius:6px;">
+      <div style="font-size:11px; color:#6b7280;">ଦୈନିକ ଗଡ କାରବାର</div>
+      <div style="font-size:16px; font-weight:600; color:#FA6C38;">
+        {{ '{:,.1f}'.format(latest.daily_volume_mn) }} ମିଲିୟନ୍
+      </div>
+    </div>
+    <div style="padding:8px; background:#f3f4f6; border-radius:6px;">
+      <div style="font-size:11px; color:#6b7280;">ଦୈନିକ ଗଡ ମୂଲ୍ୟ</div>
+      <div style="font-size:16px; font-weight:600; color:#FA6C38;">
+        ₹{{ '{:,.0f}'.format(latest.daily_value_cr) }} କୋଟି
+      </div>
+    </div>
+  </div>
+  <table class="vw-table" style="margin-top:8px;">
+    <thead>
+      <tr>
+        <th></th>
+        <th class="num" style="font-size:11px; color:#6b7280;">ସଂଖ୍ୟା (Mn)</th>
+        <th class="num" style="font-size:11px; color:#6b7280;">ମୂଲ୍ୟ (ଲକ୍ଷ କୋଟି)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in data.rows %}
+      <tr>
+        <td>{{ r.label_or }}</td>
+        <td class="num">{{ '{:,.0f}'.format(r.volume_mn) }}</td>
+        <td class="num">₹{{ '{:,.2f}'.format(r.value_lakh_cr) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="vw-sub">ତଥ୍ୟ ଅନୁପଲବ୍ଧ</div>
+{% endif %}
+{% include "_source.html" %}

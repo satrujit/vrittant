@@ -1,0 +1,21 @@
+<h2>{{ title_or or title_en }}</h2>
+{% if data.rows %}
+<table class="vw-table">
+  <tbody>
+    {% for r in data.rows %}
+    <tr>
+      <td>
+        <div><strong>{{ r.home_or or r.home }}</strong> ବନାମ <strong>{{ r.away_or or r.away }}</strong></div>
+        {% if r.venue %}<div class="vw-sub">{{ r.venue_or or r.venue }}</div>{% endif %}
+      </td>
+      <td class="num" style="white-space:nowrap;">
+        {{ r.date }}{% if r.time %}<br><span class="vw-sub">{{ r.time }} UTC</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="vw-sub">କୌଣସି ଆଗାମୀ ମ୍ୟାଚ୍ ନାହିଁ।</div>
+{% endif %}
+{% include "_source.html" %}

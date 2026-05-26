@@ -1,0 +1,11 @@
+<h2>{{ title_or or title_en }}</h2>
+<div class="vw-sub">{{ data.date }}</div>
+<div style="margin-top:8px; display:grid; grid-template-columns:repeat(2, 1fr); gap:6px 12px;">
+  {% for r in data.rates %}
+  <div class="vw-row">
+    <span>{{ r.code }}</span>
+    <span class="vw-num">₹{{ r.inr }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% include "_source.html" %}
