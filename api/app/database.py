@@ -28,30 +28,20 @@ if not settings.DATABASE_URL.startswith("sqlite"):
         "keepalives_interval": 10,
         "keepalives_count": 3,
     })
-    # Pool sizing math:
-    # - Cloud SQL tier db-f1-micro caps `max_connections` at 25.
-    # - Cloud Run service is min=1, max=3 instances.
-    # - Each instance needs to fit comfortably; reserve a couple slots for
-    #   admin/migration/cloud-sql-proxy idle connections.
-    # - 5 persistent + 3 overflow = 8 max per instance * 3 instances = 24
-    #   which fits 25 with one slot of headroom.
-    # If we ever bump the Cloud SQL tier, raise these in lockstep — the
-    # ratio matters: pool too small = request queueing, pool too big =
-    # Cloud SQL "too many connections" failures.
+    # Pool sizing math (Hetzner self-hosted PostgreSQL):
+    # - Local PostgreSQL max_connections = 200 (tuned in docker-compose).
+    # - Gunicorn runs 4 workers (GUNICORN_WORKERS env, default 4).
+    # - Each worker: 10 persistent + 10 overflow = 20 max connections.
+    # - 4 workers × 20 = 80 max, well within 200 limit.
+    # - Reserve ~20 slots for cron jobs, backups, manual psql, pg_stat.
     pool_kwargs = {
         "poolclass": QueuePool,
-        "pool_size": 5,
-        "max_overflow": 3,
+        "pool_size": 10,
+        "max_overflow": 10,
         "pool_timeout": 30,       # wait 30s for a connection before erroring
-        # Cloud SQL kills idle TCP at ~5 min. Recycling at exactly 300 races
-        # the kill (the connection can die between pre_ping and the real
-        # query). 240 keeps us comfortably under the kill window.
-        "pool_recycle": 240,
-        "pool_pre_ping": True,    # test connections before use (handles Cloud SQL restarts)
-        # LIFO so the most-recently-used connection is reused — older idle
-        # connections get a chance to age out and be recycled rather than
-        # being kept perpetually warm just below the kill threshold.
-        "pool_use_lifo": True,
+        "pool_recycle": 1800,     # recycle idle connections every 30 min
+        "pool_pre_ping": True,    # test connections before use
+        "pool_use_lifo": True,    # reuse most-recent connection first
     }
 
 engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, **pool_kwargs)
