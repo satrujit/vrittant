@@ -17,12 +17,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync code to server
+      - name: Sync API code to server
         uses: burnett01/rsync-deployments@6.0.0
         with:
           switches: -avz --delete --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' --exclude='node_modules' --exclude='mobile' --exclude='reviewer-panel'
           path: api/
           remote_path: /opt/vrittant/api/
+          remote_host: 162.55.209.90
+          remote_user: root
+          remote_key: ${{ secrets.HETZNER_SSH_KEY }}
+
+      - name: Sync widgets code to server
+        uses: burnett01/rsync-deployments@6.0.0
+        with:
+          switches: -avz --delete --exclude='__pycache__' --exclude='*.pyc'
+          path: widgets/
+          remote_path: /opt/vrittant/widgets/
           remote_host: 162.55.209.90
           remote_user: root
           remote_key: ${{ secrets.HETZNER_SSH_KEY }}
@@ -38,6 +48,7 @@ jobs:
           script: |
             cd /opt/vrittant
             docker compose build api
+            docker compose --profile jobs build widget-fetcher
             docker compose up -d api
             sleep 5
             docker compose ps
