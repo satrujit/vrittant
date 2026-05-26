@@ -402,6 +402,10 @@ class AppStrings {
   String get transcribingYourRecording => isOdia
       ? 'ଆପଣଙ୍କ ରେକର୍ଡିଂ ଲିପିବଦ୍ଧ ହେଉଛି...'
       : 'Transcribing your recording...';
+  /// Hint shown during recording to set expectations for batch STT.
+  String get textAppearsAfterStop => isOdia
+      ? 'ରେକର୍ଡିଂ ବନ୍ଦ ପରେ ଲେଖା ଦେଖାଯିବ'
+      : 'Text will appear after you stop recording';
   String get editParagraph => isOdia ? 'ସମ୍ପାଦନ କରନ୍ତୁ' : 'Edit';
   String get insertHere => isOdia ? 'ଏଠି ଯୋଗ କରନ୍ତୁ' : 'Insert here';
   String get recordVoice => isOdia ? 'ସ୍ୱର ରେକର୍ଡ କରନ୍ତୁ' : 'Record voice';

@@ -61,7 +61,7 @@ def test_gemini_stt_builds_systeminstruction_payload(monkeypatch):
 
     assert out == "hello world"
     # URL contains the model
-    assert "gemini-2.5-flash" in captured["url"]
+    assert "gemini-3.1-flash-lite" in captured["url"]
     body = captured["json"]
 
     # The directive is in systemInstruction (not in user content).

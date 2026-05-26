@@ -570,7 +570,10 @@ async def prompt_sender_loop() -> None:
                 db.commit()
             except Exception:
                 log.exception("prompt_sender: poll cycle failed")
-                db.rollback()
+                try:
+                    db.rollback()
+                except Exception:
+                    pass  # connection already dead — rollback is moot
             finally:
                 db.close()
         except asyncio.CancelledError:

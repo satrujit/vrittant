@@ -742,6 +742,7 @@ class _NotepadScreenState extends ConsumerState<NotepadScreen>
                                 isAudioSaveMode: state.isAudioSaveMode,
                                 isNoisy: state.isNoisyEnvironment,
                                 moveCloserLabel: s.moveCloserHint,
+                                textAppearsHint: s.textAppearsAfterStop,
                                 speakerFilterActive: state.speakerFilterActive,
                                 isSpeakerVerified: state.isSpeakerVerified,
                                 onStop: () {
@@ -3538,6 +3539,8 @@ class _RecordingBottomBar extends StatefulWidget {
   final bool isSpeakerVerified;
   final VoidCallback onStop;
 
+  final String textAppearsHint;
+
   const _RecordingBottomBar({
     required this.formattedDuration,
     this.timeLeftLabel,
@@ -3548,6 +3551,7 @@ class _RecordingBottomBar extends StatefulWidget {
     this.speakerFilterActive = false,
     this.isSpeakerVerified = true,
     required this.onStop,
+    this.textAppearsHint = 'Text will appear after you stop recording',
   });
 
   @override
@@ -3806,6 +3810,19 @@ class _RecordingBottomBarState extends State<_RecordingBottomBar>
                     ),
                   ),
                 ],
+              ),
+              // Hint: text appears after stop
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  widget.textAppearsHint,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w400,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ],
           ),

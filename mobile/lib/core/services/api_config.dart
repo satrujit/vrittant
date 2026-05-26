@@ -9,8 +9,8 @@ class ApiConfig {
   );
 
   static const String _devUrl = 'http://192.168.1.7:8000';
-  static const String _uatUrl = 'https://vrittant-api-uat-pgvufpchiq-el.a.run.app';
-  static const String _prodUrl = 'https://vrittant-api-829303072442.asia-south1.run.app';
+  static const String _uatUrl = 'https://uat-api.vrittant.in';
+  static const String _prodUrl = 'https://api.vrittant.in';
 
   static String get baseUrl {
     switch (_env) {

@@ -9,40 +9,39 @@ jobs:
   tests:
     uses: ./.github/workflows/ci.yml
 
-  # ─── Deploy API to Cloud Run (Production) ───
+  # ─── Deploy API to Hetzner (Production) ───
   deploy-api:
-    name: Deploy API → Production
+    name: Deploy API → Hetzner Production
     needs: tests
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v4
 
-      - id: auth
-        uses: google-github-actions/auth@v2
+      - name: Sync code to server
+        uses: burnett01/rsync-deployments@6.0.0
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          switches: -avz --delete --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' --exclude='node_modules' --exclude='mobile' --exclude='reviewer-panel'
+          path: api/
+          remote_path: /opt/vrittant/api/
+          remote_host: 162.55.209.90
+          remote_user: root
+          remote_key: ${{ secrets.HETZNER_SSH_KEY }}
 
-      - uses: google-github-actions/setup-gcloud@v2
-
-      - name: Deploy to Cloud Run
-        working-directory: api
-        run: |
-          gcloud run deploy vrittant-api \
-            --source . \
-            --region asia-south1 \
-            --project vrittant-f5ef2 \
-            --allow-unauthenticated \
-            --no-cpu-throttling \
-            --min-instances=1 \
-            --max-instances=3 \
-            --memory=1Gi \
-            --concurrency=80 \
-            --add-cloudsql-instances=vrittant-f5ef2:asia-south1:vrittant-db \
-            --set-secrets="DATABASE_URL=DATABASE_URL:latest,SECRET_KEY=SECRET_KEY:latest,SARVAM_API_KEY=SARVAM_API_KEY:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,MSG91_AUTHKEY=MSG91_AUTHKEY:latest,GUPSHUP_API_KEY=GUPSHUP_API_KEY:latest,GUPSHUP_WEBHOOK_SECRET=GUPSHUP_WEBHOOK_SECRET:latest,TWILIO_ACCOUNT_SID=TWILIO_ACCOUNT_SID:latest,TWILIO_AUTH_TOKEN=TWILIO_AUTH_TOKEN:latest,TWILIO_VERIFY_SERVICE_SID=TWILIO_VERIFY_SERVICE_SID:latest,INTERNAL_TOKEN=INTERNAL_TOKEN:latest" \
-            --update-env-vars="^||^ENV=prod||FIREBASE_PROJECT_ID=vrittant-f5ef2||STORAGE_BACKEND=gcs||GCS_BUCKET=vrittant-uploads||CORS_ORIGINS=https://vrittant.in,https://vrittant-f5ef2.web.app||SARVAM_BASE_URL=https://api.sarvam.ai||MSG91_WIDGET_ID=${{ secrets.MSG91_WIDGET_ID }}||MSG91_TOKEN_AUTH=${{ secrets.MSG91_TOKEN_AUTH }}||OTP_PROVIDER=twilio||WHATSAPP_SELF_SERVICE_ENABLED=true"
+      - name: Build and restart
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 162.55.209.90
+          username: root
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          script_stop: true
+          command_timeout: 10m
+          script: |
+            cd /opt/vrittant
+            docker compose build api
+            docker compose up -d api
+            sleep 5
+            docker compose ps
+            curl -sf http://127.0.0.1:8080/version/min-supported > /dev/null && echo "✅ API healthy" || (echo "❌ API unhealthy" && docker compose logs api --tail 20 && exit 1)
 
   # ─── Deploy Frontend to Firebase (Production) ───
   deploy-panel:
