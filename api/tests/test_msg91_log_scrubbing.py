@@ -1,4 +1,4 @@
-"""Security: MSG91 service must NOT print/log secrets, OTPs, or full phone numbers."""
+"""Security: MSG91 widget verify must NOT leak secrets to logs."""
 
 import asyncio
 import logging
@@ -12,69 +12,27 @@ from app.services import msg91
 
 @pytest.fixture(autouse=True)
 def _set_msg91_keys(monkeypatch):
-    """Inject fake credentials so the service has values to potentially leak."""
     monkeypatch.setattr(msg91.settings, "MSG91_AUTHKEY", "SECRET-AUTHKEY-12345")
     monkeypatch.setattr(msg91.settings, "MSG91_TOKEN_AUTH", "SECRET-TOKENAUTH-67890")
     monkeypatch.setattr(msg91.settings, "MSG91_WIDGET_ID", "widget-1")
-    monkeypatch.setattr(msg91.settings, "MSG91_TEMPLATE_ID", "tpl-test-123")
 
 
 @respx.mock
-def test_send_otp_does_not_leak_secrets_to_logs(caplog, capsys):
-    """Logging must not include authkey/tokenAuth/phone."""
+def test_verify_access_token_does_not_leak_secrets(caplog, capsys):
+    """verify_access_token must not log authkey or tokenAuth."""
     caplog.set_level(logging.DEBUG)
 
-    # SendOTP API uses POST with JSON body
-    respx.post("https://control.msg91.com/api/v5/otp").mock(
+    respx.post("https://api.msg91.com/api/v5/widget/verifyAccessToken").mock(
         return_value=Response(
             200,
-            json={
-                "type": "success",
-                "request_id": "req-123",
-            },
+            json={"type": "success", "message": "verified"},
         )
     )
 
-    asyncio.run(msg91.send_otp("+919999999999"))
+    asyncio.run(msg91.verify_access_token("test-access-token"))
 
     captured = capsys.readouterr()
     log_text = caplog.text + captured.out + captured.err
 
-    forbidden = [
-        "SECRET-AUTHKEY-12345",
-        "SECRET-TOKENAUTH-67890",
-        "919999999999",
-        "+919999999999",
-    ]
-    for needle in forbidden:
-        assert needle not in log_text, (
-            f"Sensitive value {needle!r} appeared in logs/stdout: {log_text!r}"
-        )
-
-
-@respx.mock
-def test_verify_otp_does_not_leak_otp_to_logs(caplog, capsys):
-    """On verify failures MSG91 echoes the submitted OTP back in the message.
-    That must never reach logs."""
-    caplog.set_level(logging.DEBUG)
-
-    # Verify uses GET with query params — authkey is in header only
-    respx.get("https://control.msg91.com/api/v5/otp/verify").mock(
-        return_value=Response(
-            400,
-            json={"type": "error", "message": "OTP 123456 is incorrect"},
-        )
-    )
-
-    try:
-        asyncio.run(msg91.verify_otp("+919999999999", "123456", req_id="r1"))
-    except Exception:
-        pass  # MSG91 error is expected — we only care about what got logged
-
-    captured = capsys.readouterr()
-    log_text = caplog.text + captured.out + captured.err
-
-    assert "123456" not in log_text, f"OTP leaked into logs: {log_text!r}"
     assert "SECRET-AUTHKEY-12345" not in log_text
     assert "SECRET-TOKENAUTH-67890" not in log_text
-    assert "919999999999" not in log_text

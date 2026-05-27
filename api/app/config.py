@@ -83,12 +83,8 @@ class Settings(BaseSettings):
     # spend per call — turn off once you've decided.
     STT_DUAL_LOG: bool = False
 
-    # OTP provider — "twilio" (default) or "msg91". Switch via env without code changes.
-    OTP_PROVIDER: str = "twilio"
-
-    # MSG91 OTP (kept for web widget login — verifyAccessToken — and as a SMS fallback)
+    # MSG91 Widget (web login only — verifyAccessToken)
     MSG91_AUTHKEY: str = ""
-    MSG91_TEMPLATE_ID: str = ""
     MSG91_WIDGET_ID: str = ""
     MSG91_TOKEN_AUTH: str = ""
 
