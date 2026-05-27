@@ -30,9 +30,9 @@ router = APIRouter()
 
 # ── Test bypass ────────────────────────────────────────────────────────────
 # In dev and UAT we accept a hardcoded OTP and skip the paid SMS provider
-# entirely. This is so QA / emulator runs don't burn Twilio (~₹14/OTP) credits
-# every time someone taps "Send OTP". Production (`ENV=production`) ignores
-# this branch — real OTP, real spend.
+# entirely. This is so QA / emulator runs don't burn MSG91 credits every time
+# someone taps "Send OTP". Production (`ENV=production`) ignores this branch
+# — real OTP, real spend.
 #
 # Codes:
 #   dev:  000000  (existing)
@@ -99,7 +99,7 @@ def _ensure_reviewer_user(db: Session) -> User:
 
 
 # ── OTP rate limit ─────────────────────────────────────────────────────────
-# Each provider call costs real money (~₹4 Twilio Verify). We cap per-phone send frequency so a buggy client, double-tap,
+# Each provider call costs real money (~₹0.25 MSG91). We cap per-phone send frequency so a buggy client, double-tap,
 # or attacker can't burn the budget. Limits chosen to be invisible to a real
 # reporter typing in their phone but visible to anything looping.
 #
@@ -107,8 +107,8 @@ def _ensure_reviewer_user(db: Session) -> User:
 # - Max sends per hour:    5   (covers genuine OTP-not-arrived retries with
 #                                 voice/SMS while still capping daily damage)
 #
-# Rationale for using DB rather than in-memory: Cloud Run autoscales; an
-# in-memory dict on each instance would let a user send N×instance_count
+# Rationale for using DB rather than in-memory: multiple containers may
+# run behind the load balancer; an in-memory dict would let a user send N×instance_count
 # OTPs before any single instance noticed.
 _OTP_MIN_GAP_SECONDS = 60
 _OTP_MAX_PER_HOUR = 5
@@ -176,17 +176,25 @@ def _record_otp_send(db: Session, phone: str) -> None:
 
 @router.post("/check-phone")
 def check_phone(body: OTPRequest, db: Session = Depends(get_db)):
-    """Check if a phone number is registered. Returns widget config on success."""
+    """Check if a phone number is registered.
+
+    Security: returns 200 for ALL inputs — registered, unregistered, and
+    deactivated phones all get the same shape response. The ``registered``
+    boolean tells the client whether to proceed to the OTP step; an
+    attacker learns nothing beyond what they already know (the phone
+    number they supplied). Rate-limited identically to /request-otp to
+    prevent brute-force enumeration.
+    """
+    _enforce_otp_rate_limit(db, body.phone)
+
     # Store-reviewer bypass — provision on first contact and report registered.
     if _is_reviewer_bypass(body.phone):
         _ensure_reviewer_user(db)
         return {"registered": True}
 
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
+    if not user or not user.is_active:
+        return {"registered": False}
     return {"registered": True}
 
 
@@ -194,7 +202,7 @@ def check_phone(body: OTPRequest, db: Session = Depends(get_db)):
 
 @router.post("/request-otp")
 async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
-    """Send OTP for mobile clients. Provider chosen via OTP_PROVIDER env."""
+    """Send OTP for mobile clients via MSG91 SendOTP."""
     # Store-reviewer bypass — must run BEFORE the user lookup so the reviewer
     # account doesn't need to pre-exist. See _is_reviewer_bypass for the
     # phone/expiry constants.
@@ -203,10 +211,13 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
         return {"message": "OTP sent (reviewer)", "phone": body.phone, "req_id": "reviewer"}
 
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
+    if not user or not user.is_active:
+        # Generic error — don't reveal whether the phone is unregistered vs
+        # deactivated. Matches the same 404 shape the client already handles.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Phone number not registered",
+        )
 
     # Test-env short-circuit: skip the paid provider entirely. Verify-otp
     # accepts the corresponding hardcoded code below.
@@ -246,10 +257,11 @@ async def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
         return Token(access_token=token)
 
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="OTP verification failed",
+        )
 
     # Test-env bypass — see _TEST_OTP_CODES at top of file.
     if _is_test_env() and body.otp == _expected_test_otp():
@@ -276,17 +288,17 @@ async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
         return {"message": "OTP resent (reviewer)", "phone": body.phone}
 
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Phone number not registered",
+        )
 
     # Test-env short-circuit (same as request-otp).
     if _is_test_env():
         return {"message": "OTP resent (test)", "phone": body.phone}
 
-    # Resend is a paid send too — same caps apply. (For Twilio Verify the
-    # underlying call is literally another `Verifications` POST which still bills.)
+    # Resend is a paid send too — same caps apply.
     _enforce_otp_rate_limit(db, body.phone)
 
     import logging as _logging

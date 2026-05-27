@@ -82,18 +82,19 @@ def test_bypass_inert_after_expiry(client, db):
             return expired
 
     with patch.object(auth_router, "date", _FakeDate):
-        # No reviewer user exists → falls through to 404 from normal lookup.
+        # No reviewer user exists → falls through to generic 401 (unified
+        # error response — no phone enumeration leak).
         resp = client.post(
             "/auth/verify-otp",
             json={"phone": REVIEWER_PHONE, "otp": REVIEWER_OTP},
         )
-        assert resp.status_code == 404, resp.text
+        assert resp.status_code == 401, resp.text
 
 
 def test_non_reviewer_phone_unaffected_by_bypass(client, db):
-    """Other phones still hit the normal not-registered path."""
+    """Other phones still hit the generic unauthorized path."""
     resp = client.post(
         "/auth/verify-otp",
         json={"phone": "+919999999999", "otp": REVIEWER_OTP},
     )
-    assert resp.status_code == 404, resp.text
+    assert resp.status_code == 401, resp.text

@@ -83,17 +83,9 @@ class Settings(BaseSettings):
     # spend per call — turn off once you've decided.
     STT_DUAL_LOG: bool = False
 
-    # OTP provider — "msg91" or "twilio" (default)
-    OTP_PROVIDER: str = "twilio"
-
     # MSG91 SendOTP
     MSG91_AUTHKEY: str = ""
     MSG91_TEMPLATE_ID: str = ""
-
-    # Twilio Verify (fallback)
-    TWILIO_ACCOUNT_SID: str = ""
-    TWILIO_AUTH_TOKEN: str = ""
-    TWILIO_VERIFY_SERVICE_SID: str = ""
 
     # Gupshup webhook HMAC-SHA256 shared secret. When set, every inbound
     # /webhooks/whatsapp/gupshup request must carry a matching signature

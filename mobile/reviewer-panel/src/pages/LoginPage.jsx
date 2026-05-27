@@ -147,17 +147,19 @@ function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await checkPhone(phone);
+      const check = await checkPhone(phone);
+      if (!check.registered) {
+        setError('This phone number is not registered. Contact admin for access.');
+        return;
+      }
       const data = await requestOtp(phone);
       setReqId(data.req_id || '');
       setStep('otp');
     } catch (err) {
       console.error('Send OTP error:', err);
       const msg = typeof err === 'string' ? err : err?.message || '';
-      if (msg.includes('404') || msg.includes('not registered')) {
-        setError('This phone number is not registered. Contact admin for access.');
-      } else if (msg.includes('403') || msg.includes('deactivated')) {
-        setError('Your account has been deactivated. Contact admin.');
+      if (msg.includes('429')) {
+        setError('Too many attempts. Please wait before trying again.');
       } else {
         setError(msg || 'Failed to send OTP. Please try again.');
       }
@@ -177,12 +179,10 @@ function LoginPage() {
     } catch (err) {
       console.error('OTP verify error:', err);
       const msg = typeof err === 'string' ? err : err?.message || '';
-      if (msg.includes('404') || msg.includes('not registered')) {
-        setError('Phone number not registered. Contact admin for access.');
-      } else if (msg.includes('403') || msg.includes('deactivated')) {
-        setError('Account is deactivated. Contact admin.');
-      } else {
+      if (msg.includes('401')) {
         setError('Invalid OTP code. Please check and try again.');
+      } else {
+        setError(msg || 'OTP verification failed. Please try again.');
       }
     } finally {
       setLoading(false);
