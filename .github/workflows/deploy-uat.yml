@@ -47,12 +47,26 @@ jobs:
           command_timeout: 10m
           script: |
             cd /opt/vrittant
+
+            # Build new images (doesn't touch running containers)
             docker compose build api-uat
             docker compose --profile jobs build widget-fetcher
+
+            # Graceful deploy: finish in-flight requests before stopping
+            OLD_CONTAINER=$(docker compose ps -q api-uat)
+            if [ -n "$OLD_CONTAINER" ]; then
+              echo "Gracefully stopping old container..."
+              docker compose stop -t 30 api-uat
+            fi
+
+            # Start new container
             docker compose up -d api-uat
             sleep 5
             docker compose ps
             curl -sf http://127.0.0.1:8081/version/min-supported > /dev/null && echo "✅ UAT API healthy" || (echo "❌ UAT API unhealthy" && docker compose logs api-uat --tail 20 && exit 1)
+
+            # Clean up old image layers
+            docker image prune -f > /dev/null 2>&1
 
   # ─── Deploy Frontend to Firebase (UAT) ───
   deploy-panel:
