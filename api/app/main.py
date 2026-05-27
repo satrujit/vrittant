@@ -8,6 +8,22 @@ from sqlalchemy import text
 
 from .config import settings
 
+# ---------------------------------------------------------------------------
+# Sentry — error tracking + performance monitoring
+# ---------------------------------------------------------------------------
+# Empty DSN = no-op (dev/local/UAT without a DSN configured).
+# In production, set SENTRY_DSN in the .env file.
+if settings.SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.ENV,
+        traces_sample_rate=0.1,        # 10% of requests get performance traces
+        profiles_sample_rate=0.1,      # profile 10% of traced requests
+        send_default_pii=False,        # don't send PII (phone numbers, etc.)
+        enable_tracing=True,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Logging level

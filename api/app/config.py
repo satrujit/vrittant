@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     # log line warns loudly when verification is off in prod.
     GUPSHUP_WEBHOOK_SECRET: str = ""
 
+    # Sentry error tracking — empty DSN disables Sentry cleanly (dev/local).
+    # Set to the full DSN URL in production: https://<key>@o<org>.ingest.sentry.io/<project>
+    SENTRY_DSN: str = ""
+
     # File storage — "local" or "gcs"
     STORAGE_BACKEND: str = "local"
     GCS_BUCKET: str = ""
