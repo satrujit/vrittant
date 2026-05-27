@@ -3,7 +3,7 @@ from app.models.org_config import (
     OrgConfig, DEFAULT_CATEGORIES, DEFAULT_PUBLICATION_TYPES,
     DEFAULT_PAGE_SUGGESTIONS, DEFAULT_PRIORITY_LEVELS,
 )
-from jose import jwt
+import jwt
 from app.config import settings
 
 

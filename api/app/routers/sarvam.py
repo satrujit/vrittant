@@ -32,7 +32,8 @@ try:
     from websockets.legacy.client import connect as ws_connect
 except ImportError:
     from websockets import connect as ws_connect
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError
 from pydantic import BaseModel, Field
 
 from ..config import settings

@@ -385,8 +385,44 @@ def _scrape_sync(url: str) -> str | None:
     return None
 
 
+def _is_public_url(url: str) -> bool:
+    """Reject URLs pointing at private/loopback/link-local IPs (SSRF guard)."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+    if parsed.scheme not in ("https", "http"):
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False
+    try:
+        addrs = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    for _family, _t, _p, _c, sockaddr in addrs:
+        try:
+            ip = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            return False
+        if (
+            ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_multicast or ip.is_unspecified or ip.is_reserved
+        ):
+            return False
+    return True
+
+
 async def fetch_article_content(url: str) -> str | None:
     """Scrape article content — tries scrapling first, then plain httpx+trafilatura."""
+    if not _is_public_url(url):
+        logger.warning("SSRF blocked: refusing to fetch non-public URL %s", url)
+        return None
+
     loop = asyncio.get_event_loop()
 
     # Try scrapling (handles anti-bot)
