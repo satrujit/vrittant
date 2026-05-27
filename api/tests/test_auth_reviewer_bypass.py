@@ -2,12 +2,12 @@
 
 App-store reviewers can't receive Indian SMS, so we hardcode a single phone
 (+917362837632) + OTP (736826) that issues a real JWT without contacting
-MSG91. The bypass auto-expires on a hard date so a forgotten constant can't
+the OTP provider. The bypass auto-expires on a hard date so a forgotten constant can't
 become a permanent prod backdoor.
 
 These tests lock in:
   - the reviewer phone + OTP combo issues a token and provisions the user
-  - the wrong OTP for the reviewer phone returns 401 (no MSG91 call)
+  - the wrong OTP for the reviewer phone returns 401 (no the OTP provider call)
   - check-phone / request-otp / resend-otp all short-circuit cleanly
   - after the expiry date, the bypass is inert
 
@@ -58,7 +58,7 @@ def test_check_phone_for_reviewer_returns_registered_and_provisions(client, db):
 
 
 def test_request_otp_for_reviewer_skips_msg91(client, db):
-    # If MSG91 were called, otp_send would raise (no creds in test env).
+    # If the OTP provider were called, otp_send would raise (no creds in test env).
     resp = client.post("/auth/request-otp", json={"phone": REVIEWER_PHONE})
     assert resp.status_code == 200, resp.text
     body = resp.json()

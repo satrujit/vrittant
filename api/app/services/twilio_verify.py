@@ -67,9 +67,8 @@ async def send_otp(phone: str) -> dict:
     mobile = _normalize_phone(phone)
     body = await _twilio_request("post", "Verifications", {"To": mobile, "Channel": "sms"})
     # Surface a stable shape compatible with the existing route handler.
-    # Twilio returns "sid" (verification SID); we expose it as reqId for parity
-    # with the MSG91 contract, but mobile clients don't actually need to keep it
-    # because Twilio tracks state by phone number.
+    # Twilio returns "sid" (verification SID); we expose it as reqId but mobile
+    # clients don't actually need to keep it because Twilio tracks state by phone.
     return {"reqId": body.get("sid", ""), "raw": body}
 
 
