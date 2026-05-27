@@ -17,10 +17,6 @@ export async function checkPhone(phone) {
   return apiPost('/auth/check-phone', { phone });
 }
 
-export async function msg91Login(phone, accessToken) {
-  return apiPost('/auth/msg91-login', { phone, access_token: accessToken });
-}
-
 export async function requestOtp(phone) {
   return apiPost('/auth/request-otp', { phone });
 }

@@ -231,10 +231,10 @@ async def request_otp(body: OTPRequest, db: Session = Depends(get_db)):
 
 @router.post("/verify-otp", response_model=Token)
 async def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
-    """Verify OTP via MSG91 and issue JWT (for mobile clients)."""
+    """Verify OTP and issue JWT (for mobile clients)."""
     # Store-reviewer bypass — runs before the user lookup so the account is
     # provisioned on first use. Wrong OTP for the reviewer phone falls
-    # through to a 401 below (without contacting MSG91).
+    # through to a 401 below (without contacting the OTP provider).
     if _is_reviewer_bypass(body.phone):
         if body.otp != _REVIEWER_OTP:
             raise HTTPException(
@@ -270,8 +270,8 @@ async def verify_otp(body: OTPVerify, db: Session = Depends(get_db)):
 
 @router.post("/resend-otp")
 async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
-    """Resend OTP via MSG91 (for mobile clients)."""
-    # Store-reviewer bypass — never re-send via MSG91 for the reviewer phone.
+    """Resend OTP (for mobile clients)."""
+    # Store-reviewer bypass — never re-send for the reviewer phone.
     if _is_reviewer_bypass(body.phone):
         return {"message": "OTP resent (reviewer)", "phone": body.phone}
 
@@ -286,8 +286,7 @@ async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
         return {"message": "OTP resent (test)", "phone": body.phone}
 
     # Resend is a paid send too — same caps apply. (For Twilio Verify the
-    # underlying call is literally another `Verifications` POST; for MSG91
-    # it's `retryOtp` which still bills.)
+    # underlying call is literally another `Verifications` POST which still bills.)
     _enforce_otp_rate_limit(db, body.phone)
 
     import logging as _logging
