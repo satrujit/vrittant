@@ -47,12 +47,28 @@ jobs:
           command_timeout: 10m
           script: |
             cd /opt/vrittant
+
+            # Build new images (doesn't touch running containers)
             docker compose build api
             docker compose --profile jobs build widget-fetcher
+
+            # Graceful deploy: tell Gunicorn to finish in-flight requests
+            # SIGTERM triggers graceful shutdown — workers finish current
+            # requests (up to --timeout 300s) before exiting.
+            OLD_CONTAINER=$(docker compose ps -q api)
+            if [ -n "$OLD_CONTAINER" ]; then
+              echo "Gracefully stopping old container..."
+              docker compose stop -t 30 api   # 30s grace period for in-flight requests
+            fi
+
+            # Start new container with the freshly built image
             docker compose up -d api
             sleep 5
             docker compose ps
             curl -sf http://127.0.0.1:8080/version/min-supported > /dev/null && echo "✅ API healthy" || (echo "❌ API unhealthy" && docker compose logs api --tail 20 && exit 1)
+
+            # Clean up old image layers
+            docker image prune -f > /dev/null 2>&1
 
   # ─── Deploy Frontend to Firebase (Production) ───
   deploy-panel:
