@@ -1,12 +1,9 @@
 """
-MSG91 OTP service — Direct OTP API + Widget token verification.
+MSG91 OTP service — SendOTP API + Widget token verification.
 
-- Mobile: backend calls the MSG91 OTP API (send / verify / resend)
-  using the DLT-registered SMS template.
+- Mobile: backend calls MSG91 SendOTP API (send / verify / resend)
+  using the DLT-registered template.
 - Web: client-side widget, backend verifies access token via Widget API.
-
-The OTP API is separate from the Widget API. The OTP API uses
-template_id (DLT-approved) and authkey only — no widget/token needed.
 """
 
 import logging
@@ -30,15 +27,15 @@ def _normalize_phone(phone: str) -> str:
     return phone.lstrip("+")
 
 
-async def _otp_request(method: str, url: str, **kwargs) -> dict:
-    """Make an authenticated request to MSG91 OTP API."""
+async def _otp_post(url: str, payload: dict) -> dict:
+    """POST to MSG91 SendOTP API with authkey header."""
     headers = {
         "authkey": settings.MSG91_AUTHKEY,
         "Content-Type": "application/json",
     }
 
     async with httpx.AsyncClient(timeout=15) as client:
-        resp = await getattr(client, method)(url, headers=headers, **kwargs)
+        resp = await client.post(url, headers=headers, json=payload)
 
     try:
         data = resp.json()
@@ -46,7 +43,27 @@ async def _otp_request(method: str, url: str, **kwargs) -> dict:
         data = {"raw": resp.text}
 
     endpoint = url.rsplit("/", 1)[-1]
-    logger.info("MSG91 %s %s status=%d", method.upper(), endpoint, resp.status_code)
+    logger.info("MSG91 POST %s status=%d", endpoint, resp.status_code)
+    return data
+
+
+async def _otp_get(url: str, params: dict) -> dict:
+    """GET from MSG91 SendOTP API with authkey header."""
+    headers = {
+        "authkey": settings.MSG91_AUTHKEY,
+        "Content-Type": "application/json",
+    }
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(url, headers=headers, params=params)
+
+    try:
+        data = resp.json()
+    except Exception:
+        data = {"raw": resp.text}
+
+    endpoint = url.rsplit("/", 1)[-1]
+    logger.info("MSG91 GET %s status=%d", endpoint, resp.status_code)
     return data
 
 
@@ -72,16 +89,16 @@ async def verify_access_token(access_token: str) -> dict:
     return data
 
 
-# ── Direct OTP API (mobile) ──
+# ── SendOTP API (mobile) ──
 
 async def send_otp(phone: str) -> dict:
-    """Send OTP via MSG91 OTP API with DLT template."""
+    """Send OTP via MSG91 SendOTP API with DLT template."""
     mobile = _normalize_phone(phone)
 
-    data = await _otp_request("get", OTP_BASE, params={
-        "authkey": settings.MSG91_AUTHKEY,
+    data = await _otp_post(OTP_BASE, {
         "template_id": settings.MSG91_TEMPLATE_ID,
         "mobile": mobile,
+        "otp_length": 6,
     })
 
     if data.get("type") == "error":
@@ -92,11 +109,10 @@ async def send_otp(phone: str) -> dict:
 
 
 async def verify_otp(phone: str, otp: str, req_id: str = "") -> dict:
-    """Verify OTP via MSG91 OTP API."""
+    """Verify OTP via MSG91 SendOTP API."""
     mobile = _normalize_phone(phone)
 
-    data = await _otp_request("get", f"{OTP_BASE}/verify", params={
-        "authkey": settings.MSG91_AUTHKEY,
+    data = await _otp_get(f"{OTP_BASE}/verify", params={
         "mobile": mobile,
         "otp": otp,
     })
@@ -108,10 +124,9 @@ async def verify_otp(phone: str, otp: str, req_id: str = "") -> dict:
 
 
 async def resend_otp(phone: str, req_id: str = "") -> dict:
-    """Resend OTP — just call send_otp again.
+    """Resend OTP — call send_otp again.
 
     MSG91's /retry endpoint has a known issue rejecting valid authkeys.
-    Re-sending via the main /otp endpoint works identically and MSG91
-    handles dedup/rate-limiting on their side.
+    Re-sending via the main endpoint works identically.
     """
     return await send_otp(phone)

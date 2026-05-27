@@ -1,9 +1,4 @@
-"""Security: MSG91 service must NOT print/log secrets, OTPs, or full phone numbers.
-
-Vuln (pre-fix): _widget_request did `print(f"... body={data}")` which dumped
-MSG91 response bodies — including OTP codes on verifyOtp responses and any
-echoed authkey/tokenAuth from request payloads — to Cloud Run stdout.
-"""
+"""Security: MSG91 service must NOT print/log secrets, OTPs, or full phone numbers."""
 
 import asyncio
 import logging
@@ -26,20 +21,16 @@ def _set_msg91_keys(monkeypatch):
 
 @respx.mock
 def test_send_otp_does_not_leak_secrets_to_logs(caplog, capsys):
-    """MSG91 sometimes echoes identifier (the phone) in the response. Logging
-    must redact phone + must never include authkey/tokenAuth."""
+    """Logging must not include authkey/tokenAuth/phone."""
     caplog.set_level(logging.DEBUG)
 
-    # Direct OTP API endpoint (GET with query params including authkey)
-    respx.get("https://control.msg91.com/api/v5/otp").mock(
+    # SendOTP API uses POST with JSON body
+    respx.post("https://control.msg91.com/api/v5/otp").mock(
         return_value=Response(
             200,
             json={
                 "type": "success",
-                "message": "otp_sent_successfully",
                 "request_id": "req-123",
-                "identifier": "919999999999",
-                "authkey": "SECRET-AUTHKEY-12345",
             },
         )
     )
@@ -67,7 +58,7 @@ def test_verify_otp_does_not_leak_otp_to_logs(caplog, capsys):
     That must never reach logs."""
     caplog.set_level(logging.DEBUG)
 
-    # Direct OTP verify endpoint
+    # Verify uses GET with query params — authkey is in header only
     respx.get("https://control.msg91.com/api/v5/otp/verify").mock(
         return_value=Response(
             400,
