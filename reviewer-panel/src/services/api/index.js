@@ -15,7 +15,6 @@ export {
   setAuthToken,
   clearAuthToken,
   checkPhone,
-  msg91Login,
   requestOtp,
   verifyOtp,
   resendOtp,

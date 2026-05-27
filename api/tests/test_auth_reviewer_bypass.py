@@ -57,7 +57,7 @@ def test_check_phone_for_reviewer_returns_registered_and_provisions(client, db):
     assert db.query(User).filter(User.phone == REVIEWER_PHONE).one() is not None
 
 
-def test_request_otp_for_reviewer_skips_msg91(client, db):
+def test_request_otp_for_reviewer_skips_provider(client, db):
     # If the OTP provider were called, otp_send would raise (no creds in test env).
     resp = client.post("/auth/request-otp", json={"phone": REVIEWER_PHONE})
     assert resp.status_code == 200, resp.text
@@ -66,7 +66,7 @@ def test_request_otp_for_reviewer_skips_msg91(client, db):
     assert "reviewer" in body["message"].lower()
 
 
-def test_resend_otp_for_reviewer_skips_msg91(client):
+def test_resend_otp_for_reviewer_skips_provider(client):
     resp = client.post("/auth/resend-otp", json={"phone": REVIEWER_PHONE})
     assert resp.status_code == 200, resp.text
     assert "reviewer" in resp.json()["message"].lower()
