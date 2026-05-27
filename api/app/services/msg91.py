@@ -75,6 +75,7 @@ async def send_otp(phone: str) -> dict:
     mobile = _normalize_phone(phone)
 
     data = await _otp_request("get", OTP_BASE, params={
+        "authkey": settings.MSG91_AUTHKEY,
         "template_id": settings.MSG91_TEMPLATE_ID,
         "mobile": mobile,
     })
@@ -91,6 +92,7 @@ async def verify_otp(phone: str, otp: str, req_id: str = "") -> dict:
     mobile = _normalize_phone(phone)
 
     data = await _otp_request("get", f"{OTP_BASE}/verify", params={
+        "authkey": settings.MSG91_AUTHKEY,
         "mobile": mobile,
         "otp": otp,
     })
@@ -106,6 +108,7 @@ async def resend_otp(phone: str, req_id: str = "") -> dict:
     mobile = _normalize_phone(phone)
 
     data = await _otp_request("get", f"{OTP_BASE}/retry", params={
+        "authkey": settings.MSG91_AUTHKEY,
         "mobile": mobile,
         "retrytype": "text",
     })
