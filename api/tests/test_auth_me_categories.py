@@ -10,7 +10,7 @@ This test locks in: /auth/me returns active category keys from
 org_configs.categories, in order, dropping inactive entries.
 """
 
-from jose import jwt
+import jwt
 
 from app.config import settings
 from app.models.org_config import OrgConfig

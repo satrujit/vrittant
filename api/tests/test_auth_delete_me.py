@@ -11,7 +11,7 @@ byline and erasing the user would falsify historical record. Instead we:
 This test locks that contract in.
 """
 
-from jose import jwt
+import jwt
 
 from app.config import settings
 from app.models.user import User
