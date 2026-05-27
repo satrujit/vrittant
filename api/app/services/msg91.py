@@ -1,14 +1,12 @@
 """
-MSG91 OTP service — Widget API.
-- Mobile: backend calls Widget API endpoints (sendOtp / verifyOtp / retryOtp).
-- Web: client-side widget, backend verifies access token.
+MSG91 OTP service — Direct OTP API + Widget token verification.
 
-MSG91 IP Security is OFF on the Vrittant authkey — the authkey itself
-(stored in Secret Manager) is the only credential. Cloud Run uses
-`vpc-egress=private-ranges-only`, so requests exit via Google's
-auto-allocated outbound pool (random IP per request). This avoids the
-IP-whitelist trap where MSG91 would silently blocklist a single
-shared egress IP and leave us unable to send OTPs.
+- Mobile: backend calls the MSG91 OTP API (send / verify / resend)
+  using the DLT-registered SMS template.
+- Web: client-side widget, backend verifies access token via Widget API.
+
+The OTP API is separate from the Widget API. The OTP API uses
+template_id (DLT-approved) and authkey only — no widget/token needed.
 """
 
 import logging
@@ -19,6 +17,7 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
+OTP_BASE = "https://control.msg91.com/api/v5/otp"
 WIDGET_BASE = "https://api.msg91.com/api/v5/widget"
 
 
@@ -27,11 +26,10 @@ def _normalize_phone(phone: str) -> str:
     return phone.lstrip("+")
 
 
-async def _widget_request(method: str, url: str, **kwargs) -> dict:
-    """Make an authenticated request to MSG91 Widget API."""
+async def _otp_request(method: str, url: str, **kwargs) -> dict:
+    """Make an authenticated request to MSG91 OTP API."""
     headers = {
         "authkey": settings.MSG91_AUTHKEY,
-        "token": settings.MSG91_TOKEN_AUTH,
         "Content-Type": "application/json",
     }
 
@@ -43,23 +41,26 @@ async def _widget_request(method: str, url: str, **kwargs) -> dict:
     except Exception:
         data = {"raw": resp.text}
 
-    # SECURITY: never log the response body — it may contain the verified mobile,
-    # the submitted OTP (echoed back on verify failures), or echoed credentials.
-    # Status code + endpoint name only.
     endpoint = url.rsplit("/", 1)[-1]
     logger.info("MSG91 %s %s status=%d", method.upper(), endpoint, resp.status_code)
     return data
 
 
-# ── Widget token verification (web) ──
+# ── Widget token verification (web — unchanged) ──
 
 async def verify_access_token(access_token: str) -> dict:
     """Verify access token from MSG91 OTP Widget (web flow)."""
-    url = f"{WIDGET_BASE}/verifyAccessToken"
-    data = await _widget_request("post", url, json={
+    headers = {
         "authkey": settings.MSG91_AUTHKEY,
-        "access-token": access_token,
-    })
+        "token": settings.MSG91_TOKEN_AUTH,
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(f"{WIDGET_BASE}/verifyAccessToken", headers=headers, json={
+            "authkey": settings.MSG91_AUTHKEY,
+            "access-token": access_token,
+        })
+    data = resp.json()
 
     if data.get("type") == "error":
         raise RuntimeError(f"MSG91 token verification failed: {data.get('message', data)}")
@@ -67,42 +68,31 @@ async def verify_access_token(access_token: str) -> dict:
     return data
 
 
-# ── Widget OTP endpoints (mobile — backend calls Widget API) ──
+# ── Direct OTP API (mobile) ──
 
 async def send_otp(phone: str) -> dict:
-    """Send OTP via Widget API."""
+    """Send OTP via MSG91 OTP API with DLT template."""
     mobile = _normalize_phone(phone)
-    url = f"{WIDGET_BASE}/sendOtp"
 
-    data = await _widget_request("post", url, json={
-        "widgetId": settings.MSG91_WIDGET_ID,
-        "tokenAuth": settings.MSG91_TOKEN_AUTH,
-        "identifier": mobile,
+    data = await _otp_request("get", OTP_BASE, params={
+        "template_id": settings.MSG91_TEMPLATE_ID,
+        "mobile": mobile,
     })
 
     if data.get("type") == "error":
         raise RuntimeError(f"MSG91 send_otp failed: {data.get('message', data)}")
 
-    req_id = ""
-    if isinstance(data.get("data"), dict):
-        req_id = data["data"].get("message", "")
-    elif isinstance(data.get("message"), str):
-        req_id = data["message"]
-    data["reqId"] = req_id
+    data["reqId"] = data.get("request_id", "")
     return data
 
 
 async def verify_otp(phone: str, otp: str, req_id: str = "") -> dict:
-    """Verify OTP via Widget API."""
+    """Verify OTP via MSG91 OTP API."""
     mobile = _normalize_phone(phone)
-    url = f"{WIDGET_BASE}/verifyOtp"
 
-    data = await _widget_request("post", url, json={
-        "widgetId": settings.MSG91_WIDGET_ID,
-        "tokenAuth": settings.MSG91_TOKEN_AUTH,
-        "identifier": mobile,
+    data = await _otp_request("get", f"{OTP_BASE}/verify", params={
+        "mobile": mobile,
         "otp": otp,
-        "reqId": req_id,
     })
 
     if data.get("type") == "error":
@@ -112,18 +102,16 @@ async def verify_otp(phone: str, otp: str, req_id: str = "") -> dict:
 
 
 async def resend_otp(phone: str, req_id: str = "") -> dict:
-    """Resend OTP via Widget API."""
+    """Resend OTP via MSG91 OTP API."""
     mobile = _normalize_phone(phone)
-    url = f"{WIDGET_BASE}/retryOtp"
 
-    data = await _widget_request("post", url, json={
-        "widgetId": settings.MSG91_WIDGET_ID,
-        "tokenAuth": settings.MSG91_TOKEN_AUTH,
-        "identifier": mobile,
-        "reqId": req_id,
+    data = await _otp_request("get", f"{OTP_BASE}/retry", params={
+        "mobile": mobile,
+        "retrytype": "text",
     })
 
     if data.get("type") == "error":
         raise RuntimeError(f"MSG91 resend_otp failed: {data.get('message', data)}")
 
+    data["reqId"] = data.get("request_id", "")
     return data
