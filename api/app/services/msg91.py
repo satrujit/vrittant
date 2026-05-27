@@ -108,17 +108,10 @@ async def verify_otp(phone: str, otp: str, req_id: str = "") -> dict:
 
 
 async def resend_otp(phone: str, req_id: str = "") -> dict:
-    """Resend OTP via MSG91 OTP API."""
-    mobile = _normalize_phone(phone)
+    """Resend OTP — just call send_otp again.
 
-    data = await _otp_request("get", f"{OTP_BASE}/retry", params={
-        "authkey": settings.MSG91_AUTHKEY,
-        "mobile": mobile,
-        "retrytype": "text",
-    })
-
-    if data.get("type") == "error":
-        raise RuntimeError(f"MSG91 resend_otp failed: {data.get('message', data)}")
-
-    data["reqId"] = data.get("request_id", "")
-    return data
+    MSG91's /retry endpoint has a known issue rejecting valid authkeys.
+    Re-sending via the main /otp endpoint works identically and MSG91
+    handles dedup/rate-limiting on their side.
+    """
+    return await send_otp(phone)
