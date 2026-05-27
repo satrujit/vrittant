@@ -21,6 +21,7 @@ def _set_msg91_keys(monkeypatch):
     monkeypatch.setattr(msg91.settings, "MSG91_AUTHKEY", "SECRET-AUTHKEY-12345")
     monkeypatch.setattr(msg91.settings, "MSG91_TOKEN_AUTH", "SECRET-TOKENAUTH-67890")
     monkeypatch.setattr(msg91.settings, "MSG91_WIDGET_ID", "widget-1")
+    monkeypatch.setattr(msg91.settings, "MSG91_TEMPLATE_ID", "tpl-test-123")
 
 
 @respx.mock
@@ -29,14 +30,16 @@ def test_send_otp_does_not_leak_secrets_to_logs(caplog, capsys):
     must redact phone + must never include authkey/tokenAuth."""
     caplog.set_level(logging.DEBUG)
 
-    respx.post("https://api.msg91.com/api/v5/widget/sendOtp").mock(
+    # Direct OTP API endpoint (GET with query params including authkey)
+    respx.get("https://control.msg91.com/api/v5/otp").mock(
         return_value=Response(
             200,
             json={
                 "type": "success",
-                "message": "req-123",
-                "identifier": "919999999999",   # MSG91 echoes the mobile here
-                "authkey": "SECRET-AUTHKEY-12345",  # paranoid: if it ever echoed
+                "message": "otp_sent_successfully",
+                "request_id": "req-123",
+                "identifier": "919999999999",
+                "authkey": "SECRET-AUTHKEY-12345",
             },
         )
     )
@@ -60,11 +63,12 @@ def test_send_otp_does_not_leak_secrets_to_logs(caplog, capsys):
 
 @respx.mock
 def test_verify_otp_does_not_leak_otp_to_logs(caplog, capsys):
-    """On verifyOtp failures MSG91 echoes the submitted OTP back in the message.
+    """On verify failures MSG91 echoes the submitted OTP back in the message.
     That must never reach logs."""
     caplog.set_level(logging.DEBUG)
 
-    respx.post("https://api.msg91.com/api/v5/widget/verifyOtp").mock(
+    # Direct OTP verify endpoint
+    respx.get("https://control.msg91.com/api/v5/otp/verify").mock(
         return_value=Response(
             400,
             json={"type": "error", "message": "OTP 123456 is incorrect"},

@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 OTP_BASE = "https://control.msg91.com/api/v5/otp"
 WIDGET_BASE = "https://api.msg91.com/api/v5/widget"
 
+# Suppress httpx's built-in request logging — it logs full URLs including
+# query params, which would leak authkey, phone numbers, and OTP codes.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 
 def _normalize_phone(phone: str) -> str:
     """Strip '+' prefix so +91XXXX → 91XXXX."""
