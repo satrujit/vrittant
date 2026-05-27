@@ -10,7 +10,6 @@ from ..models.org_config import OrgConfig
 from ..models.otp_send_log import OtpSendLog
 from ..models.user import User
 from ..schemas.auth import (
-    MSG91LoginRequest,
     OrgInfo,
     OTPRequest,
     OTPResend,
@@ -18,7 +17,6 @@ from ..schemas.auth import (
     Token,
     UserResponse,
 )
-from ..services.msg91 import verify_access_token
 from ..services.otp_provider import (
     send_otp as otp_send,
     verify_otp as otp_verify,
@@ -56,11 +54,11 @@ def _expected_test_otp() -> str:
 # ── Store-reviewer bypass (TEMPORARY, prod-safe) ──────────────────────────
 # Apple App Store and Google Play reviewers need a way to log in without
 # receiving a real SMS. We can't ship them a SIM, so we hard-code one
-# phone+OTP pair that short-circuits the MSG91 path even in production.
+# phone+OTP pair that short-circuits the real OTP path even in production.
 #
 # Hard expiry kills the bypass automatically after the review window. After
 # the date below, this branch becomes a no-op and the reviewer account falls
-# back to normal MSG91 OTP flow (which won't work for them — by design).
+# back to the normal OTP flow (which won't work for them — by design).
 #
 # REMOVE THIS BLOCK once the apps are approved and live in both stores.
 _REVIEWER_PHONE = "+917362837632"
@@ -101,8 +99,7 @@ def _ensure_reviewer_user(db: Session) -> User:
 
 
 # ── OTP rate limit ─────────────────────────────────────────────────────────
-# Each provider call costs real money (~₹0.20 MSG91, ~₹4 Twilio Verify, more
-# without DLT). We cap per-phone send frequency so a buggy client, double-tap,
+# Each provider call costs real money (~₹4 Twilio Verify). We cap per-phone send frequency so a buggy client, double-tap,
 # or attacker can't burn the budget. Limits chosen to be invisible to a real
 # reporter typing in their phone but visible to anything looping.
 #
@@ -183,26 +180,14 @@ def check_phone(body: OTPRequest, db: Session = Depends(get_db)):
     # Store-reviewer bypass — provision on first contact and report registered.
     if _is_reviewer_bypass(body.phone):
         _ensure_reviewer_user(db)
-        return {
-            "registered": True,
-            "widget": {
-                "widgetId": settings.MSG91_WIDGET_ID,
-                "tokenAuth": settings.MSG91_TOKEN_AUTH,
-            },
-        }
+        return {"registered": True}
 
     user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone number not registered")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
-    return {
-        "registered": True,
-        "widget": {
-            "widgetId": settings.MSG91_WIDGET_ID,
-            "tokenAuth": settings.MSG91_TOKEN_AUTH,
-        },
-    }
+    return {"registered": True}
 
 
 # ── Direct OTP endpoints (mobile) ──
@@ -315,84 +300,6 @@ async def resend_otp(body: OTPResend, db: Session = Depends(get_db)):
 
     _record_otp_send(db, body.phone)
     return {"message": "OTP resent", "phone": body.phone}
-
-
-# ── Widget token login (web) ──
-
-def _extract_verified_mobile(msg91_response: dict) -> str | None:
-    """Pull the verified mobile out of MSG91's verifyAccessToken response.
-
-    MSG91 returns the verified mobile in different shapes depending on
-    integration. Known shapes:
-      {"type":"success","message":"919999999999"}
-      {"type":"success","data":{"mobile":"919999999999"}}
-      {"type":"success","data":{"message":"919999999999"}}
-    """
-    if not isinstance(msg91_response, dict):
-        return None
-    data = msg91_response.get("data")
-    if isinstance(data, dict):
-        for key in ("mobile", "message"):
-            v = data.get(key)
-            if isinstance(v, str) and v.strip().isdigit():
-                return v.strip()
-    msg = msg91_response.get("message")
-    if isinstance(msg, str) and msg.strip().isdigit() and len(msg.strip()) >= 10:
-        return msg.strip()
-    return None
-
-
-@router.post("/msg91-login", response_model=Token)
-async def msg91_login(body: MSG91LoginRequest, db: Session = Depends(get_db)):
-    """Verify MSG91 OTP Widget access token and issue JWT (for web clients).
-
-    Security: the verified mobile from MSG91 must match body.phone, otherwise
-    an attacker who completed OTP for their own phone could submit any other
-    phone in body.phone to take over that account.
-    """
-    import logging as _logging
-    _log = _logging.getLogger("auth.msg91")
-    try:
-        msg91_response = await verify_access_token(body.access_token)
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired MSG91 token",
-        )
-
-    # Bind the verified mobile to body.phone — fail closed if it's missing.
-    verified_mobile = _extract_verified_mobile(msg91_response)
-    requested_mobile = body.phone.lstrip("+").strip()
-    if not verified_mobile or verified_mobile != requested_mobile:
-        _log.warning(
-            "MSG91 phone-binding mismatch (verified=%s vs requested=%s)",
-            verified_mobile, requested_mobile,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired MSG91 token",
-        )
-
-    user = db.query(User).filter(User.phone == body.phone, User.deleted_at.is_(None)).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Phone number not registered. Contact admin for access.",
-        )
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is deactivated",
-        )
-    # Only reviewers and org_admins can access the web panel
-    if user.user_type not in ("reviewer", "org_admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Reporter accounts cannot access the review panel. Please use the mobile app.",
-        )
-
-    token = create_access_token(user.id, user.user_type)
-    return Token(access_token=token)
 
 
 # ── Current user ──

@@ -83,11 +83,6 @@ class Settings(BaseSettings):
     # spend per call — turn off once you've decided.
     STT_DUAL_LOG: bool = False
 
-    # MSG91 Widget (web login only — verifyAccessToken)
-    MSG91_AUTHKEY: str = ""
-    MSG91_WIDGET_ID: str = ""
-    MSG91_TOKEN_AUTH: str = ""
-
     # Twilio Verify (mobile OTP)
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""

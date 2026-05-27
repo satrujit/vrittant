@@ -9,17 +9,12 @@ class OTPRequest(BaseModel):
 class OTPVerify(BaseModel):
     phone: str = Field(..., min_length=10, max_length=16, pattern=r'^\+\d{10,15}$')
     otp: str = Field(..., min_length=4, max_length=8)
-    req_id: str = Field("", description="MSG91 reqId returned by request-otp")
+    req_id: str = Field("", description="Request ID returned by request-otp")
 
 
 class OTPResend(BaseModel):
     phone: str = Field(..., min_length=10, max_length=16, pattern=r'^\+\d{10,15}$')
-    req_id: str = Field("", description="MSG91 reqId returned by request-otp")
-
-
-class MSG91LoginRequest(BaseModel):
-    phone: str = Field(..., min_length=10, max_length=16, pattern=r'^\+\d{10,15}$')
-    access_token: str = Field(..., min_length=10, max_length=5000)
+    req_id: str = Field("", description="Request ID returned by request-otp")
 
 
 class Token(BaseModel):
