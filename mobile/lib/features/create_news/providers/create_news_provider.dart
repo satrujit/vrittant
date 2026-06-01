@@ -1178,12 +1178,13 @@ class NotepadNotifier extends Notifier<NotepadState> {
         );
         _batchRecorder?.dispose();
         _batchRecorder = null;
-      } catch (e) {
+      } catch (e, stack) {
+        debugPrint('[CreateNews] recording start failed: $e\n$stack');
         _reRecordingIndex = null;
         state = state.copyWith(
           isRecording: false,
           error: 'Microphone access denied or not available. '
-              'Please allow microphone access in your browser.',
+              'Please allow microphone access in device settings.',
         );
         _batchRecorder?.dispose();
         _batchRecorder = null;
