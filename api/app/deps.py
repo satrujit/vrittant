@@ -14,7 +14,13 @@ security = HTTPBearer()
 
 
 def create_access_token(user_id: str, user_type: str = "reporter") -> str:
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)
+    # Panel roles (reviewer / org_admin) get a shorter-lived token than
+    # field reporters — see the config comments for the rationale.
+    if user_type in ("reviewer", "org_admin"):
+        days = settings.ACCESS_TOKEN_EXPIRE_DAYS_PANEL
+    else:
+        days = settings.ACCESS_TOKEN_EXPIRE_DAYS
+    expire = datetime.now(timezone.utc) + timedelta(days=days)
     payload = {"sub": user_id, "user_type": user_type, "exp": expire}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 

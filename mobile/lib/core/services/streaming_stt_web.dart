@@ -235,11 +235,12 @@ class StreamingSttService {
 
 
   Future<void> _openWebSocket() async {
-    // Connect to backend WebSocket proxy instead of Sarvam directly
+    // Connect to backend WebSocket proxy instead of Sarvam directly.
+    // Token is NOT in the URL — it would leak into server access logs. It's
+    // sent as the first WS frame in onopen (see below).
     final wsBase = ApiConfig.baseUrl.replaceFirst('http', 'ws');
     final wsUrl = '$wsBase/ws/stt'
-        '?token=${authToken ?? ""}'
-        '&language_code=$languageCode'
+        '?language_code=$languageCode'
         '&model=$model';
 
     final WebSocketClass = globalContext['WebSocket'] as JSFunction?;
@@ -255,6 +256,10 @@ class StreamingSttService {
 
 
     _webSocket!['onopen'] = ((JSAny _) {
+      // Authenticate in-band: first frame carries the JWT (kept out of the
+      // URL / logs). Backend closes with 4001 if absent within 10s.
+      final authMsg = jsonEncode({'type': 'auth', 'token': authToken ?? ''});
+      _webSocket!.callMethod('send'.toJS, authMsg.toJS);
       if (_openCompleter != null && !_openCompleter!.isCompleted) {
         _openCompleter!.complete();
       }

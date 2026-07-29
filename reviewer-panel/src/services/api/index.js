@@ -98,6 +98,7 @@ export {
 // Sarvam AI — STT websocket + LLM chat
 export {
   getSTTWebSocketUrl,
+  getSTTAuthMessage,
   llmChat,
   translateText,
   generateStory,

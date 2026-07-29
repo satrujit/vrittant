@@ -15,14 +15,29 @@ const MAX_RETRY_TOKENS = 8192;
 
 /**
  * Build the WebSocket URL for the Sarvam STT proxy.
+ *
+ * The auth JWT is deliberately NOT placed in the URL — query strings leak
+ * into nginx access logs, browser history, and proxy logs. Instead the
+ * caller sends {@link getSTTAuthMessage} as the first WS frame after
+ * `onopen`, and the backend authenticates from that message.
+ *
  * @param {string} languageCode — e.g. 'od-IN' for Odia
  * @param {string} model — e.g. 'saaras:v3'
- * @returns {string} WebSocket URL with auth token
+ * @returns {string} WebSocket URL (no token)
  */
 export function getSTTWebSocketUrl(languageCode = 'od-IN', model = 'saaras:v3') {
-  const token = getAuthToken();
   const wsBase = API_BASE.replace(/^http/, 'ws');
-  return `${wsBase}/ws/stt?token=${token}&language_code=${languageCode}&model=${model}`;
+  return `${wsBase}/ws/stt?language_code=${languageCode}&model=${model}`;
+}
+
+/**
+ * The auth handshake frame to send as the FIRST message once the STT
+ * WebSocket opens. Backend closes the socket (code 4001) if this doesn't
+ * arrive within 10s or the token is invalid.
+ * @returns {string} JSON string: {"type":"auth","token":"<jwt>"}
+ */
+export function getSTTAuthMessage() {
+  return JSON.stringify({ type: 'auth', token: getAuthToken() });
 }
 
 /** Strip model reasoning tags and markdown artifacts from LLM output */

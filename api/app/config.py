@@ -11,7 +11,14 @@ class Settings(BaseSettings):
     # Auth
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_DAYS: int = 90
+    # Token lifetime is role-based. Panel users (reviewer / org_admin) sit at
+    # desks on trusted networks and hold elevated privileges, so a leaked
+    # panel token is high-impact — keep it short. Reporters use the mobile app
+    # in the field on patchy networks where each re-login costs an SMS OTP
+    # (~₹0.25) and real friction, so theirs is longer. Both are far below the
+    # old blanket 90 days.
+    ACCESS_TOKEN_EXPIRE_DAYS: int = 30       # reporters (mobile)
+    ACCESS_TOKEN_EXPIRE_DAYS_PANEL: int = 7  # reviewer / org_admin (panel)
 
     # CORS — comma-separated origins, "*" for dev
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:5175"

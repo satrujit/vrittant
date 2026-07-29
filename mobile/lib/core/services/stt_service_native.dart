@@ -207,8 +207,10 @@ class StreamingSttService {
   /// WS so no speech is lost.
   Future<void> _openWebSocket() async {
     final wsBase = ApiConfig.baseUrl.replaceFirst('http', 'ws');
+    // Token is NOT in the URL — it would leak into server access logs. It's
+    // sent as the first WS frame after the handshake completes (see below).
     final uri = Uri.parse(
-      '$wsBase/ws/stt?token=${authToken ?? ""}&language_code=$languageCode&model=$model',
+      '$wsBase/ws/stt?language_code=$languageCode&model=$model',
     );
     _channel = WebSocketChannel.connect(uri);
 
@@ -251,6 +253,12 @@ class StreamingSttService {
     }
     final ms = DateTime.now().difference(startedAt).inMilliseconds;
     debugPrint('[STT] WebSocket ready in ${ms}ms');
+
+    // Authenticate in-band: the JWT is sent as the FIRST frame (never in
+    // the URL, which would leak into server logs). Backend closes the
+    // socket with code 4001 if this doesn't arrive within 10s or the
+    // token is invalid. Must precede any audio frames.
+    _channel!.sink.add(jsonEncode({'type': 'auth', 'token': authToken ?? ''}));
 
     // If this is a reconnect, drain whatever audio piled up while we
     // were down. We do this synchronously so any chunks captured while

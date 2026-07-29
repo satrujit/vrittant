@@ -27,6 +27,7 @@ import {
   translateText,
   generateStory,
   getSTTWebSocketUrl,
+  getSTTAuthMessage,
   fetchEditions,
   fetchEdition,
   addStoryToPage,
@@ -407,6 +408,9 @@ export function useReviewState({ id, t }) {
 
     ws.onopen = () => {
       console.log('[STT] Connected');
+      // Authenticate in-band: first frame carries the JWT (keeps it out of
+      // the URL / logs). Must precede any audio frames.
+      ws.send(getSTTAuthMessage());
       sendTimerRef.current = setInterval(() => {
         if (pcmBufferRef.current.length === 0 || ws.readyState !== WebSocket.OPEN) return;
         const bytes = new Uint8Array(pcmBufferRef.current);

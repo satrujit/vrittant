@@ -929,7 +929,7 @@ async def _gemini_streaming_handler(
 @router.websocket("/ws/stt")
 async def websocket_stt_proxy(
     ws: WebSocket,
-    token: str,
+    token: str | None = None,
     language_code: str = "od-IN",
     model: str = "saaras:v3",
 ):
@@ -939,15 +939,48 @@ async def websocket_stt_proxy(
     Maintains a single persistent upstream connection. If Sarvam disconnects
     (e.g. due to idle timeout), the proxy automatically reconnects and
     replays any queued audio — no gaps, no lost words.
+
+    Auth is accepted two ways:
+      - **In-message (preferred, secure):** connect with NO ``token`` query
+        param, then send ``{"type":"auth","token":"<jwt>"}`` as the first
+        WS message. Keeps the JWT out of the URL, so it never lands in
+        nginx access logs / browser history / proxy logs.
+      - **Query param (legacy):** ``?token=<jwt>`` — retained so mobile
+        builds already published to the stores keep working. New clients
+        must use the in-message path.
     """
 
-    # 1. Authenticate
-    reporter_id = _authenticate_ws(token)
-    if reporter_id is None:
-        await ws.close(code=4001, reason="Invalid or missing token")
-        return
+    # 1. Authenticate — query param (legacy) takes precedence; otherwise the
+    #    first WS message must carry the token.
+    reporter_id = None
+    if token:
+        reporter_id = _authenticate_ws(token)
+        if reporter_id is None:
+            await ws.close(code=4001, reason="Invalid or missing token")
+            return
+        await ws.accept()
+    else:
+        # In-message handshake. Accept first (can't read a frame otherwise),
+        # then require an auth message within 10s so an unauthenticated
+        # socket can't sit open indefinitely.
+        await ws.accept()
+        try:
+            first = await asyncio.wait_for(ws.receive_text(), timeout=10)
+            auth_msg = json.loads(first)
+            if auth_msg.get("type") != "auth" or not auth_msg.get("token"):
+                await ws.close(code=4001, reason="Expected auth message")
+                return
+            reporter_id = _authenticate_ws(auth_msg["token"])
+        except asyncio.TimeoutError:
+            await ws.close(code=4001, reason="Auth timeout")
+            return
+        except (json.JSONDecodeError, AttributeError, KeyError, WebSocketDisconnect):
+            await ws.close(code=4001, reason="Invalid auth handshake")
+            return
+        if reporter_id is None:
+            await ws.close(code=4001, reason="Invalid or missing token")
+            return
 
-    await ws.accept()
     logger.info(f"STT proxy: connected (reporter={reporter_id})")
 
     # ── Per-reporter monthly STT quota gate ───────────────────────────

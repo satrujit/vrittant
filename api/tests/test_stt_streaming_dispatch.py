@@ -275,3 +275,61 @@ def test_vad_threshold_reads_from_settings(monkeypatch):
     monkeypatch.setattr(settings, "STT_SILENCE_RMS_THRESHOLD", 100)
     _, stats_loose = _compress_pcm_silence(pcm)
     assert stats_loose["kept_ms"] > 0  # 150 > 100, all speech
+
+
+# ---------------------------------------------------------------------------
+# WebSocket auth handshake — token moved out of the URL into the first frame
+# ---------------------------------------------------------------------------
+
+
+def test_authenticate_ws_valid_token_returns_sub():
+    from app.deps import create_access_token
+    from app.routers.sarvam import _authenticate_ws
+
+    token = create_access_token("user-123", "reviewer")
+    assert _authenticate_ws(token) == "user-123"
+
+
+def test_authenticate_ws_invalid_token_returns_none():
+    from app.routers.sarvam import _authenticate_ws
+
+    assert _authenticate_ws("garbage.token.here") is None
+
+
+def test_ws_rejects_invalid_token_in_auth_message(client):
+    """In-message path: a bad token in the first frame closes with 4001
+    before any upstream (Sarvam) connection is attempted."""
+    from starlette.websockets import WebSocketDisconnect
+
+    with client.websocket_connect("/ws/stt") as ws:
+        ws.send_text('{"type":"auth","token":"not-a-real-jwt"}')
+        try:
+            ws.receive_text()
+            assert False, "expected the socket to be closed"
+        except WebSocketDisconnect as exc:
+            assert exc.code == 4001
+
+
+def test_ws_rejects_malformed_first_frame(client):
+    """A non-auth first frame (here: audio-shaped JSON) is rejected 4001."""
+    from starlette.websockets import WebSocketDisconnect
+
+    with client.websocket_connect("/ws/stt") as ws:
+        ws.send_text('{"audio":{"data":"AAAA"}}')
+        try:
+            ws.receive_text()
+            assert False, "expected the socket to be closed"
+        except WebSocketDisconnect as exc:
+            assert exc.code == 4001
+
+
+def test_ws_rejects_invalid_legacy_query_token(client):
+    """Legacy query-param path still validates: a bad ?token= closes 4001."""
+    from starlette.websockets import WebSocketDisconnect
+
+    try:
+        with client.websocket_connect("/ws/stt?token=bogus") as ws:
+            ws.receive_text()
+            assert False, "expected the socket to be closed"
+    except WebSocketDisconnect as exc:
+        assert exc.code == 4001

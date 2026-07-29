@@ -1,9 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../services/http.js', () => ({ apiPost: vi.fn() }));
+vi.mock('../services/api/_internal.js', () => ({
+  API_BASE: 'https://api.vrittant.in',
+  getAuthToken: () => localStorage.getItem('vr_token'),
+  setAuthToken: (t) => localStorage.setItem('vr_token', t),
+  clearAuthToken: () => localStorage.removeItem('vr_token'),
+  buildQuery: () => '',
+  AVATAR_COLORS: [],
+}));
 
 import { apiPost } from '../services/http.js';
-import { llmChat } from '../services/api/sarvam.js';
+import { llmChat, getSTTWebSocketUrl, getSTTAuthMessage } from '../services/api/sarvam.js';
+
+describe('STT WebSocket auth', () => {
+  beforeEach(() => localStorage.setItem('vr_token', 'jwt-abc'));
+
+  it('does NOT put the token in the WebSocket URL (log-leak guard)', () => {
+    const url = getSTTWebSocketUrl();
+    expect(url).not.toContain('token');
+    expect(url).not.toContain('jwt-abc');
+    expect(url).toContain('/ws/stt?language_code=');
+  });
+
+  it('carries the token in the in-band auth message instead', () => {
+    const msg = JSON.parse(getSTTAuthMessage());
+    expect(msg).toEqual({ type: 'auth', token: 'jwt-abc' });
+  });
+});
 
 describe('llmChat', () => {
   beforeEach(() => apiPost.mockReset());
